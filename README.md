@@ -208,9 +208,41 @@ tests/
 - [x] Phase 3a closure：Medium 档插桩验证（history 恰好 2 次、无重复展开、语义稳定，
   见 `docs/validation/phase3a-closure.md`）+ **Semantic API v1 冻结**
 - [x] Phase 3b①：Deep Diff（`--include-shader-values`，默认关闭，基础语义不变）
+- [x] Phase 4a：Thin MCP Transport（`rdebug-mcp`，仅四个 tool，无编排/无分析/无 RenderDoc API；
+  协议级冒烟通过，transport 测试与核心测试完全隔离）
+- [ ] Phase 4b：LLM tool-use smoke（只允许 Semantic API v1 四查询）
+- [ ] Phase 4c：Evidence-based reasoning 评估
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
-- [ ] Phase 4：AI / MCP 外部接入层（仅暴露 Semantic API v1 四个查询；
-  AI 不获得任何原始 RenderDoc API 权限）
+
+## MCP Transport（Phase 4a）
+
+```bash
+pip install -e .[mcp]
+rdebug-mcp          # stdio MCP server，四个 tool：trace_pixel / trace_resource / debug_pixel / diff_pixel
+```
+
+边界（由 `tests_transport/` 不变量锁定）：
+
+- 不出现任何 RenderDoc API 标识（`ReplayController/PixelHistory/GetUsage/DebugPixel/...`）；
+- 对 `rdebug.analysis` 的 import 仅限四个语义函数——**无编排、无分析逻辑**；
+- 结果（含 evidence）原样 JSON 透传，不创建第二套 domain model；
+- 运行期错误以 `{"error": ..., "tool": ...}` JSON 返回，不中断会话；
+- 每次调用独立打开 capture（~1–3s 开销）；会话复用留作加法演进。
+
+客户端配置示例（Claude Desktop / 任意 MCP client）：
+
+```json
+{
+  "mcpServers": {
+    "rdebug": {
+      "command": "rdebug-mcp",
+      "env": { "RDEBUG_RENDERDOC_PATH": "C:\\path\\to\\pymodules" }
+    }
+  }
+}
+```
+
+协议冒烟：`python scripts/mcp_smoke.py <capture.rdc>`（list_tools + 四 tool 实调）。
 
 ## Semantic API v1（冻结）
 

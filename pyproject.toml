@@ -21,6 +21,10 @@ classifiers = [
 
 [project.scripts]
 rdebug = "rdebug.cli:main"
+rdebug-mcp = "rdebug_mcp.server:main"
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
