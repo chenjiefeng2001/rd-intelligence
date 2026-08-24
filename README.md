@@ -63,6 +63,7 @@ rdebug trace-pixel capture.rdc --x 824 --y 391
 rdebug trace-resource capture.rdc --resource ResourceId::91   # Phase 2b: writers/readers
 rdebug debug-pixel capture.rdc --x 824 --y 391            # 自动从 pixel history 选 fragment
 rdebug debug-pixel capture.rdc --x 824 --y 391 --primitive 3 --sample 0
+rdebug diff-pixel capture.rdc --a 320,240 --b 10,10       # Phase 3: first divergence
 ```
 
 所有命令向 stdout 输出严格 JSON（NaN/Inf 已字符串化），错误走 stderr 的 `{"error": ...}` 并返回非零退出码，便于脚本与未来的 AI Agent 直接消费。
@@ -200,8 +201,13 @@ tests/
 - [x] Phase 2b：`trace-resource`（writer/reader 分类 + evidence，基于 `GetUsage`）
 - [x] Phase 2c：Pixel→Shader→Resource→Writer 局部数据流（`PixelHistoryResult` 一等共享、
   reads 一层展开、history 复用回归 ≈省一半以上，见 `docs/validation/perf-baseline.md`）
-- [ ] Phase 3：Capture Diff
-- [ ] Phase 4：AI / MCP 外部接入层（Phase 3 完成并确认确定性 RCA 覆盖前禁止进入代码库）
+- [x] Phase 3（第一版）：`diff-pixel` 同 capture 两像素局部因果链 diff——
+  六层比较（pixel_value/fragment/shader/input_bindings/shader_input_values/resource_provenance）、
+  same|different|unknown 三态（无相似度）、最深因果层为 firstDivergence、全链 evidence 回链；
+  跨 capture identity 语义与采样值提取留待后续（当前 `shader_input_values` 默认 unknown）
+- [ ] Phase 3b：跨 capture diff（语义资源匹配）+ 采样值内容比较
+- [ ] Phase 4：AI / MCP 外部接入层（仅暴露 trace_pixel/trace_resource/debug_pixel/diff_pixel
+  四个语义查询；确定性 RCA 覆盖评估后再引入）
 
 ## 设计原则（由真实验证固化）
 

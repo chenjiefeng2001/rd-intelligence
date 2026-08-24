@@ -104,6 +104,23 @@ class TestRealReplay(unittest.TestCase):
             self.assertEqual(ev["resourceId"], target)
             self.assertIn("id", ev)
 
+    def test_diff_pixel_smoke(self):
+        from rdebug.analysis.pixel_diff import diff_pixel
+
+        s = self._session
+        same = diff_pixel(s, (10, 10), (20, 10))
+        self.assertEqual(same.comparison, "same")
+        self.assertTrue(same.equal)
+
+        diff = diff_pixel(s, (320, 240), (10, 10))
+        self.assertEqual(diff.comparison, "different")
+        first = diff.first_divergence
+        self.assertIsNotNone(first)
+        self.assertIn(first["layer"], ("fragment", "pixel_value"))
+        self.assertTrue(first["good"]["evidence"] or first["bad"]["evidence"])
+        parsed = type(diff).parse(diff.to_dict())
+        self.assertEqual(parsed.comparison, diff.comparison)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -133,6 +133,19 @@ def _build_parser():
     dbg.add_argument("--max-steps", type=int, default=4096)
     dbg.add_argument("--no-disassembly", action="store_true")
 
+    dif = sub.add_parser(
+        "diff-pixel",
+        help="compare two pixels' local causal flows and report the first provable "
+        "divergence (same/different/unknown, evidence-backed)",
+    )
+    _add_common(dif)
+    dif.add_argument("--a", required=True, metavar="X,Y", help="first pixel")
+    dif.add_argument("--b", required=True, metavar="X,Y", help="second pixel")
+    dif.add_argument("--max-draws", type=int, default=16)
+    dif.add_argument("--include-shader-values", action="store_true",
+                     help="also compare interpolated PS inputs via the shader debugger")
+    dif.add_argument("--no-expand-reads", action="store_true")
+
     indent = parser.add_argument("-i", "--indent", type=int, default=2)
     indent.help = "JSON indentation"
     return parser
@@ -292,6 +305,24 @@ def _dispatch(args, indent):
                 max_steps=args.max_steps,
                 include_disassembly=not args.no_disassembly,
             )
+        _emit(payload, indent)
+        return 0
+    if cmd == "diff-pixel":
+        from .analysis.pixel_diff import diff_pixel
+
+        def _xy(text):
+            xs, _, ys = text.partition(",")
+            return int(xs.strip()), int(ys.strip())
+
+        with _open_session(args) as s:
+            payload = diff_pixel(
+                s,
+                _xy(args.a),
+                _xy(args.b),
+                max_draws=args.max_draws,
+                include_shader_values=args.include_shader_values,
+                expand_reads=not args.no_expand_reads,
+            ).to_dict()
         _emit(payload, indent)
         return 0
     return _fail(f"unknown command: {cmd}")

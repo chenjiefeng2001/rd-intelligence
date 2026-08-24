@@ -68,3 +68,43 @@ class PixelHistoryResult:
 
     def to_dict(self):
         return self._payload
+
+
+class DiffResult:
+    """Result of comparing two local pixel flows. comparison is one of
+    "same" / "different" / "unknown" — never a similarity score."""
+
+    def __init__(self, payload):
+        self._payload = payload
+
+    @classmethod
+    def parse(cls, value):
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, dict):
+            for key in ("comparison", "layers", "a", "b", "evidence"):
+                if key not in value:
+                    raise TypeError(f"diff payload missing key: {key}")
+            if value["comparison"] not in ("same", "different", "unknown"):
+                raise TypeError("invalid comparison state")
+            return cls(value)
+        raise TypeError("cannot parse DiffResult from " + type(value).__name__)
+
+    @property
+    def payload(self):
+        return self._payload
+
+    @property
+    def comparison(self):
+        return self._payload["comparison"]
+
+    @property
+    def equal(self):
+        return self._payload["comparison"] == "same"
+
+    @property
+    def first_divergence(self):
+        return self._payload.get("firstDivergence")
+
+    def to_dict(self):
+        return self._payload
