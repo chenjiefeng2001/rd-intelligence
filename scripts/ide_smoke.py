@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import time
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
