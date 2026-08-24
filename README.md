@@ -60,9 +60,38 @@ rdebug pipeline capture.rdc --eid 1234
 rdebug usage capture.rdc --resource 91
 rdebug pixel-history capture.rdc --target 91 --x 824 --y 391
 rdebug trace-pixel capture.rdc --x 824 --y 391
+rdebug debug-pixel capture.rdc --x 824 --y 391            # 自动从 pixel history 选 fragment
+rdebug debug-pixel capture.rdc --x 824 --y 391 --primitive 3 --sample 0
 ```
 
 所有命令向 stdout 输出严格 JSON（NaN/Inf 已字符串化），错误走 stderr 的 `{"error": ...}` 并返回非零退出码，便于脚本与未来的 AI Agent 直接消费。
+
+## Evidence Contract
+
+所有分析结果必须能追溯到一个统一的证据结构：
+
+```json
+{
+  "id": "a1b2c3d4e5f6",
+  "capture": "capture.rdc",
+  "eventId": 1821,
+  "resourceId": "ResourceId(91)",
+  "subresource": {"mip": 0, "slice": 0, "sample": 0},
+  "location": {"x": 824, "y": 391},
+  "operation": "writes",
+  "source": "ReplayController.PixelHistory",
+  "data": {}
+}
+```
+
+规则：
+
+- `id` 由除 `data` 外的字段内容哈希生成，稳定可引用；
+- `data` 携带附加负载，不参与身份计算；
+- 任何结论（图上的边、shader trace、未来的 diff/AI 结论）只能通过 evidence 引用回原始查询；
+- 未来新增分析（resource flow、diff、AI）一律复用 `rdebug.evidence.make`，不得自造格式。
+
+## 使用
 
 `trace-pixel` 输出形如：
 
@@ -77,7 +106,8 @@ rdebug trace-pixel capture.rdc --x 824 --y 391
   ],
   "edges": [
     {"from": "draw:1234", "to": "target:ResourceId(91)", "label": "writes",
-     "evidence": {"eventId": 1234, "primitives": [3], "postMod": {"float": [0,0,0,1]}}},
+     "evidence": [{"id": "...", "eventId": 1234, "operation": "writes",
+                    "data": {"primitives": [3], "postMod": {"float": [0,0,0,1]}}}]},
     {"from": "shader:1234:ResourceId(7)", "to": "resource:ResourceId(42)", "label": "reads"}
   ],
   "summary": {"modificationCount": 2, "finalValue": {"float": [0,0,0,1]}, "truncatedDraws": false}
@@ -86,31 +116,88 @@ rdebug trace-pixel capture.rdc --x 824 --y 391
 
 每个节点/边都携带 eventId 级别的 evidence 引用——这是"Evidence-first"原则：任何结论都必须能指回原始数据。
 
+## Shader Debug（Phase 2a）
+
+```bash
+rdebug debug-pixel capture.rdc --x 824 --y 391
+```
+
+流程：自动选输出目标 → pixel history 找到最后一个通过且非 unboundPS 的 fragment → `SetFrameEvent` → `DebugPixel` → `ContinueDebug` 循环 → 结构化 trace。输出形如：
+
+```json
+{
+  "eventId": 1821,
+  "pixel": {"x": 824, "y": 391},
+  "primitive": 3,
+  "shader": {"stage": "Pixel", "entryPoint": "PSMain", "resource": "ResourceId(7)"},
+  "inputs": [{"name": "input.color", "type": "Float", "rows": 1, "columns": 4}],
+  "outputs": {},
+  "steps": [
+    {"stepIndex": 5, "nextInstruction": 12,
+     "source": {"fileIndex": 0, "line": 42, "disassemblyLine": 17},
+     "disassemblyText": "mov o0.xyzw, r0.xyzw",
+     "sourceFile": "ps.hlsl",
+     "changes": [{"before": {...}, "after": {...}}]}
+  ],
+  "stepCount": 87,
+  "truncated": false,
+  "evidence": [{"id": "...", "operation": "shader_debug"}]
+}
+```
+
+说明：
+
+- `inputs`/`constantBlocks` 来自 `ShaderDebugTrace` 的原生变量树；`outputs` 目前为占位（跨 API 提取输出寄存器留到后续）；
+- `--no-disassembly` 可省略反汇编文本，只保留行号映射；
+- shader 不可调试时（`debugInfo.debuggable == false`）返回带 `debugStatus` 的明确错误，而不是猜测。
+
 ## 作为库使用
 
 ```python
 from rdebug.adapter.core import CaptureSession
 from rdebug.analysis.pixel_trace import trace_pixel
+from rdebug.analysis.shader_trace import debug_pixel
 
 with CaptureSession("capture.rdc") as s:
     graph = trace_pixel(s, x=824, y=391)
+    trace = debug_pixel(s, x=824, y=391)   # 自动选 fragment 并步进 shader
 ```
 
 ## 测试与质量
 
 ```bash
+python -m unittest discover -s tests          # 纯逻辑单元测试，无需 renderdoc 模块
+python -m ruff check src tests                # 可选
+
+# 集成测试：需要真实模块 + capture，缺省自动跳过
+set RDEBUG_RENDERDOC_PATH=C:\path\to\built\pymodules
+set RDEBUG_INTEGRATION_CAPTURE=D:\captures\test.rdc
 python -m unittest discover -s tests
-python -m ruff check src tests   # 可选
+```
+
+目录结构：
+
+```
+tests/
+├── unit/            # 不依赖 GPU / renderdoc 模块，CI 可全跑
+│   ├── test_events_logic.py
+│   ├── test_evidence.py
+│   ├── test_pixel_trace_graph.py
+│   ├── test_shader_trace_build.py
+│   └── test_cli.py
+└── integration/     # 通过环境变量开启，验证真实 replay 路径
+    └── test_real_replay.py
 ```
 
 ## Roadmap
 
 - [x] Phase 1a：Adapter（info/events/draws/resources/pipeline/pixel-history/usage）
 - [x] Phase 1b：Lazy Graph（trace-pixel 局部图，JSON 证据输出）
-- [ ] Phase 2a：Shader debug 步进封装（DebugPixel → 变量级 trace）
-- [ ] Phase 2b：多帧 diff、资源生命周期摘要（仍为查询时计算）
+- [x] Phase 2a：Shader Debug Adapter（debug-pixel → 结构化 ShaderTrace）+ Evidence Contract
+- [ ] Phase 2b：Resource/Data Flow、多帧 diff（仍为查询时计算）
 - [ ] Phase 2c：旁路 capture index（`*.rdc.idx`，仅在性能实测需要时引入）
-- [ ] Phase 3：AI Provider 外部适配层（消费 JSON 证据，绝不反向污染 Layer 0/1）
+- [ ] Phase 3：Capture Diff
+- [ ] Phase 4：AI Provider 外部适配层（只消费 evidence 引用，绝不反向污染 Layer 0/1）
 
 ## 许可证
 

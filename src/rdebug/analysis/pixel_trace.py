@@ -1,5 +1,6 @@
-from ..errors import QueryError
-from ..query.events import build_action_index
+from ..evidence import make as make_evidence
+from ..query.events import build_action_index, flatten_actions
+from .common import choose_output_target
 
 MAX_DRAWS_DEFAULT = 16
 MAX_INPUT_RESOURCES = 8
@@ -33,7 +34,7 @@ def _group_modifications(modifications):
     return [by_event[e] for e in sorted(order)]
 
 
-def build_graph(pixel, history, pipelines, actions=None, target=None):
+def build_graph(pixel, history, pipelines, actions=None, target=None, capture=None):
     nodes = []
     edges = []
     actions_index = actions or {}
@@ -42,22 +43,46 @@ def build_graph(pixel, history, pipelines, actions=None, target=None):
         nodes.append(node)
         return node
 
-    pixel_id = "pixel:{},{}".format(pixel["x"], pixel["y"])
+    pixel_id = f"pixel:{pixel['x']},{pixel['y']}"
     add_node(
         {
             "id": pixel_id,
             "kind": "pixel",
-            "attrs": {"x": pixel["x"], "y": pixel["y"], "mip": history.get("mip", 0),
-                      "slice": history.get("slice", 0), "sample": history.get("sample", 0)},
+            "attrs": {
+                "x": pixel["x"],
+                "y": pixel["y"],
+                "mip": history.get("mip", 0),
+                "slice": history.get("slice", 0),
+                "sample": history.get("sample", 0),
+            },
         }
     )
 
     target_rid = target or history.get("resource")
     if target_rid is not None:
-        add_node({"id": f"target:{target_rid}", "kind": "target",
-                  "attrs": {"resource": str(target_rid)}})
-        edges.append({"from": f"target:{target_rid}", "to": pixel_id,
-                      "label": "contains", "evidence": {}})
+        add_node(
+            {
+                "id": f"target:{target_rid}",
+                "kind": "target",
+                "attrs": {"resource": str(target_rid)},
+            }
+        )
+        edges.append(
+            {
+                "from": f"target:{target_rid}",
+                "to": pixel_id,
+                "label": "contains",
+                "evidence": [
+                    make_evidence(
+                        capture=capture,
+                        resource_id=str(target_rid),
+                        location={"x": pixel["x"], "y": pixel["y"]},
+                        operation="contains",
+                        source="rdebug.analysis.pixel_trace",
+                    )
+                ],
+            }
+        )
 
     write_groups = _group_modifications(history["modifications"])
     for group in write_groups:
@@ -84,11 +109,19 @@ def build_graph(pixel, history, pipelines, actions=None, target=None):
                     "from": draw_id,
                     "to": f"target:{target_rid}",
                     "label": "writes",
-                    "evidence": {
-                        "eventId": eid,
-                        "primitives": group["primitives"],
-                        "postMod": group["lastPostMod"],
-                    },
+                    "evidence": [
+                        make_evidence(
+                            capture=capture,
+                            event_id=eid,
+                            resource_id=str(target_rid),
+                            operation="writes",
+                            source="ReplayController.PixelHistory",
+                            data={
+                                "primitives": group["primitives"],
+                                "postMod": group["lastPostMod"],
+                            },
+                        )
+                    ],
                 }
             )
         pipe = pipelines.get(eid)
@@ -96,7 +129,7 @@ def build_graph(pixel, history, pipelines, actions=None, target=None):
             continue
         ps = pipe.get("shaders", {}).get("Pixel")
         if ps and not group["directWrite"]:
-            shader_id = "shader:{}:{}".format(eid, ps["resource"])
+            shader_id = f"shader:{eid}:{ps['resource']}"
             add_node(
                 {
                     "id": shader_id,
@@ -109,8 +142,22 @@ def build_graph(pixel, history, pipelines, actions=None, target=None):
                     },
                 }
             )
-            edges.append({"from": draw_id, "to": shader_id, "label": "bound_ps",
-                          "evidence": {"eventId": eid}})
+            edges.append(
+                {
+                    "from": draw_id,
+                    "to": shader_id,
+                    "label": "bound_ps",
+                    "evidence": [
+                        make_evidence(
+                            capture=capture,
+                            event_id=eid,
+                            resource_id=str(ps["resource"]),
+                            operation="binds_ps",
+                            source="ReplayController.GetPipelineState",
+                        )
+                    ],
+                }
+            )
             input_count = 0
             for d in pipe.get("descriptors", []):
                 rid = d.get("resource")
@@ -121,25 +168,52 @@ def build_graph(pixel, history, pipelines, actions=None, target=None):
                     if input_count >= MAX_INPUT_RESOURCES:
                         continue
                     input_count += 1
-                    add_node({"id": res_id, "kind": "resource",
-                              "attrs": {"resource": str(rid)}})
+                    add_node({"id": res_id, "kind": "resource", "attrs": {"resource": str(rid)}})
                 edges.append(
                     {
                         "from": shader_id,
                         "to": res_id,
                         "label": "reads",
-                        "evidence": {"stage": d.get("stage"), "type": d.get("type"),
-                                     "index": d.get("index")},
+                        "evidence": [
+                            make_evidence(
+                                capture=capture,
+                                event_id=eid,
+                                resource_id=str(rid),
+                                operation="reads",
+                                source="ReplayController.GetPipelineState",
+                                data={"stage": d.get("stage"), "type": d.get("type"),
+                                      "index": d.get("index")},
+                            )
+                        ],
                     }
                 )
         ib = pipe.get("indexBuffer")
         if ib and ib.get("resource"):
-            ib_id = "resource:{}".format(ib["resource"])
+            ib_id = f"resource:{ib['resource']}"
             if not any(n["id"] == ib_id for n in nodes):
-                add_node({"id": ib_id, "kind": "resource",
-                          "attrs": {"resource": str(ib["resource"])}})
-            edges.append({"from": draw_id, "to": ib_id, "label": "reads_indices",
-                          "evidence": {"eventId": eid}})
+                add_node(
+                    {
+                        "id": ib_id,
+                        "kind": "resource",
+                        "attrs": {"resource": str(ib["resource"])},
+                    }
+                )
+            edges.append(
+                {
+                    "from": draw_id,
+                    "to": ib_id,
+                    "label": "reads_indices",
+                    "evidence": [
+                        make_evidence(
+                            capture=capture,
+                            event_id=eid,
+                            resource_id=str(ib["resource"]),
+                            operation="reads_indices",
+                            source="ReplayController.GetPipelineState",
+                        )
+                    ],
+                }
+            )
 
     final_value = None
     for m in reversed(history["modifications"]):
@@ -151,6 +225,7 @@ def build_graph(pixel, history, pipelines, actions=None, target=None):
         "writeEventCount": len(write_groups),
         "finalValue": final_value,
         "contextEventId": history.get("contextEventId"),
+        "evidence": history.get("evidence", []),
     }
     return {"nodes": nodes, "edges": edges, "summary": summary}
 
@@ -169,17 +244,7 @@ def trace_pixel(
     if context_eid is None:
         context_eid = session.last_event_id()
     if target is None:
-        ctx_pipe = session.pipeline(context_eid)
-        outs = ctx_pipe.get("outputTargets") or []
-        depth = ctx_pipe.get("depthTarget")
-        if outs:
-            target = outs[0]["resource"]
-        elif depth:
-            target = depth["resource"]
-        else:
-            raise QueryError(
-                f"no output targets bound at event {context_eid}; pass --target explicitly"
-            )
+        target = choose_output_target(session, context_eid)
 
     history = session.pixel_history(
         target, x, y, mip=mip, slice_=slice_, sample=sample, context_eid=context_eid
@@ -190,9 +255,6 @@ def trace_pixel(
     selected = write_events[-max_draws:] if truncated else write_events
 
     pipelines = {eid: session.pipeline(eid) for eid in selected}
-
-    from ..query.events import flatten_actions
-
     actions_index = build_action_index(flatten_actions(session.root_actions()))
 
     graph = build_graph(
@@ -201,6 +263,7 @@ def trace_pixel(
         pipelines,
         actions=actions_index,
         target=str(target),
+        capture=session.path,
     )
     graph["summary"]["truncatedDraws"] = truncated
     graph["summary"]["totalWriteEvents"] = len(write_events)

@@ -104,6 +104,23 @@ def _build_parser():
     trace.add_argument("--sample", type=int, default=0)
     trace.add_argument("--max-draws", type=int, default=16)
 
+    dbg = sub.add_parser(
+        "debug-pixel",
+        help="run the RenderDoc shader debugger on one pixel fragment and emit a structured trace",
+    )
+    _add_common(dbg)
+    dbg.add_argument("--x", type=int, required=True)
+    dbg.add_argument("--y", type=int, required=True)
+    dbg.add_argument("--target", default=None, help="resource id (default: first color output)")
+    dbg.add_argument("--eid", type=int, default=None,
+                     help="context event id (default: last event in frame)")
+    dbg.add_argument("--primitive", type=int, default=None,
+                     help="primitive id to debug (default: auto-pick from pixel history)")
+    dbg.add_argument("--sample", type=int, default=None)
+    dbg.add_argument("--view", type=int, default=None)
+    dbg.add_argument("--max-steps", type=int, default=4096)
+    dbg.add_argument("--no-disassembly", action="store_true")
+
     indent = parser.add_argument("-i", "--indent", type=int, default=2)
     indent.help = "JSON indentation"
     return parser
@@ -230,6 +247,24 @@ def _dispatch(args, indent):
                 slice_=args.slice,
                 sample=args.sample,
                 max_draws=args.max_draws,
+            )
+        _emit(payload, indent)
+        return 0
+    if cmd == "debug-pixel":
+        from .analysis.shader_trace import debug_pixel
+
+        with _open_session(args) as s:
+            payload = debug_pixel(
+                s,
+                args.x,
+                args.y,
+                target=args.target,
+                context_eid=args.eid,
+                primitive=args.primitive,
+                sample=args.sample,
+                view=args.view,
+                max_steps=args.max_steps,
+                include_disassembly=not args.no_disassembly,
             )
         _emit(payload, indent)
         return 0

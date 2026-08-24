@@ -1,7 +1,20 @@
 from ..errors import CaptureOpenError, QueryError, ReplayUnsupportedError
+from ..evidence import make as _make_evidence
 from .locator import import_renderdoc
 
 _STAGE_NAMES = ("Vertex", "Hull", "Domain", "Geometry", "Pixel", "Compute")
+
+_VAR_VIEWS = {
+    "Float": "f32v",
+    "Double": "f64v",
+    "Half": "f16v",
+    "SInt": "s32v",
+    "UInt": "u32v",
+    "SByte": "s8v",
+    "UByte": "u8v",
+    "SShort": "s16v",
+    "UShort": "u16v",
+}
 
 _FAILURE_FLAGS = (
     "backfaceCulled",
@@ -54,6 +67,82 @@ def _modification_to_dict(h):
     for name in _FAILURE_FLAGS:
         row[name] = bool(getattr(h, name, False))
     return row
+
+
+def _no_preference(rd):
+    pref = getattr(rd.ReplayController, "NoPreference", None)
+    if pref is not None:
+        try:
+            return int(pref)
+        except (TypeError, ValueError):
+            pass
+    return 0xFFFFFFFF
+
+
+def _var_values(v):
+    n = int(v.rows) * int(v.columns)
+    if n <= 0:
+        n = 1
+    val = getattr(v, "value", None)
+    if val is None:
+        return None
+    attr = _VAR_VIEWS.get(str(getattr(v, "type", "")), "f32v")
+    arr = getattr(val, attr, None)
+    if arr is None:
+        arr = getattr(val, "f32v", None)
+        if arr is None:
+            return None
+    out = []
+    for i in range(min(n, 16)):
+        x = arr[i]
+        try:
+            out.append(float(x) if attr.startswith("f") else int(x))
+        except (TypeError, ValueError):
+            out.append(str(x))
+    return out
+
+
+def _variable_to_dict(v, depth=0):
+    out = {
+        "name": str(getattr(v, "name", "")),
+        "type": str(getattr(v, "type", "")),
+        "rows": int(getattr(v, "rows", 1)),
+        "columns": int(getattr(v, "columns", 1)),
+    }
+    members = getattr(v, "members", None)
+    if depth < 6 and members is not None and len(members):
+        out["members"] = [_variable_to_dict(m, depth + 1) for m in members]
+    else:
+        values = _var_values(v)
+        if values is not None:
+            out["value"] = values
+    return out
+
+
+def _state_to_dict(s):
+    return {
+        "stepIndex": int(s.stepIndex),
+        "nextInstruction": int(s.nextInstruction),
+        "events": int(getattr(s, "flags", 0)),
+        "callstack": [str(c) for c in s.callstack],
+        "changes": [
+            {"before": _variable_to_dict(ch.before), "after": _variable_to_dict(ch.after)}
+            for ch in s.changes
+        ],
+    }
+
+
+def _instinfo_to_dict(i):
+    li = i.lineInfo
+    return {
+        "instruction": int(i.instruction),
+        "disassemblyLine": int(li.disassemblyLine),
+        "fileIndex": int(li.fileIndex),
+        "lineStart": int(li.lineStart),
+        "lineEnd": int(li.lineEnd),
+        "colStart": int(li.colStart),
+        "colEnd": int(li.colEnd),
+    }
 
 
 class CaptureSession:
@@ -291,8 +380,101 @@ class CaptureSession:
             "mip": int(mip),
             "slice": int(slice_),
             "sample": int(sample),
+            "evidence": [
+                _make_evidence(
+                    capture=self.path,
+                    event_id=int(context_eid),
+                    resource_id=_rid_str(real),
+                    subresource={"mip": int(mip), "slice": int(slice_), "sample": int(sample)},
+                    location={"x": int(x), "y": int(y)},
+                    operation="pixel_history",
+                    source="ReplayController.PixelHistory",
+                )
+            ],
             "modifications": [_modification_to_dict(h) for h in history],
         }
+
+    def debug_pixel(
+        self,
+        x,
+        y,
+        primitive=None,
+        sample=None,
+        view=None,
+        eid=None,
+        max_steps=4096,
+    ):
+        rd = self._rd
+        if eid is not None:
+            self.set_event(eid)
+        pipe = self._ctrl.GetPipelineState()
+        stage = rd.ShaderStage.Pixel
+        null = rd.ResourceId.Null()
+        sid = pipe.GetShader(stage)
+        if sid == null:
+            raise QueryError(f"no pixel shader bound at event {self._current_eid}")
+        refl = pipe.GetShaderReflection(stage)
+        di = getattr(refl, "debugInfo", None)
+        if di is None or not di.debuggable:
+            status = str(di.debugStatus) if di is not None else "no debug info available"
+            raise QueryError(
+                f"pixel shader at event {self._current_eid} is not debuggable: {status}"
+            )
+        nopref = _no_preference(rd)
+        inputs = rd.DebugPixelInputs()
+        inputs.primitive = nopref if primitive is None else int(primitive)
+        inputs.sample = nopref if sample is None else int(sample)
+        inputs.view = nopref if view is None else int(view)
+        trace = self._ctrl.DebugPixel(int(x), int(y), inputs)
+        if trace is None or getattr(trace, "debugger", None) is None:
+            if trace is not None:
+                try:
+                    self._ctrl.FreeTrace(trace)
+                except Exception:
+                    pass
+            raise QueryError(
+                f"shader debugging failed at event {self._current_eid} "
+                f"for pixel ({int(x)},{int(y)}) primitive={primitive}"
+            )
+        try:
+            states = []
+            truncated = False
+            while True:
+                more = self._ctrl.ContinueDebug(trace.debugger)
+                if not len(more):
+                    break
+                states.extend(more)
+                if len(states) >= max_steps:
+                    truncated = True
+                    break
+            pipeline_obj = pipe.GetGraphicsPipelineObject()
+            disasm = ""
+            try:
+                disasm = str(self._ctrl.DisassembleShader(pipeline_obj, refl, ""))
+            except Exception:
+                pass
+            files = []
+            df = getattr(di, "files", None)
+            if df is not None:
+                files = [{"index": i, "filename": str(f.filename)} for i, f in enumerate(df)]
+            return {
+                "stage": str(trace.stage),
+                "entryPoint": str(refl.entryPoint),
+                "shaderResource": _rid_str(sid),
+                "pipelineObject": _rid_str(pipeline_obj),
+                "files": files,
+                "disassembly": disasm,
+                "steps": [_state_to_dict(s) for s in states],
+                "instInfo": [_instinfo_to_dict(i) for i in trace.instInfo],
+                "inputs": [_variable_to_dict(v) for v in trace.inputs],
+                "constantBlocks": [_variable_to_dict(v) for v in trace.constantBlocks],
+                "truncated": truncated,
+            }
+        finally:
+            try:
+                self._ctrl.FreeTrace(trace)
+            except Exception:
+                pass
 
     def pipeline(self, event_id=None):
         if event_id is not None:

@@ -82,10 +82,16 @@ class TestBuildGraph(unittest.TestCase):
         self.assertIn("reads", edge_labels)
         self.assertIn("reads_indices", edge_labels)
 
+        for e in graph["edges"]:
+            evs = e["evidence"]
+            self.assertIsInstance(evs, list)
+            for ev in evs:
+                self.assertIn("id", ev)
+
         writes = [e for e in graph["edges"] if e["label"] == "writes"]
-        passed_write = [e for e in writes if e["evidence"]["eventId"] == 200]
-        self.assertEqual(passed_write[0]["evidence"]["primitives"], [2])
-        self.assertEqual(passed_write[0]["evidence"]["postMod"]["float"],
+        passed_write = [e for e in writes if e["evidence"][0]["eventId"] == 200]
+        self.assertEqual(passed_write[0]["evidence"][0]["data"]["primitives"], [2])
+        self.assertEqual(passed_write[0]["evidence"][0]["data"]["postMod"]["float"],
                          [0.0, 0.0, 0.0, 1.0])
 
         summary = graph["summary"]
