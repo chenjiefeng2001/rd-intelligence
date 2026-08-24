@@ -5,7 +5,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-BASE = "http://127.0.0.1:8760"
+BASE = os.environ.get("IDE_BASE", "http://127.0.0.1:8760")
 CAPTURE = sys.argv[1]
 
 

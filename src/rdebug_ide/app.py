@@ -168,6 +168,11 @@ def _collect_ids(node):
     return out
 
 
+def api_stats(query):
+    stats = _manager.stats() if _manager is not None else {"count": 0}
+    return {"sessions": stats, "telemetry": bool(os.environ.get("RDEBUG_TELEMETRY"))}
+
+
 _ROUTES = {
     "/api/info": api_info,
     "/api/ci": api_ci,
@@ -175,16 +180,21 @@ _ROUTES = {
     "/api/diff": api_diff,
     "/api/resource": api_resource,
     "/api/explain": api_explain,
+    "/api/stats": api_stats,
 }
 
 
 def route(path, query):
+    from rdebug.observability import record, timed
+
     fn = _ROUTES.get(path)
     if fn is None:
         return 404, {"error": "unknown endpoint", "path": path}
     try:
-        return 200, fn(query)
+        with timed("query", transport="ide", endpoint=path):
+            return 200, fn(query)
     except RDebugError as e:
+        record("query_error", transport="ide", endpoint=path, error=str(e))
         return 400, {"error": str(e)}
 
 

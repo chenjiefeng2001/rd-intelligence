@@ -227,7 +227,10 @@ tests/
 - [x] Phase 5b：IDE 极简原型（`rdebug-ide`：CI failure → pixel → firstDivergence →
   provenance → evidence → grounded AI prompt，仅消费 Stable Core，
   见 `docs/validation/phase5b-ide.md`）
-- [ ] Phase 5c：并发策略（等真实 CI 多 job 场景）
+- [x] Phase 5c（重定义）：Production Observation——opt-in JSONL 遥测
+  （`RDEBUG_TELEMETRY`），transport 层记录 session/query 生命周期与延迟；
+  **并发层冻结**：除非真实数据证明瓶颈，且届时优先进程隔离
+  （见 `docs/validation/phase5c-observability.md`）
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
 
 ## Stable Core（冻结）
