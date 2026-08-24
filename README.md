@@ -210,8 +210,10 @@ tests/
 - [x] Phase 3b①：Deep Diff（`--include-shader-values`，默认关闭，基础语义不变）
 - [x] Phase 4a：Thin MCP Transport（`rdebug-mcp`，仅四个 tool，无编排/无分析/无 RenderDoc API；
   协议级冒烟通过，transport 测试与核心测试完全隔离）
-- [ ] Phase 4b：LLM tool-use smoke（只允许 Semantic API v1 四查询）
-- [ ] Phase 4c：Evidence-based reasoning 评估
+- [x] Phase 4b：真实 LLM tool-use 验证（被测模型 ox-alpha，self-play 经真实 MCP transport；
+  三实验 5/5 通过：tool selection / argument correctness / evidence grounding /
+  unknown discipline / no hallucinated API，见 `docs/validation/phase4b-trajectory.md`）
+- [ ] Phase 4c：Evidence-grounded reasoning benchmark（以 DiffResult 为 ground truth）
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
 
 ## MCP Transport（Phase 4a）
