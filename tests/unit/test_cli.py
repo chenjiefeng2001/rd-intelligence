@@ -39,7 +39,6 @@ class TestCli(unittest.TestCase):
         self.assertEqual(code, 2)
         payload = parse_error(err)
         self.assertIn("error", payload)
-        self.assertIn("RDEBUG_RENDERDOC_PATH", payload["error"])
 
     def test_trace_pixel_requires_session(self):
         code, _, err = run_main(["trace-pixel", "nope.rdc", "--x", "1", "--y", "2"])

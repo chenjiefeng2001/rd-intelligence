@@ -98,7 +98,7 @@ def debug_pixel(
     include_disassembly=True,
 ):
     if context_eid is None:
-        context_eid = session.last_event_id()
+        context_eid = session.last_draw_event_id()
     if target is None:
         target = choose_output_target(session, context_eid)
     target = str(target)

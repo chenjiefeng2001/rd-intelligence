@@ -28,6 +28,9 @@ _FAILURE_FLAGS = (
     "stencilTestFailed",
 )
 
+_REPLAY_LIFECYCLE = {"initialised": False, "sessions": 0, "rd": None}
+_ENUMS = {}
+
 
 def _rid_str(rid):
     return str(rid)
@@ -79,6 +82,22 @@ def _no_preference(rd):
     return 0xFFFFFFFF
 
 
+def _enum_name(enum_type, value):
+    try:
+        wanted = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    for name in dir(enum_type):
+        if name.startswith("_"):
+            continue
+        try:
+            if int(getattr(enum_type, name)) == wanted:
+                return name
+        except (TypeError, ValueError):
+            continue
+    return str(value)
+
+
 def _var_values(v):
     n = int(v.rows) * int(v.columns)
     if n <= 0:
@@ -105,7 +124,7 @@ def _var_values(v):
 def _variable_to_dict(v, depth=0):
     out = {
         "name": str(getattr(v, "name", "")),
-        "type": str(getattr(v, "type", "")),
+        "type": _enum_name(_ENUMS.get("VarType"), getattr(v, "type", None)),
         "rows": int(getattr(v, "rows", 1)),
         "columns": int(getattr(v, "columns", 1)),
     }
@@ -150,8 +169,15 @@ class CaptureSession:
         self.path = str(path)
         self.driver = None
         self._current_eid = 0
+        self._rid_cache = None
         self._rd = import_renderdoc(rd_path)
-        self._initialised = True
+        if not _REPLAY_LIFECYCLE["initialised"]:
+            self._rd.InitialiseReplay(self._rd.GlobalEnvironment(), [])
+            _REPLAY_LIFECYCLE["initialised"] = True
+            _REPLAY_LIFECYCLE["rd"] = self._rd
+            _ENUMS["VarType"] = getattr(self._rd, "VarType", None)
+            _ENUMS["ShaderStage"] = getattr(self._rd, "ShaderStage", None)
+        _REPLAY_LIFECYCLE["sessions"] += 1
         self._cap = None
         self._ctrl = None
         try:
@@ -205,12 +231,19 @@ class CaptureSession:
                 cap.Shutdown()
             except Exception:
                 pass
-        if getattr(self, "_initialised", False):
-            self._initialised = False
+        _REPLAY_LIFECYCLE["sessions"] = max(0, _REPLAY_LIFECYCLE["sessions"] - 1)
+
+    @classmethod
+    def shutdown_replay(cls):
+        """Explicitly shut down the process-wide replay API. After this no new
+        CaptureSession can be opened in this process (RenderDoc does not allow
+        re-initialisation), so only call it when completely finished."""
+        if _REPLAY_LIFECYCLE["initialised"] and _REPLAY_LIFECYCLE["sessions"] == 0:
             try:
-                self._rd.ShutdownReplay()
+                _REPLAY_LIFECYCLE["rd"].ShutdownReplay()
             except Exception:
                 pass
+            _REPLAY_LIFECYCLE["initialised"] = False
 
     @property
     def rd(self):
@@ -261,6 +294,12 @@ class CaptureSession:
         rows = self.action_rows()
         if not rows:
             return 0
+        return max(r["eventId"] for r in rows)
+
+    def last_draw_event_id(self):
+        rows = self.draw_rows()
+        if not rows:
+            return self.last_event_id()
         return max(r["eventId"] for r in rows)
 
     def api_info(self):
@@ -339,10 +378,32 @@ class CaptureSession:
     def _to_resource_id(self, rid):
         if isinstance(rid, self._rd.ResourceId):
             return rid
-        digits = "".join(ch for ch in str(rid) if ch.isdigit())
-        if not digits:
-            raise QueryError(f"invalid resource id: {rid!r}")
-        return self._rd.ResourceId(int(digits))
+        key = str(rid)
+        cache = self._resource_id_cache()
+        if key in cache:
+            return cache[key]
+        digits = "".join(ch for ch in key if ch.isdigit())
+        matches = (
+            [
+                v
+                for k, v in cache.items()
+                if k.endswith(f"({digits})") or k.endswith(f"::{digits}")
+            ]
+            if digits
+            else []
+        )
+        if len(matches) == 1:
+            return matches[0]
+        raise QueryError(
+            f"unknown resource id {key!r}; use an id from 'rdebug resources'"
+        )
+
+    def _resource_id_cache(self):
+        if getattr(self, "_rid_cache", None) is None:
+            self._rid_cache = {}
+            for r in self._ctrl.GetResources():
+                self._rid_cache[str(r.resourceId)] = r.resourceId
+        return self._rid_cache
 
     def _texture_comp_type(self, real):
         want = _rid_str(real)
@@ -458,7 +519,7 @@ class CaptureSession:
             if df is not None:
                 files = [{"index": i, "filename": str(f.filename)} for i, f in enumerate(df)]
             return {
-                "stage": str(trace.stage),
+                "stage": _enum_name(_ENUMS.get("ShaderStage"), trace.stage),
                 "entryPoint": str(refl.entryPoint),
                 "shaderResource": _rid_str(sid),
                 "pipelineObject": _rid_str(pipeline_obj),

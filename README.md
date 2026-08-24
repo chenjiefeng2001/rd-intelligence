@@ -194,7 +194,8 @@ tests/
 - [x] Phase 1a：Adapter（info/events/draws/resources/pipeline/pixel-history/usage）
 - [x] Phase 1b：Lazy Graph（trace-pixel 局部图，JSON 证据输出）
 - [x] Phase 2a：Shader Debug Adapter（debug-pixel → 结构化 ShaderTrace）+ Evidence Contract
-- [ ] Phase 2b：Resource/Data Flow、多帧 diff（仍为查询时计算）
+- [x] Phase 2a 验证：真实 `renderdoc.pyd` + 真实 `.rdc` 端到端（见 `docs/validation/phase2a.md`）
+- [ ] Phase 2b：`trace-resource`（writer/reader 查询）→ 再扩展为 Pixel→Resource→Writer 数据流
 - [ ] Phase 2c：旁路 capture index（`*.rdc.idx`，仅在性能实测需要时引入）
 - [ ] Phase 3：Capture Diff
 - [ ] Phase 4：AI Provider 外部适配层（只消费 evidence 引用，绝不反向污染 Layer 0/1）

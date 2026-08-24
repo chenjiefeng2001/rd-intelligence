@@ -54,12 +54,28 @@ class TestRealReplay(unittest.TestCase):
         s = self._session
         graph = trace_pixel(
             s,
-            x=int(os.environ.get("RDEBUG_INTEGRATION_X", "8")),
-            y=int(os.environ.get("RDEBUG_INTEGRATION_Y", "8")),
+            x=int(os.environ.get("RDEBUG_INTEGRATION_X", "320")),
+            y=int(os.environ.get("RDEBUG_INTEGRATION_Y", "240")),
             max_draws=4,
         )
         self.assertIn("nodes", graph)
         self.assertIn("edges", graph)
+
+    def test_debug_pixel_smoke(self):
+        from rdebug.analysis.shader_trace import debug_pixel
+
+        s = self._session
+        trace = debug_pixel(
+            s,
+            x=int(os.environ.get("RDEBUG_INTEGRATION_X", "320")),
+            y=int(os.environ.get("RDEBUG_INTEGRATION_Y", "240")),
+            max_steps=2048,
+        )
+        self.assertTrue(trace["shader"]["debuggable"])
+        self.assertGreater(trace["stepCount"], 0)
+        self.assertFalse(trace["truncated"])
+        for ev in trace["evidence"]:
+            self.assertIn("id", ev)
 
 
 if __name__ == "__main__":
