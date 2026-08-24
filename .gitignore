@@ -9,3 +9,5 @@ venv/
 .ruff_cache/
 .mypy_cache/
 *.rdc.idx
+tests/workload/corpus/
+tests/workload/reports/
