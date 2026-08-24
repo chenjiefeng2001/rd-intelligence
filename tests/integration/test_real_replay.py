@@ -121,6 +121,26 @@ class TestRealReplay(unittest.TestCase):
         parsed = type(diff).parse(diff.to_dict())
         self.assertEqual(parsed.comparison, diff.comparison)
 
+    def test_diff_pixel_shader_values_modes(self):
+        from rdebug.analysis.pixel_diff import diff_pixel
+
+        s = self._session
+        structural = diff_pixel(s, (320, 240), (330, 240))
+        structural_entry = next(
+            ly for ly in structural.payload["layers"]
+            if ly["layer"] == "shader_input_values"
+        )
+        self.assertEqual(structural_entry["status"], "unknown")
+
+        deep = diff_pixel(s, (320, 240), (330, 240), include_shader_values=True)
+        deep_entry = next(
+            ly for ly in deep.payload["layers"]
+            if ly["layer"] == "shader_input_values"
+        )
+        self.assertIn(deep_entry["status"], ("same", "different"))
+        if deep_entry["status"] == "different":
+            self.assertEqual(deep.first_divergence["layer"], "shader_input_values")
+
 
 if __name__ == "__main__":
     unittest.main()

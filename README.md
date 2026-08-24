@@ -205,9 +205,23 @@ tests/
   六层比较（pixel_value/fragment/shader/input_bindings/shader_input_values/resource_provenance）、
   same|different|unknown 三态（无相似度）、最深因果层为 firstDivergence、全链 evidence 回链；
   跨 capture identity 语义与采样值提取留待后续（当前 `shader_input_values` 默认 unknown）
-- [ ] Phase 3b：跨 capture diff（语义资源匹配）+ 采样值内容比较
-- [ ] Phase 4：AI / MCP 外部接入层（仅暴露 trace_pixel/trace_resource/debug_pixel/diff_pixel
-  四个语义查询；确定性 RCA 覆盖评估后再引入）
+- [x] Phase 3a closure：Medium 档插桩验证（history 恰好 2 次、无重复展开、语义稳定，
+  见 `docs/validation/phase3a-closure.md`）+ **Semantic API v1 冻结**
+- [x] Phase 3b①：Deep Diff（`--include-shader-values`，默认关闭，基础语义不变）
+- [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
+- [ ] Phase 4：AI / MCP 外部接入层（仅暴露 Semantic API v1 四个查询；
+  AI 不获得任何原始 RenderDoc API 权限）
+
+## Semantic API v1（冻结）
+
+```python
+from rdebug import trace_pixel, trace_resource, debug_pixel, diff_pixel
+```
+
+这四个概念是稳定公共面：签名只做加法演进，RenderDoc API 变化由 Adapter 吸收。
+分层职责：`RenderDoc = Replay Engine`，`rd-intelligence = Debug Semantics`，
+`MCP = AI Transport`，`LLM = Reasoning/Explanation`——AI 只消费 evidence、
+解释证据、排序假设、规划下一步查询，不操作底层 API。
 
 ## 设计原则（由真实验证固化）
 

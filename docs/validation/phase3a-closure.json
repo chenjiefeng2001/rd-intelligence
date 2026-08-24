@@ -1,0 +1,53 @@
+{
+  "capture": "C:\\Users\\14977\\AppData\\Local\\Temp\\opencode\\capapp\\medium_frame11.rdc",
+  "totalMs": 1221.81,
+  "callCounts": {
+    "root_actions": 5,
+    "pipeline": 18,
+    "pixel_history": 2,
+    "usage": 2
+  },
+  "callTimesMs": {
+    "pixel_history": {
+      "calls": 2,
+      "totalMs": 1149.27,
+      "maxMs": 1099.27
+    },
+    "usage": {
+      "calls": 2,
+      "totalMs": 34.67,
+      "maxMs": 19.39
+    },
+    "pipeline": {
+      "calls": 18,
+      "totalMs": 6.53,
+      "maxMs": 1.06
+    },
+    "root_actions": {
+      "calls": 5,
+      "totalMs": 0.65,
+      "maxMs": 0.16
+    }
+  },
+  "comparison": "different",
+  "firstDivergence": {
+    "layer": "fragment",
+    "path": "last passed fragment (eventId, primitiveID)"
+  },
+  "layerStatuses": {
+    "pixel_value": "different",
+    "fragment": "different",
+    "shader": "same",
+    "input_bindings": "same",
+    "shader_input_values": "unknown",
+    "resource_provenance": "same"
+  },
+  "unknownLayers": [
+    "shader_input_values"
+  ],
+  "evidenceCount": 21,
+  "payloadBytes": 12410,
+  "rerunMs": 1197.77,
+  "semanticallyStable": true,
+  "historyCallsAfterRerun": 4
+}

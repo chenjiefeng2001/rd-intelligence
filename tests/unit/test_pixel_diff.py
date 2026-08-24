@@ -64,11 +64,13 @@ def pipeline(shader="ResourceId::49", reads=("ResourceId::47",)):
 class FakeSession:
     path = "cap.rdc"
 
-    def __init__(self, history_by_point, pipelines_by_eid, usage_by_rid):
+    def __init__(self, history_by_point, pipelines_by_eid, usage_by_rid,
+                 debug_inputs=None):
         self.history_calls = []
         self._hist = history_by_point
         self._pipes = pipelines_by_eid
         self._usage = usage_by_rid
+        self._debug_inputs = debug_inputs
 
     def pixel_history(self, rid, x, y, mip=0, slice_=0, sample=0,
                       comp_type=None, context_eid=None):
@@ -91,7 +93,26 @@ class FakeSession:
 
     def debug_pixel(self, x, y, primitive=None, sample=None, view=None,
                     eid=None, max_steps=4096):
-        raise QueryError("debug not available in fake")
+        if self._debug_inputs is None:
+            raise QueryError("debug not available in fake")
+        inputs = (
+            self._debug_inputs(x, y)
+            if callable(self._debug_inputs)
+            else self._debug_inputs
+        )
+        return {
+            "stage": "Pixel",
+            "entryPoint": "main",
+            "shaderResource": "ResourceId::49",
+            "pipelineObject": "ResourceId::1",
+            "files": [],
+            "disassembly": "ret",
+            "steps": [],
+            "instInfo": [],
+            "inputs": inputs,
+            "constantBlocks": [],
+            "truncated": False,
+        }
 
     def last_draw_event_id(self):
         return 8
@@ -103,12 +124,12 @@ USAGE = {
 }
 
 
-def make_session(hist_a, hist_b, pipe_a=None, pipe_b=None):
+def make_session(hist_a, hist_b, pipe_a=None, pipe_b=None, debug_inputs=None):
     pipes = {8: pipe_a or pipeline()}
-    if pipe_b is not None or 9 in hist_b.get("modifications", []) or True:
+    if pipe_b is not None or True:
         pipes[9] = pipe_b or pipeline()
     pipes[1] = pipe_a or pipeline()
-    return FakeSession(hist_a | hist_b, pipes, USAGE)
+    return FakeSession(hist_a | hist_b, pipes, USAGE, debug_inputs=debug_inputs)
 
 
 class TestCompareScalar(unittest.TestCase):
@@ -191,6 +212,37 @@ class TestDiffPixel(unittest.TestCase):
         h = PixelHistoryResult.parse(history(8, 0))
         diff_pixel(s, (10, 10), (20, 10), history_a=h, history_b=h)
         self.assertEqual(s.history_calls, [])
+
+    def test_shader_values_enabled_same(self):
+        inputs = [{"name": "v1", "value": [0.5, 0.5, 0.5, 1.0]}]
+        s = make_session({(10, 10): history(8, 0)}, {(20, 10): history(8, 0)},
+                         debug_inputs=inputs)
+        result = diff_pixel(s, (10, 10), (20, 10), include_shader_values=True)
+        entry = next(ly for ly in result.payload["layers"]
+                     if ly["layer"] == "shader_input_values")
+        self.assertEqual(entry["status"], "same")
+        self.assertEqual(result.comparison, "same")
+        self.assertNotIn("note", entry)
+
+    def test_shader_values_enabled_different_becomes_first_divergence(self):
+        inputs_by_x = lambda x, y: [  # noqa: E731
+            {"name": "v1",
+             "value": [0.5, 0.5, 0.5, 1.0] if x == 10 else [0.9, 0.1, 0.1, 1.0]}
+        ]
+        s = make_session({(10, 10): history(8, 0)},
+                         {(20, 10): history(8, 0, r=0.6)},
+                         debug_inputs=inputs_by_x)
+        result = diff_pixel(s, (10, 10), (20, 10), include_shader_values=True)
+        self.assertEqual(result.first_divergence["layer"], "shader_input_values")
+        self.assertEqual(result.comparison, "different")
+
+    def test_shader_values_debug_failure_stays_unknown(self):
+        s = make_session({(10, 10): history(8, 0)}, {(20, 10): history(8, 0)},
+                         debug_inputs=None)
+        result = diff_pixel(s, (10, 10), (20, 10), include_shader_values=True)
+        entry = next(ly for ly in result.payload["layers"]
+                     if ly["layer"] == "shader_input_values")
+        self.assertEqual(entry["status"], "unknown")
 
     def test_diff_result_parse_roundtrip(self):
         s = make_session({(10, 10): history(8, 0)}, {(20, 10): history(9, 1)})
