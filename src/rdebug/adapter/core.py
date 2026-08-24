@@ -263,11 +263,31 @@ class CaptureSession:
         return self._ctrl.GetRootActions()
 
     def action_rows(self, min_eid=None, max_eid=None, name=None, limit=None):
-        from ..query.events import filter_rows, flatten_actions
+        from ..query.events import event_semantics, filter_rows, flatten_actions
 
         rows = flatten_actions(
             self.root_actions(), draw_flag=self._rd.ActionFlags.Drawcall
         )
+        af = self._rd.ActionFlags
+        clear_flags = [
+            getattr(af, n)
+            for n in ("ClearColor", "ClearDepthStencil")
+            if getattr(af, n, None) is not None
+        ]
+        dispatch_flags = [
+            getattr(af, n)
+            for n in ("Dispatch", "MeshDispatch")
+            if getattr(af, n, None) is not None
+        ]
+        for row in rows:
+            row.update(
+                event_semantics(
+                    row["flags"],
+                    draw_flag=self._rd.ActionFlags.Drawcall,
+                    clear_flags=clear_flags,
+                    dispatch_flags=dispatch_flags,
+                )
+            )
         return filter_rows(
             rows,
             min_eid=min_eid,

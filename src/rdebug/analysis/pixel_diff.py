@@ -50,11 +50,15 @@ def compare_fragments(fa, fb):
     return "same" if fa == fb else "different"
 
 
-def _fragment(history):
+def _fragment(history, actions_index=None):
+    actions_index = actions_index or {}
     candidates = [
         m
         for m in history.modifications
-        if m["passed"] and not m.get("unboundPS") and not m.get("directShaderWrite")
+        if m["passed"]
+        and not m.get("unboundPS")
+        and not m.get("directShaderWrite")
+        and actions_index.get(m["eventId"], {}).get("fragmentCandidate", True)
     ]
     if not candidates:
         return None
@@ -62,7 +66,7 @@ def _fragment(history):
     return {"eventId": m["eventId"], "primitiveID": m["primitiveID"]}
 
 
-def _extract_flow(graph, history):
+def _extract_flow(graph, history, actions_index=None):
     history = PixelHistoryResult.parse(history)
     shader = None
     input_bindings = []
@@ -94,7 +98,7 @@ def _extract_flow(graph, history):
     return {
         "finalValue": _final_value(history),
         "modifications": len(history.modifications),
-        "fragment": _fragment(history),
+        "fragment": _fragment(history, actions_index),
         "historyEvidence": history.payload.get("evidence", []),
         "writesEvidence": writes_evidence,
         "shader": shader,
@@ -265,13 +269,14 @@ def diff_pixel(
     include_shader_values=False,
     expand_reads=True,
 ):
-    from .common import choose_output_target
+    from .common import actions_index_for, choose_output_target
 
     ax, ay = point_a
     bx, by = point_b
 
     context_eid = session.last_draw_event_id()
     default_target = choose_output_target(session, context_eid)
+    actions_index = actions_index_for(session)
 
     hist_a = PixelHistoryResult.parse(history_a) if history_a is not None else \
         session.pixel_history(default_target, ax, ay, context_eid=context_eid)
@@ -288,8 +293,8 @@ def diff_pixel(
         values_a = _interpolated_inputs(session, ax, ay, hist_a)
         values_b = _interpolated_inputs(session, bx, by, hist_b)
 
-    flow_a = _extract_flow(graph_a, hist_a)
-    flow_b = _extract_flow(graph_b, hist_b)
+    flow_a = _extract_flow(graph_a, hist_a, actions_index)
+    flow_b = _extract_flow(graph_b, hist_b, actions_index)
     result = diff_pixel_flows(flow_a, flow_b, session.path, values_a, values_b)
     result.payload["a"]["graphSummary"] = graph_a["summary"]
     result.payload["b"]["graphSummary"] = graph_b["summary"]

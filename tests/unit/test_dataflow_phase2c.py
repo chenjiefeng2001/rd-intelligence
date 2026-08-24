@@ -85,6 +85,18 @@ class FakeSession:
     def root_actions(self):
         return [FakeAction(3, "ClearIt"), FakeAction(8, "Shade")]
 
+    def action_rows(self):
+        return [
+            {"eventId": 3, "actionId": 3, "name": "ClearIt", "flags": 0, "depth": 0,
+             "parentEventId": None, "numIndices": 0, "numInstances": 0,
+             "childCount": 0, "isDraw": False, "isClear": True, "isDispatch": False,
+             "mayModifyPixel": True, "fragmentCandidate": False},
+            {"eventId": 8, "actionId": 8, "name": "Shade", "flags": 0, "depth": 0,
+             "parentEventId": None, "numIndices": 3, "numInstances": 0,
+             "childCount": 0, "isDraw": True, "isClear": False, "isDispatch": False,
+             "mayModifyPixel": True, "fragmentCandidate": True},
+        ]
+
     def usage(self, rid):
         return self._usage[rid]
 

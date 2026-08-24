@@ -86,6 +86,19 @@ class FakeSession:
                       | {e for rows in self._usage.values() for e, _ in rows})
         return [FakeAction(e, f"A{e}") for e in eids]
 
+    def action_rows(self):
+        rows = []
+        for eid in sorted({m["eventId"] for h in self._hist.values()
+                           for m in h["modifications"]}):
+            rows.append({
+                "eventId": eid, "actionId": eid, "name": f"A{eid}", "flags": 0,
+                "depth": 0, "parentEventId": None, "numIndices": 3,
+                "numInstances": 0, "childCount": 0, "isDraw": True,
+                "isClear": False, "isDispatch": False, "mayModifyPixel": True,
+                "fragmentCandidate": True,
+            })
+        return rows
+
     def usage(self, rid):
         return [
             {"eventId": e, "usage": u, "usageRaw": 0} for e, u in self._usage[rid]

@@ -126,10 +126,16 @@ def debug_pixel(
             history = session.pixel_history(target, x, y, context_eid=context_eid)
         else:
             history = PixelHistoryResult.parse(history)
+        from .common import actions_index_for
+
+        actions_index = actions_index_for(session)
         candidates = [
             m
             for m in history.modifications
-            if m["passed"] and not m.get("unboundPS") and not m.get("directShaderWrite")
+            if m["passed"]
+            and not m.get("unboundPS")
+            and not m.get("directShaderWrite")
+            and actions_index.get(m["eventId"], {}).get("fragmentCandidate", True)
         ]
         if candidates:
             chosen = candidates[-1]

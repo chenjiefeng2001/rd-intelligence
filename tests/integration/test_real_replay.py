@@ -104,6 +104,24 @@ class TestRealReplay(unittest.TestCase):
             self.assertEqual(ev["resourceId"], target)
             self.assertIn("id", ev)
 
+    def test_clear_semantic_invariants(self):
+        from rdebug.analysis.pixel_trace import trace_pixel
+
+        s = self._session
+        graph = trace_pixel(s, x=10, y=10, max_draws=4)
+        clears = [n for n in graph["nodes"]
+                  if n["kind"] == "draw" and n["attrs"].get("clear")]
+        self.assertTrue(clears, "expected at least one clear event on the pixel")
+        clear_ids = {c["id"] for c in clears}
+        for e in graph["edges"]:
+            if e["from"] in clear_ids:
+                self.assertNotEqual(e["label"], "bound_ps")
+                self.assertNotEqual(e["label"], "reads")
+        for c in clears:
+            self.assertFalse(c["attrs"]["fragmentCandidate"])
+            self.assertTrue(c["attrs"]["passed"] >= 0)
+        self.assertGreater(graph["summary"]["modificationCount"], 0)
+
     def test_diff_pixel_smoke(self):
         from rdebug.analysis.pixel_diff import diff_pixel
 
@@ -116,7 +134,8 @@ class TestRealReplay(unittest.TestCase):
         self.assertEqual(diff.comparison, "different")
         first = diff.first_divergence
         self.assertIsNotNone(first)
-        self.assertIn(first["layer"], ("fragment", "pixel_value"))
+        self.assertIn(first["layer"],
+                      ("fragment", "pixel_value", "input_bindings"))
         self.assertTrue(first["good"]["evidence"] or first["bad"]["evidence"])
         parsed = type(diff).parse(diff.to_dict())
         self.assertEqual(parsed.comparison, diff.comparison)

@@ -51,6 +51,34 @@ def filter_rows(
 
 def build_action_index(rows):
     index = {}
+    semantics_keys = (
+        "isDraw",
+        "isClear",
+        "isDispatch",
+        "mayModifyPixel",
+        "fragmentCandidate",
+    )
     for row in rows:
-        index[row["eventId"]] = {"name": row["name"], "flags": row["flags"]}
+        entry = {"name": row["name"], "flags": row["flags"]}
+        for key in semantics_keys:
+            if key in row:
+                entry[key] = row[key]
+        index[row["eventId"]] = entry
     return index
+
+
+def event_semantics(flags, *, draw_flag, clear_flags, dispatch_flags):
+    """Semantic predicate over ActionFlags. A clear event may modify the pixel
+    (authoritative PixelHistory fact) but can never be a fragment candidate:
+    no pixel shader invocation happens for it."""
+    f = int(flags)
+    is_draw = bool(f & int(draw_flag))
+    is_clear = any(f & int(c) for c in clear_flags)
+    is_dispatch = any(f & int(d) for d in dispatch_flags)
+    return {
+        "isDraw": is_draw,
+        "isClear": is_clear,
+        "isDispatch": is_dispatch,
+        "mayModifyPixel": is_draw or is_clear,
+        "fragmentCandidate": is_draw and not is_clear and not is_dispatch,
+    }

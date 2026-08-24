@@ -1,7 +1,6 @@
 from ..evidence import make as make_evidence
 from ..model import PixelHistoryResult, ResourceRef
-from ..query.events import build_action_index, flatten_actions
-from .common import choose_output_target
+from .common import actions_index_for, choose_output_target
 
 MAX_DRAWS_DEFAULT = 16
 MAX_INPUT_RESOURCES = 8
@@ -97,6 +96,10 @@ def build_graph(pixel, history, pipelines, actions=None, target=None, capture=No
                 "attrs": {
                     "eventId": eid,
                     "name": action_info.get("name", ""),
+                    "clear": bool(action_info.get("isClear", False)),
+                    "fragmentCandidate": bool(
+                        action_info.get("fragmentCandidate", True)
+                    ),
                     "primitives": group["primitives"],
                     "passed": group["passedCount"],
                     "failed": group["failedCount"],
@@ -128,8 +131,9 @@ def build_graph(pixel, history, pipelines, actions=None, target=None, capture=No
         pipe = pipelines.get(eid)
         if not pipe:
             continue
+        is_fragment = bool(action_info.get("fragmentCandidate", True))
         ps = pipe.get("shaders", {}).get("Pixel")
-        if ps and not group["directWrite"]:
+        if ps and not group["directWrite"] and is_fragment:
             shader_id = f"shader:{eid}:{ps['resource']}"
             add_node(
                 {
@@ -267,7 +271,7 @@ def trace_pixel(
     selected = write_events[-max_draws:] if truncated else write_events
 
     pipelines = {eid: session.pipeline(eid) for eid in selected}
-    actions_index = build_action_index(flatten_actions(session.root_actions()))
+    actions_index = actions_index_for(session)
 
     graph = build_graph(
         {"x": x, "y": y},
