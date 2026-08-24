@@ -146,6 +146,21 @@ def _build_parser():
                      help="also compare interpolated PS inputs via the shader debugger")
     dif.add_argument("--no-expand-reads", action="store_true")
 
+    cirec = sub.add_parser("ci-record", help="record deterministic pixel baseline")
+    _add_common(cirec)
+    cirec.add_argument("--spec", required=True, help="spec JSON: pixels/pairs")
+    cirec.add_argument("-o", "--out", required=True, help="baseline JSON output")
+
+    cichk = sub.add_parser(
+        "ci-check",
+        help="check capture against a recorded baseline (CI gate; "
+        "exit 0=pass 1=regression 2=error)",
+    )
+    _add_common(cichk)
+    cichk.add_argument("--baseline", required=True)
+    cichk.add_argument("--tolerance", type=float, default=1e-6)
+    cichk.add_argument("--ignore-capture-hash", action="store_true")
+
     indent = parser.add_argument("-i", "--indent", type=int, default=2)
     indent.help = "JSON indentation"
     return parser
@@ -325,6 +340,34 @@ def _dispatch(args, indent):
             ).to_dict()
         _emit(payload, indent)
         return 0
+    if cmd == "ci-record":
+        from . import ci
+
+        spec = json.load(open(args.spec, encoding="utf-8"))
+        with _open_session(args) as s:
+            baseline = ci.record(s, spec)
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(baseline, f, indent=2)
+        _emit({"recorded": args.out, "pixels": len(baseline["pixels"]),
+               "pairs": len(baseline["pairs"])}, indent)
+        return 0
+    if cmd == "ci-check":
+        from . import ci
+
+        baseline = json.load(open(args.baseline, encoding="utf-8"))
+        try:
+            with _open_session(args) as s:
+                report = ci.check(
+                    s,
+                    baseline,
+                    tolerance=args.tolerance,
+                    ignore_capture_hash=args.ignore_capture_hash,
+                )
+        except RDebugError as e:
+            _fail(e)
+            return 2
+        _emit(report, indent)
+        return 0 if report["status"] == "pass" else 1
     return _fail(f"unknown command: {cmd}")
 
 

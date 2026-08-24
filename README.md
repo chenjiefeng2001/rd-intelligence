@@ -220,7 +220,28 @@ tests/
 - [x] Phase 4d：Transport session reuse（SessionManager：路径隔离/LRU/健康探测/失效恢复；
   稳态 trajectory **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4，
   见 `docs/validation/phase4d-session-reuse.md`）
+- [x] **v1 Architecture Freeze**（`c060ba2`）：Stable Core = Semantic API v1 + Evidence Model；
+  所有前端（MCP/CLI/IDE/CI）只经 Stable Core 消费，禁止直连 RenderDoc API
+- [x] Phase 5a：CI 回归试点（`ci-record`/`ci-check` 确定性门禁：基线指纹 + evidence 回链 +
+  机器可读 verdict，AI 仅作解释器，见 `docs/validation/phase5a-ci.md`）
+- [ ] Phase 5b：IDE 原型（消费 Semantic API，非重做 RenderDoc GUI）
+- [ ] Phase 5c：并发策略（等真实 CI 多 job 场景）
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
+
+## Stable Core（冻结）
+
+```text
+RenderDoc (zero modifications)
+      │
+rd-intelligence Stable Core
+  ├─ Semantic API v1: trace_pixel / trace_resource / debug_pixel / diff_pixel
+  └─ Evidence Model: 稳定 id + eventId/resourceId/operation 回链
+      │
+Transports: MCP ｜ CLI ｜ CI ｜ IDE（均只消费 Stable Core）
+```
+
+分层定位：`RenderDoc = Replay Engine`，`rd-intelligence = Debug Semantics`，
+`MCP = AI Transport`，`CI gate = 确定性判定`，`LLM = 解释器（非裁判）`。
 
 ## MCP Transport（Phase 4a）
 
