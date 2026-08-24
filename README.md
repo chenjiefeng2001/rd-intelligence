@@ -224,7 +224,9 @@ tests/
   所有前端（MCP/CLI/IDE/CI）只经 Stable Core 消费，禁止直连 RenderDoc API
 - [x] Phase 5a：CI 回归试点（`ci-record`/`ci-check` 确定性门禁：基线指纹 + evidence 回链 +
   机器可读 verdict，AI 仅作解释器，见 `docs/validation/phase5a-ci.md`）
-- [ ] Phase 5b：IDE 原型（消费 Semantic API，非重做 RenderDoc GUI）
+- [x] Phase 5b：IDE 极简原型（`rdebug-ide`：CI failure → pixel → firstDivergence →
+  provenance → evidence → grounded AI prompt，仅消费 Stable Core，
+  见 `docs/validation/phase5b-ide.md`）
 - [ ] Phase 5c：并发策略（等真实 CI 多 job 场景）
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
 

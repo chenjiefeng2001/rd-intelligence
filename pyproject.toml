@@ -22,6 +22,7 @@ classifiers = [
 [project.scripts]
 rdebug = "rdebug.cli:main"
 rdebug-mcp = "rdebug_mcp.server:main"
+rdebug-ide = "rdebug_ide.app:main"
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.0"]

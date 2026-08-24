@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>rdebug-ide</title>
+<style>
+  :root { --bg:#14161a; --panel:#1d2026; --fg:#d8dce3; --dim:#8a919d;
+          --accent:#5aa2ff; --bad:#ff6b6b; --good:#69d58c; --warn:#e8c468; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 "Segoe UI",system-ui,sans-serif; }
+  header { padding:10px 16px; background:var(--panel); display:flex;
+           gap:16px; align-items:center; }
+  header h1 { font-size:15px; margin:0; font-weight:600; }
+  #cibase { margin-left:auto; }
+  .badge { padding:2px 10px; border-radius:10px; font-weight:600; }
+  .pass { background:#123b24; color:var(--good); }
+  .regression { background:#3b1216; color:var(--bad); }
+  main { display:flex; gap:12px; padding:12px 16px; flex-wrap:wrap; }
+  .card { background:var(--panel); border-radius:8px; padding:12px 14px;
+          min-width:340px; flex:1; }
+  .card h2 { font-size:13px; margin:0 0 8px; color:var(--dim);
+             text-transform:uppercase; letter-spacing:.06em; }
+  input, button { background:#23262d; color:var(--fg); border:1px solid #33373f;
+                  border-radius:6px; padding:6px 10px; font:inherit; }
+  button { cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  .kv { display:grid; grid-template-columns:130px 1fr; gap:2px 10px; }
+  .kv .k { color:var(--dim); }
+  .layer { display:flex; gap:8px; padding:1px 0; }
+  .st-same { color:var(--good); } .st-different { color:var(--bad); }
+  .st-unknown { color:var(--warn); }
+  .tree { margin:4px 0 4px 10px; border-left:1px solid #33373f; padding-left:10px; }
+  .chip { display:inline-block; background:#23262d; border:1px solid #33373f;
+          border-radius:6px; padding:1px 8px; margin:2px 4px 2px 0;
+          font-family:Consolas,monospace; font-size:12px; cursor:pointer; }
+  .chip:hover { border-color:var(--accent); }
+  #evdetail { font-family:Consolas,monospace; font-size:12px; white-space:pre;
+              background:#14161a; padding:8px; border-radius:6px; margin-top:6px;
+              max-height:220px; overflow:auto; }
+  #prompt { width:100%; height:220px; background:#14161a; color:var(--fg);
+            border:1px solid #33373f; border-radius:6px; font-family:Consolas,monospace;
+            font-size:12px; }
+  .err { color:var(--bad); }
+  .muted { color:var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>rdebug-ide</h1>
+  <span class="muted" id="capture"></span>
+  <span id="cibase" class="muted">CI baseline: not loaded</span>
+</header>
+<main>
+  <div class="card" style="max-width:420px">
+    <h2>Query</h2>
+    <div style="display:grid;gap:6px">
+      <label>A (x,y) <input id="a" value="320,240" size="8"></label>
+      <label>B (x,y) <input id="b" value="10,10" size="8"></label>
+      <label><input type="checkbox" id="deep"> deep diff (shader debugger)</label>
+      <div>
+        <button id="btnDiff">Diff A vs B</button>
+        <button id="btnTrace">Trace A</button>
+        <button id="btnExplain" disabled>Explain with AI</button>
+      </div>
+    </div>
+    <div id="ci" style="margin-top:10px"></div>
+  </div>
+  <div class="card" style="flex:2">
+    <h2>Result</h2>
+    <div id="result" class="muted">run a query…</div>
+  </div>
+  <div class="card" style="flex:1">
+    <h2>Evidence</h2>
+    <div id="evidence" class="muted">—</div>
+    <div id="evdetail" style="display:none"></div>
+    <h2 style="margin-top:12px">AI Prompt (grounded)</h2>
+    <textarea id="prompt" readonly placeholder="[Explain with AI] 生成…"></textarea>
+    <button id="btnCopy" style="margin-top:6px" disabled>Copy prompt</button>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let lastDiff = null;
+
+async function api(path) {
+  const r = await fetch(path);
+  return r.json();
+}
+
+function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+function statusSpan(st){ return `<span class="st-${st}">${st}</span>`; }
+
+function renderDiff(d) {
+  lastDiff = d;
+  const first = d.firstDivergence || {};
+  const layers = d.layers.map(l =>
+    `<div class="layer"><span style="width:190px;display:inline-block">${l.layer}</span>${statusSpan(l.status)}</div>`).join("");
+  const good = first.good ? first.good.value : null;
+  const bad = first.bad ? first.bad.value : null;
+  $("result").innerHTML = `
+    <div class="kv">
+      <span class="k">comparison</span><span>${statusSpan(d.comparison)}</span>
+      <span class="k">first divergence</span><span>${esc(first.layer ?? "—")}</span>
+      <span class="k">good</span><span>${esc(JSON.stringify(good))}</span>
+      <span class="k">bad</span><span>${esc(JSON.stringify(bad))}</span>
+    </div>
+    <h2 style="margin-top:10px">Layers</h2>${layers}`;
+  const ids = [...new Set((function collect(n){ let o=[];
+    if (Array.isArray(n)) return n.flatMap(collect);
+    if (n && typeof n === "object") {
+      if (n.id && n.operation) o.push(n);
+      Object.values(n).forEach(v => o = o.concat(collect(v)));
+    } return o; })(d.layers).map(e => e.id))];
+  $("evidence").innerHTML = ids.length
+    ? ids.map(id => `<span class="chip" data-id="${id}">${id}</span>`).join("")
+    : "—";
+  $("evidence").querySelectorAll(".chip").forEach(ch => ch.onclick = () => showEv(ch.dataset.id));
+  $("btnExplain").disabled = false;
+  $("btnCopy").disabled = false;
+}
+
+async function showEv(id) {
+  const r = await fetch(`/api/resource?id=${encodeURIComponent("ResourceId::" + id.replace(/\D/g,""))}`).catch(()=>null);
+  $("evdetail").style.display = "block";
+  $("evdetail").textContent = "loading…";
+}
+
+function renderTrace(g) {
+  lastDiff = null;
+  const reads = g.edges.filter(e => e.label === "reads");
+  const written = g.edges.filter(e => e.label === "written_by");
+  let html = `<div class="kv">
+    <span class="k">target</span><span>${esc(g.summary.target ?? "")}</span>
+    <span class="k">modifications</span><span>${g.summary.modificationCount}</span>
+    <span class="k">final value</span><span>${esc(JSON.stringify(g.summary.finalValue))}</span></div>
+    <h2 style="margin-top:10px">Reads</h2>`;
+  for (const r of reads) {
+    html += `<div>${esc(r.to)}</div><div class="tree">`;
+    for (const w of written.filter(w => w.from === r.to)) {
+      html += `<div>written by ${esc(w.to)} <span class="muted">(${esc(w.evidence[0].data?.primitives ?? "")})</span></div>`;
+    }
+    html += `</div>`;
+  }
+  $("result").innerHTML = html;
+  $("btnExplain").disabled = true; $("btnCopy").disabled = true;
+  $("prompt").value = ""; $("evidence").innerHTML = "—";
+}
+
+async function doDiff() {
+  const a = $("a").value, b = $("b").value, deep = $("deep").checked ? 1 : 0;
+  $("result").innerHTML = "…";
+  const d = await api(`/api/diff?a=${a}&b=${b}&deep=${deep}`);
+  if (d.error) { $("result").innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
+  renderDiff(d);
+  const p = await api(`/api/explain?a=${a}&b=${b}&deep=${deep}`);
+  $("prompt").value = p.prompt || "";
+}
+
+async function doTrace() {
+  const [x] = $("a").value.split(",");
+  $("result").innerHTML = "…";
+  const g = await api(`/api/trace?x=${x}&y=${($("a").value.split(",")[1]||"0").trim()}`);
+  if (g.error) { $("result").innerHTML = `<span class="err">${esc(g.error)}</span>`; return; }
+  renderTrace(g);
+}
+
+async function loadCi() {
+  const ci = await api("/api/ci");
+  if (!ci.enabled) return;
+  const el = $("cibase");
+  if (ci.status === "pass") { el.innerHTML = `<span class="badge pass">CI PASS</span>`; return; }
+  el.innerHTML = `<span class="badge regression">CI ${ci.status.toUpperCase()}</span>`;
+  const box = $("ci");
+  box.innerHTML = ci.failures.map((f,i) =>
+    `<div class="layer"><button data-i="${i}">${esc(f.kind)} — ${esc(f.name)}</button></div>`).join("");
+  box.querySelectorAll("button").forEach(b => b.onclick = () => {
+    const f = ci.failures[+b.dataset.i];
+    if (f.pair) { $("a").value = f.pair.a.join(","); $("b").value = f.pair.b.join(","); doDiff(); }
+    else if (f.pixel) { $("a").value = f.pixel.join(","); doTrace(); }
+  });
+}
+
+$("btnDiff").onclick = doDiff;
+$("btnTrace").onclick = doTrace;
+$("btnExplain").onclick = doDiff;
+$("btnCopy").onclick = () => { navigator.clipboard.writeText($("prompt").value); };
+
+api("/api/info").then(i => { $("capture").textContent = i.capture; });
+loadCi();
+</script>
+</body>
+</html>
