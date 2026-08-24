@@ -1,6 +1,6 @@
 from ..errors import QueryError
 from ..evidence import make as make_evidence
-from ..model import ResourceRef
+from ..model import PixelHistoryResult, ResourceRef
 from .common import choose_output_target
 
 
@@ -97,7 +97,12 @@ def debug_pixel(
     view=None,
     max_steps=4096,
     include_disassembly=True,
+    history=None,
 ):
+    if context_eid is None and history is not None:
+        context_eid = PixelHistoryResult.parse(history).context_event_id
+    if target is None and history is not None:
+        target = PixelHistoryResult.parse(history).resource
     if context_eid is None:
         context_eid = session.last_draw_event_id()
     if target is None:
@@ -117,17 +122,20 @@ def debug_pixel(
     chosen_event = context_eid
     chosen_primitive = primitive
     if primitive is None:
-        history = session.pixel_history(target, x, y, context_eid=context_eid)
+        if history is None:
+            history = session.pixel_history(target, x, y, context_eid=context_eid)
+        else:
+            history = PixelHistoryResult.parse(history)
         candidates = [
             m
-            for m in history["modifications"]
+            for m in history.modifications
             if m["passed"] and not m.get("unboundPS") and not m.get("directShaderWrite")
         ]
         if candidates:
             chosen = candidates[-1]
             chosen_event = chosen["eventId"]
             chosen_primitive = chosen["primitiveID"]
-        elif any(m.get("unboundPS") for m in history["modifications"]):
+        elif any(m.get("unboundPS") for m in history.modifications):
             raise QueryError(
                 "pixel only has writes without a bound pixel shader; nothing to debug"
             )

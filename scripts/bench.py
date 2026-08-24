@@ -78,7 +78,7 @@ def main():
 
     hist = bench.run("pixelHistorySamePixel", session.pixel_history, target, args.x, args.y,
                      context_eid=last_draw)
-    report["_pixelHistory"] = {"modifications": len(hist["modifications"])}
+    report["_pixelHistory"] = {"modifications": len(hist.modifications)}
 
     graph = bench.run("tracePixelSamePixel", trace_pixel, session, args.x, args.y,
                       max_draws=args.max_draws)
@@ -112,6 +112,25 @@ def main():
         "writers": flow["summary"]["writerCount"],
         "readers": flow["summary"]["readerCount"],
     }
+
+    t0 = time.perf_counter()
+    shared_hist = session.pixel_history(target, args.x, args.y, context_eid=last_draw)
+    shared_graph = trace_pixel(session, args.x, args.y, history=shared_hist,
+                               max_draws=args.max_draws)
+    shared_dbg = debug_pixel(session, args.x, args.y, history=shared_hist, max_steps=4096)
+    shared_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+    report["pixelPipelineSharedHistory"] = {
+        "totalMs": shared_ms,
+        "historyCallsExpected": 1,
+        "graphNodes": len(shared_graph["nodes"]),
+        "resourceFlows": sorted(shared_graph.get("resourceFlows", {}).keys()),
+        "debugEventId": shared_dbg["eventId"],
+    }
+
+    separate_ms = (
+        report["tracePixelSamePixel"]["coldMs"] + report["debugPixel"]["coldMs"]
+    )
+    report["pixelPipelineSharedHistory"]["separatePathMsEstimate"] = separate_ms
 
     tracemalloc.start()
     trace_pixel(session, args.x, args.y, max_draws=args.max_draws)

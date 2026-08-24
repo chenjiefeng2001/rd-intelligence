@@ -442,27 +442,35 @@ class CaptureSession:
         sub.sample = int(sample)
         comp = comp_type if comp_type is not None else self._texture_comp_type(real)
         history = self._ctrl.PixelHistory(real, int(x), int(y), sub, comp)
-        return {
-            "resource": _rid_str(real),
-            "contextEventId": int(context_eid),
-            "x": int(x),
-            "y": int(y),
-            "mip": int(mip),
-            "slice": int(slice_),
-            "sample": int(sample),
-            "evidence": [
-                _make_evidence(
-                    capture=self.path,
-                    event_id=int(context_eid),
-                    resource_id=_rid_str(real),
-                    subresource={"mip": int(mip), "slice": int(slice_), "sample": int(sample)},
-                    location={"x": int(x), "y": int(y)},
-                    operation="pixel_history",
-                    source="ReplayController.PixelHistory",
-                )
-            ],
-            "modifications": [_modification_to_dict(h) for h in history],
-        }
+        from ..model import PixelHistoryResult
+
+        return PixelHistoryResult(
+            {
+                "resource": _rid_str(real),
+                "contextEventId": int(context_eid),
+                "x": int(x),
+                "y": int(y),
+                "mip": int(mip),
+                "slice": int(slice_),
+                "sample": int(sample),
+                "evidence": [
+                    _make_evidence(
+                        capture=self.path,
+                        event_id=int(context_eid),
+                        resource_id=_rid_str(real),
+                        subresource={
+                            "mip": int(mip),
+                            "slice": int(slice_),
+                            "sample": int(sample),
+                        },
+                        location={"x": int(x), "y": int(y)},
+                        operation="pixel_history",
+                        source="ReplayController.PixelHistory",
+                    )
+                ],
+                "modifications": [_modification_to_dict(h) for h in history],
+            }
+        )
 
     def debug_pixel(
         self,

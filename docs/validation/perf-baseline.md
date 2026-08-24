@@ -60,3 +60,20 @@ C:\Python313\python.exe scripts\bench.py <capture.rdc> --x 320 --y 240 --repeats
 ```
 
 Large 档：对任意真实游戏 `.rdc` 运行同一命令即可；harness 无需修改。
+
+## Phase 2c 回归（history 复用 + reads 一层展开）
+
+Medium 档（401 mods 像素）：
+
+| 路径 | 耗时 | history 调用次数 |
+| --- | --- | --- |
+| 分离路径（trace cold + debug cold，各自算 history） | ~13.9 s | 2 |
+| **共享流水线**（`history=H` 贯穿 trace+debug） | **~2.66 s**（低噪声轮：1.09 s） | **1** |
+
+- 共享与分离路径输出等价（unit invariant：JSON 逐键相等 + `session.history_calls == 0`）；
+- reads 一层展开在真实 capture 上验证：PS 采样的 `ResourceId::47` →
+  writers `[EID2 CopyDst]`、readers `[EID11 PS_Resource]`、`written_by` 边携带 usage 级 evidence；
+- fixture 已升级为"CopyResource 写入纹理 + PS 采样"，保证该链路有确定性回归覆盖。
+
+完成标准核对：`[✓] history 只算一次 [✓] trace/debug 接受共享 history [✓] reads 自动连接 trace-resource
+[✓] 新增边全部有 evidence [✓] Medium 档不再出现第二次 ~943ms history`。

@@ -4,6 +4,7 @@
 #include <d3dcompiler.h>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "renderdoc_app.h"
 
@@ -22,6 +23,8 @@ struct VsIn {
 };
 
 static const char* kHlsl = R"(
+SamplerState g_samp : register(s0);
+Texture2D<float4> g_tex : register(t0);
 struct VSOut { float4 pos : SV_POSITION; float4 col : COLOR; };
 VSOut vs_main(float3 pos : POSITION, float4 col : COLOR) {
     VSOut o;
@@ -30,7 +33,8 @@ VSOut vs_main(float3 pos : POSITION, float4 col : COLOR) {
     return o;
 }
 float4 ps_main(VSOut i) : SV_Target {
-    return i.col;
+    float2 uv = i.pos.xy / float2(640.0f, 480.0f);
+    return i.col * g_tex.Sample(g_samp, uv);
 }
 )";
 
@@ -111,6 +115,43 @@ int main(int argc, char** argv) {
     ID3D11RenderTargetView* rtv = nullptr;
     device->CreateRenderTargetView(back, nullptr, &rtv);
 
+    D3D11_TEXTURE2D_DESC td = {};
+    td.Width = 64;
+    td.Height = 64;
+    td.MipLevels = 1;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_DEFAULT;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    std::vector<uint8_t> texels(64 * 64 * 4);
+    for (int i = 0; i < 64 * 64; ++i) {
+        texels[i * 4 + 0] = 255;
+        texels[i * 4 + 1] = 200;
+        texels[i * 4 + 2] = 160;
+        texels[i * 4 + 3] = 255;
+    }
+    D3D11_SUBRESOURCE_DATA texInit = {texels.data(), 64 * 4, 0};
+    ID3D11Texture2D* texSrc = nullptr;
+    device->CreateTexture2D(&td, &texInit, &texSrc);
+    ID3D11Texture2D* texDst = nullptr;
+    device->CreateTexture2D(&td, nullptr, &texDst);
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC srvd = {};
+    srvd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    srvd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    srvd.Texture2D.MipLevels = 1;
+    ID3D11ShaderResourceView* srv = nullptr;
+    device->CreateShaderResourceView(texDst, &srvd, &srv);
+
+    D3D11_SAMPLER_DESC sd = {};
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.MaxLOD = 1000.0f;
+    ID3D11SamplerState* sampler = nullptr;
+    device->CreateSamplerState(&sd, &sampler);
+
     VsIn verts[3] = {
         {{-0.8f, -0.8f, 0.5f}, {1.0f, 0.0f, 0.0f, 1.0f}},
         {{0.0f, 0.9f, 0.5f}, {0.0f, 0.0f, 1.0f, 1.0f}},
@@ -159,12 +200,16 @@ int main(int argc, char** argv) {
         float clear_col[4] = {0.05f + 0.2f * t, 0.1f, 0.25f * (1.0f - t), 1.0f};
         ctx->ClearRenderTargetView(rtv, clear_col);
 
+        ctx->CopyResource(texDst, texSrc);
+
         ctx->OMSetRenderTargets(1, &rtv, nullptr);
         ctx->IASetInputLayout(il);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
         ctx->VSSetShader(vs, nullptr, 0);
         ctx->PSSetShader(ps, nullptr, 0);
+        ctx->PSSetShaderResources(0, 1, &srv);
+        ctx->PSSetSamplers(0, 1, &sampler);
         for (int d = 0; d < draws_per_frame; ++d) {
             ctx->Draw(3, 0);
         }
@@ -183,6 +228,10 @@ int main(int argc, char** argv) {
     if (ps) ps->Release();
     if (vs_blob) vs_blob->Release();
     if (ps_blob) ps_blob->Release();
+    if (srv) srv->Release();
+    if (sampler) sampler->Release();
+    if (texSrc) texSrc->Release();
+    if (texDst) texDst->Release();
     if (rtv) rtv->Release();
     if (back) back->Release();
     if (swap) swap->Release();

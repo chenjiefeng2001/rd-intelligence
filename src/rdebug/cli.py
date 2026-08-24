@@ -112,6 +112,9 @@ def _build_parser():
     trace.add_argument("--slice", type=int, default=0)
     trace.add_argument("--sample", type=int, default=0)
     trace.add_argument("--max-draws", type=int, default=16)
+    trace.add_argument("--no-expand-reads", action="store_true",
+                       help="skip one-level writer/reader expansion (Phase 2c)")
+    trace.add_argument("--max-writers", type=int, default=8)
 
     dbg = sub.add_parser(
         "debug-pixel",
@@ -251,7 +254,7 @@ def _dispatch(args, indent):
                 slice_=args.slice,
                 sample=args.sample,
                 context_eid=args.eid,
-            )
+            ).to_dict()
         _emit(payload, indent)
         return 0
     if cmd == "trace-pixel":
@@ -268,6 +271,8 @@ def _dispatch(args, indent):
                 slice_=args.slice,
                 sample=args.sample,
                 max_draws=args.max_draws,
+                expand_reads=not args.no_expand_reads,
+                max_writers_per_resource=args.max_writers,
             )
         _emit(payload, indent)
         return 0

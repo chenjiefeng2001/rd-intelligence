@@ -60,6 +60,18 @@ class TestRealReplay(unittest.TestCase):
         )
         self.assertIn("nodes", graph)
         self.assertIn("edges", graph)
+        flows = graph.get("resourceFlows", {})
+        self.assertTrue(flows, "expected at least one sampled texture to expand")
+        for rid, flow in flows.items():
+            for entry in flow["writers"] + flow["readers"]:
+                ev = entry["evidence"][0]
+                self.assertEqual(ev["resourceId"], rid)
+                self.assertIn("id", ev)
+        for e in graph["edges"]:
+            if e["label"] == "written_by":
+                self.assertTrue(e["evidence"][0]["resourceId"].startswith("ResourceId"))
+        for rid in flows:
+            self.assertIn(f"resource:{rid}", [n["id"] for n in graph["nodes"]])
 
     def test_debug_pixel_smoke(self):
         from rdebug.analysis.shader_trace import debug_pixel

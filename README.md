@@ -198,9 +198,10 @@ tests/
 - [x] Phase 2a 验证：真实 `renderdoc.pyd` + 真实 `.rdc` 端到端（见 `docs/validation/phase2a.md`）
 - [x] Validation：性能基线（Small/Medium 档、重复查询曲线）→ **判定暂不需要 `.rdc.idx`**（见 `docs/validation/perf-baseline.md`）
 - [x] Phase 2b：`trace-resource`（writer/reader 分类 + evidence，基于 `GetUsage`）
-- [ ] Phase 2c：Pixel→Shader→Resource→Writer 完整局部数据流（复用已算 history，避免重复 replay）
+- [x] Phase 2c：Pixel→Shader→Resource→Writer 局部数据流（`PixelHistoryResult` 一等共享、
+  reads 一层展开、history 复用回归 ≈省一半以上，见 `docs/validation/perf-baseline.md`）
 - [ ] Phase 3：Capture Diff
-- [ ] Phase 4：AI / MCP 外部接入层（Phase 2c 完成前禁止进入代码库）
+- [ ] Phase 4：AI / MCP 外部接入层（Phase 3 完成并确认确定性 RCA 覆盖前禁止进入代码库）
 
 ## 设计原则（由真实验证固化）
 

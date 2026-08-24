@@ -1,5 +1,5 @@
 from ..evidence import make as make_evidence
-from ..model import ResourceRef
+from ..model import PixelHistoryResult, ResourceRef
 from ..query.events import build_action_index, flatten_actions
 from .common import choose_output_target
 
@@ -241,18 +241,28 @@ def trace_pixel(
     slice_=0,
     sample=0,
     max_draws=MAX_DRAWS_DEFAULT,
+    history=None,
+    expand_reads=True,
+    max_writers_per_resource=8,
 ):
+    if context_eid is None and history is not None:
+        context_eid = PixelHistoryResult.parse(history).context_event_id
+    if target is None and history is not None:
+        target = PixelHistoryResult.parse(history).resource
     if context_eid is None:
         context_eid = session.last_draw_event_id()
     if target is None:
         target = choose_output_target(session, context_eid)
     target = ResourceRef.parse(target).id
 
-    history = session.pixel_history(
-        target, x, y, mip=mip, slice_=slice_, sample=sample, context_eid=context_eid
-    )
+    if history is None:
+        history = session.pixel_history(
+            target, x, y, mip=mip, slice_=slice_, sample=sample, context_eid=context_eid
+        )
+    else:
+        history = PixelHistoryResult.parse(history)
 
-    write_events = sorted({m["eventId"] for m in history["modifications"]})
+    write_events = sorted({m["eventId"] for m in history.modifications})
     truncated = len(write_events) > max_draws
     selected = write_events[-max_draws:] if truncated else write_events
 
@@ -261,7 +271,7 @@ def trace_pixel(
 
     graph = build_graph(
         {"x": x, "y": y},
-        history,
+        history.payload,
         pipelines,
         actions=actions_index,
         target=str(target),
@@ -270,5 +280,70 @@ def trace_pixel(
     graph["summary"]["truncatedDraws"] = truncated
     graph["summary"]["totalWriteEvents"] = len(write_events)
     graph["summary"]["analyzedDraws"] = len(selected)
+
+    if expand_reads:
+        _expand_read_resources(
+            session,
+            graph,
+            context_eid,
+            actions_index,
+            exclude={str(target)},
+            max_writers=max_writers_per_resource,
+        )
     graph["summary"]["target"] = str(target)
     return graph
+
+
+def _expand_read_resources(
+    session, graph, context_eid, actions_index, exclude, max_writers
+):
+    """One-level expansion only: for each resource directly read by an analyzed
+    shader, attach its writers/readers. Writer events are NOT expanded further —
+    recursive data flow is deliberately out of scope for Phase 2c."""
+    from .resource_flow import trace_resource
+
+    read_rids = []
+    for e in graph["edges"]:
+        if e["label"] != "reads":
+            continue
+        rid = str(e["to"]).split(":", 1)[1]
+        if rid not in exclude and rid not in read_rids:
+            read_rids.append(rid)
+
+    graph["resourceFlows"] = {}
+    existing_nodes = {n["id"] for n in graph["nodes"]}
+    for rid in read_rids:
+        flow = trace_resource(session, rid, context_eid=context_eid)
+        graph["resourceFlows"][rid] = flow
+
+        shown = 0
+        for entry in flow["writers"]:
+            if shown >= max_writers:
+                break
+            eid = entry["eventId"]
+            node_id = f"draw:{eid}"
+            if node_id not in existing_nodes:
+                graph["nodes"].append(
+                    {
+                        "id": node_id,
+                        "kind": "draw",
+                        "attrs": {
+                            "eventId": eid,
+                            "name": actions_index.get(eid, {}).get("name", ""),
+                            "role": "writer",
+                            "usage": entry["usage"],
+                        },
+                    }
+                )
+                existing_nodes.add(node_id)
+            graph["edges"].append(
+                {
+                    "from": f"resource:{rid}",
+                    "to": node_id,
+                    "label": "written_by",
+                    "evidence": entry["evidence"],
+                }
+            )
+            shown += 1
+        flow["summary"]["writersShown"] = shown
+        flow["summary"]["writersTruncated"] = shown < flow["summary"]["writerCount"]
