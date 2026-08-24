@@ -217,6 +217,9 @@ tests/
   候选、不携带 shader evidence）
 - [x] Phase 4c：Grounded reasoning benchmark（5 指标 × 4 case 全通过；首轮即抓出 diff 层
   evidence 缺口并修复，见 `docs/validation/phase4c-reasoning.md`）
+- [x] Phase 4d：Transport session reuse（SessionManager：路径隔离/LRU/健康探测/失效恢复；
+  稳态 trajectory **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4，
+  见 `docs/validation/phase4d-session-reuse.md`）
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
 
 ## MCP Transport（Phase 4a）

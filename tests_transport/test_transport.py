@@ -95,10 +95,12 @@ class FakeSession:
 class ToolCallTests(unittest.TestCase):
     def setUp(self):
         self._prev = server._session_factory
+        server._MANAGER.dispose_all()
         server._session_factory = lambda capture: FakeSession()
 
     def tearDown(self):
         server._session_factory = self._prev
+        server._MANAGER.dispose_all()
 
     def test_trace_pixel_passthrough_with_evidence(self):
         raw = server.trace_pixel("cap.rdc", 1, 2)
