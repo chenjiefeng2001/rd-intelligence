@@ -18,6 +18,46 @@ def _path():
     return os.environ.get("RDEBUG_TELEMETRY") or None
 
 
+def summarize_result(payload):
+    """Transport-side observation helper: derive result-shape fields from a
+    returned semantic payload WITHOUT mutating it. Enables the real-world
+    observation metrics (unknown distribution, evidence volume) while keeping
+    Stable Core untouched."""
+
+    def walk(node, ids):
+        if isinstance(node, dict):
+            if "id" in node and "operation" in node:
+                ids[0] += 1
+            for v in node.values():
+                walk(v, ids)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v, ids)
+
+    out = {}
+    if not isinstance(payload, dict):
+        return out
+    if "comparison" in payload:
+        out["comparison"] = payload["comparison"]
+    first = payload.get("firstDivergence")
+    if isinstance(first, dict) and first.get("layer"):
+        out["firstDivergence"] = first["layer"]
+    layers = payload.get("layers")
+    if isinstance(layers, list) and layers:
+        out["unknownLayers"] = [
+            ly.get("layer") for ly in layers if ly.get("status") == "unknown"
+        ]
+    counter = [0]
+    walk(payload, counter)
+    out["evidenceCount"] = counter[0]
+    return out
+
+
+def record_result(transport, tool, payload):
+    record("result_shape", transport=transport, tool=tool,
+           **summarize_result(payload))
+
+
 def record(event, **fields):
     path = _path()
     if not path:

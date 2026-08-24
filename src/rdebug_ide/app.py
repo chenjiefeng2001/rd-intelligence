@@ -185,14 +185,17 @@ _ROUTES = {
 
 
 def route(path, query):
-    from rdebug.observability import record, timed
+    from rdebug.observability import record, record_result, timed
 
     fn = _ROUTES.get(path)
     if fn is None:
         return 404, {"error": "unknown endpoint", "path": path}
     try:
         with timed("query", transport="ide", endpoint=path):
-            return 200, fn(query)
+            payload = fn(query)
+        if isinstance(payload, dict):
+            record_result("ide", path, payload)
+        return 200, payload
     except RDebugError as e:
         record("query_error", transport="ide", endpoint=path, error=str(e))
         return 400, {"error": str(e)}

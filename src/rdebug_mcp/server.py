@@ -41,11 +41,16 @@ def _open(capture):
 def _safe(fn):
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
-        from rdebug.observability import record, timed
+        from rdebug.observability import record, record_result, timed
 
         try:
             with timed("query", transport="mcp", tool=fn.__name__):
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
+            try:
+                record_result("mcp", fn.__name__, json.loads(result))
+            except Exception:
+                pass
+            return result
         except RDebugError as e:
             record("query_error", transport="mcp", tool=fn.__name__,
                    error=str(e))

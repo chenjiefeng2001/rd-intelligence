@@ -111,5 +111,54 @@ class TestSessionManagerTelemetry(unittest.TestCase):
         self.assertIn("session_recovery", self._events())
 
 
+class TestResultShape(unittest.TestCase):
+    def test_summarize_diff_payload(self):
+        payload = {
+            "comparison": "different",
+            "firstDivergence": {"layer": "fragment", "good": {}, "bad": {}},
+            "layers": [
+                {"layer": "pixel_value", "status": "different"},
+                {"layer": "shader_input_values", "status": "unknown"},
+            ],
+            "evidence": [{"id": "a" * 12, "operation": "diff_pixel"}],
+        }
+        s = observability.summarize_result(payload)
+        self.assertEqual(s["comparison"], "different")
+        self.assertEqual(s["firstDivergence"], "fragment")
+        self.assertEqual(s["unknownLayers"], ["shader_input_values"])
+        self.assertEqual(s["evidenceCount"], 1)
+
+    def test_non_dict_returns_empty(self):
+        self.assertEqual(observability.summarize_result("x"), {})
+
+    def test_mcp_wrapper_records_result_shape(self):
+        fd, self.path2 = tempfile.mkstemp(suffix=".jsonl")
+        os.close(fd)
+        prev = os.environ.get("RDEBUG_TELEMETRY")
+        os.environ["RDEBUG_TELEMETRY"] = self.path2
+        try:
+            from rdebug_mcp import server
+
+            prev_factory = server._session_factory
+            server._session_factory = lambda c: FakeSession()
+            server._MANAGER.dispose_all()
+            try:
+                server.diff_pixel("cap.rdc", 1, 2, 3, 4)
+            finally:
+                server._session_factory = prev_factory
+                server._MANAGER.dispose_all()
+            with open(self.path2, encoding="utf-8") as f:
+                events = [json.loads(line) for line in f if line.strip()]
+            shapes = [e for e in events if e["event"] == "result_shape"]
+            self.assertTrue(shapes)
+            self.assertEqual(shapes[0]["comparison"], "same")
+            self.assertIn("shader_input_values", shapes[0]["unknownLayers"])
+        finally:
+            if prev is not None:
+                os.environ["RDEBUG_TELEMETRY"] = prev
+            else:
+                os.environ.pop("RDEBUG_TELEMETRY", None)
+
+
 if __name__ == "__main__":
     unittest.main()
