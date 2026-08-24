@@ -231,7 +231,12 @@ tests/
   （`RDEBUG_TELEMETRY`），transport 层记录 session/query 生命周期与延迟；
   **并发层冻结**：除非真实数据证明瓶颈，且届时优先进程隔离
   （见 `docs/validation/phase5c-observability.md`）
-- [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
+- [x] **v1 Design Spec 冻结**：`docs/DESIGN_SPEC.md`（五层边界 MUST/MUST-NOT +
+  数据驱动决策规则 + 质量门）+ `scripts/audit_boundaries.py` 机械合规审计（8/8）
+- [ ] **Real-world Validation**（当前阶段）：
+  A. 真实项目试点（非 fixture capture 走完整链路）→
+  B. 数据驱动优化（只解决 telemetry 证明的问题）→
+  C. v1.1 决策（仅由真实需求触发；跨 capture matching 继续冻结）
 
 ## Stable Core（冻结）
 
