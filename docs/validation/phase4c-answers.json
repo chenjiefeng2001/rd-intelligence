@@ -1,0 +1,70 @@
+{
+  "case_same": {
+    "stated_comparison": "same",
+    "stated_first_divergence_layer": null,
+    "stated_layer_statuses": {
+      "pixel_value": "same",
+      "fragment": "unknown",
+      "shader": "unknown",
+      "input_bindings": "same",
+      "shader_input_values": "unknown",
+      "resource_provenance": "same"
+    },
+    "cited_evidence_ids": ["3b22ea22d217", "67bf2cece0b4"],
+    "claims": [],
+    "answer_text": "两个像素最终值相同，未发现任何可证明的差异。注意：两侧均无可证明的 fragment（fragment/shader/shader_input_values 层为 unknown——两侧唯一修改均为 clear），但锚点层 pixel_value 相同，故整体判定为 same。"
+  },
+  "case_fragment": {
+    "stated_comparison": "different",
+    "stated_first_divergence_layer": "input_bindings",
+    "stated_layer_statuses": {
+      "pixel_value": "different",
+      "fragment": "different",
+      "shader": "unknown",
+      "input_bindings": "different",
+      "shader_input_values": "unknown",
+      "resource_provenance": "unknown"
+    },
+    "cited_evidence_ids": ["684378c40853", "c36b29a42f50", "f6d54473c3e2"],
+    "claims": [
+      {"eventId": 11, "resourceId": "ResourceId::35", "statement": "good 像素(320,240)由 Draw#11 写入"},
+      {"eventId": 1, "resourceId": "ResourceId::35", "statement": "bad 像素(10,10)仅被 Clear#1 修改"},
+      {"eventId": 11, "resourceId": "ResourceId::47", "statement": "good 侧 PS 读取 Texture::47"},
+      {"eventId": 2, "resourceId": "ResourceId::47", "statement": "Texture::47 由 Copy#2 (CopyDst) 写入"}
+    ],
+    "answer_text": "first divergence 位于 input_bindings 层：good 像素(320,240) 的 PS 读取 ResourceId::47，而 bad 像素(10,10) 可证明没有任何直接读取（其唯一修改是 clear）。pixel_value 与 fragment 层同样不同，但 input_bindings 是更深的因果层。Texture::47 由 Event#2 CopyDst 写入。"
+  },
+  "case_deep_input": {
+    "stated_comparison": "different",
+    "stated_first_divergence_layer": "shader_input_values",
+    "stated_layer_statuses": {
+      "pixel_value": "different",
+      "fragment": "same",
+      "shader": "same",
+      "input_bindings": "same",
+      "shader_input_values": "different",
+      "resource_provenance": "same"
+    },
+    "cited_evidence_ids": ["ef7be0aeeb61", "684378c40853"],
+    "claims": [
+      {"eventId": 11, "resourceId": "ResourceId::47", "statement": "两侧同一 PS 读取同一 Texture::47"},
+      {"eventId": 11, "resourceId": "ResourceId::35", "statement": "两侧由同一 Draw#11 写入同一目标"}
+    ],
+    "answer_text": "first divergence 位于 shader_input_values：v0(SV_Position) good=[330.5,240.5,...] vs bad=[320.5,240.5,...]（由查询坐标决定）；v1(插值色) good=[0.334,0.334,0.332,1.0] vs bad=[0.348,0.311,0.342,1.0]。结构层（fragment/shader/bindings/provenance）全部相同，差异源于像素位置导致的插值输入不同。"
+  },
+  "case_structural_unknown": {
+    "stated_comparison": "different",
+    "stated_first_divergence_layer": "pixel_value",
+    "stated_layer_statuses": {
+      "pixel_value": "different",
+      "fragment": "same",
+      "shader": "same",
+      "input_bindings": "same",
+      "shader_input_values": "unknown",
+      "resource_provenance": "same"
+    },
+    "cited_evidence_ids": ["ef7be0aeeb61"],
+    "claims": [],
+    "answer_text": "structural 模式下 shader_input_values 为 unknown——当前分析深度未运行 shader debugging，无法证明两侧输入是否不同。已可证明的差异最深只到 pixel_value 层。"
+  }
+}

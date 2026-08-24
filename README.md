@@ -213,7 +213,10 @@ tests/
 - [x] Phase 4b：真实 LLM tool-use 验证（被测模型 ox-alpha，self-play 经真实 MCP transport；
   三实验 5/5 通过：tool selection / argument correctness / evidence grounding /
   unknown discipline / no hallucinated API，见 `docs/validation/phase4b-trajectory.md`）
-- [ ] Phase 4c：Evidence-grounded reasoning benchmark（以 DiffResult 为 ground truth）
+- [x] Clear 语义修正：`fragment_candidate` 谓词（clear 保留 pixel 事实、永不成为 fragment
+  候选、不携带 shader evidence）
+- [x] Phase 4c：Grounded reasoning benchmark（5 指标 × 4 case 全通过；首轮即抓出 diff 层
+  evidence 缺口并修复，见 `docs/validation/phase4c-reasoning.md`）
 - [ ] Phase 3b②：跨 capture diff —— **冻结，不做**（entity resolution 复杂度不划算）
 
 ## MCP Transport（Phase 4a）

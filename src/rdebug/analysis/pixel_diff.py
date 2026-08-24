@@ -171,6 +171,10 @@ def diff_pixel_flows(flow_a, flow_b, capture, shader_values_a=None, shader_value
 
     bind_a, bind_b = flow_a["inputBindings"], flow_b["inputBindings"]
     ev = flow_a["historyEvidence"] + flow_b["historyEvidence"]
+    for rid in bind_a:
+        ev += flow_a["readsEvidence"].get(rid, [])
+    for rid in bind_b:
+        ev += flow_b["readsEvidence"].get(rid, [])
     layers.append(
         _layer_entry(
             "input_bindings",
@@ -216,17 +220,21 @@ def diff_pixel_flows(flow_a, flow_b, capture, shader_values_a=None, shader_value
             prov_status = "different"
             prov_good[rid] = wa
             prov_bad[rid] = wb
-            if pa:
-                for eid in wa or []:
-                    prov_ev += pa["evidence"]["writers"].get(eid, [])
-            if pb:
-                for eid in wb or []:
-                    prov_ev += pb["evidence"]["writers"].get(eid, [])
         elif st == "unknown":
             if prov_status != "different":
                 prov_status = "unknown"
             prov_good[rid] = wa
             prov_bad[rid] = wb
+        if pa:
+            for eid in pa["writers"]:
+                prov_ev += pa["evidence"]["writers"].get(eid, [])
+            for eid in pa["readers"]:
+                prov_ev += pa["evidence"]["readers"].get(eid, [])
+        if pb:
+            for eid in pb["writers"]:
+                prov_ev += pb["evidence"]["writers"].get(eid, [])
+            for eid in pb["readers"]:
+                prov_ev += pb["evidence"]["readers"].get(eid, [])
     layers.append(
         _layer_entry(
             "resource_provenance", prov_status, prov_good, prov_bad,

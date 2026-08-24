@@ -1,0 +1,90 @@
+{
+  "scores": {
+    "cause": {
+      "passed": 4,
+      "total": 4
+    },
+    "evidence": {
+      "passed": 4,
+      "total": 4
+    },
+    "facts": {
+      "passed": 4,
+      "total": 4
+    },
+    "unknown": {
+      "passed": 4,
+      "total": 4
+    },
+    "unsupported_inference": {
+      "passed": 4,
+      "total": 4
+    }
+  },
+  "cases": {
+    "case_same": {
+      "cause": true,
+      "evidence": true,
+      "facts": true,
+      "unknown": true,
+      "unsupported_inference": [],
+      "gt_first": null,
+      "gt_statuses": {
+        "pixel_value": "same",
+        "fragment": "unknown",
+        "shader": "unknown",
+        "input_bindings": "same",
+        "shader_input_values": "unknown",
+        "resource_provenance": "same"
+      }
+    },
+    "case_fragment": {
+      "cause": true,
+      "evidence": true,
+      "facts": true,
+      "unknown": true,
+      "unsupported_inference": [],
+      "gt_first": "input_bindings",
+      "gt_statuses": {
+        "pixel_value": "different",
+        "fragment": "different",
+        "shader": "unknown",
+        "input_bindings": "different",
+        "shader_input_values": "unknown",
+        "resource_provenance": "unknown"
+      }
+    },
+    "case_deep_input": {
+      "cause": true,
+      "evidence": true,
+      "facts": true,
+      "unknown": true,
+      "unsupported_inference": [],
+      "gt_first": "shader_input_values",
+      "gt_statuses": {
+        "pixel_value": "different",
+        "fragment": "same",
+        "shader": "same",
+        "input_bindings": "same",
+        "shader_input_values": "different",
+        "resource_provenance": "same"
+      }
+    },
+    "case_structural_unknown": {
+      "cause": true,
+      "evidence": true,
+      "facts": true,
+      "unknown": true,
+      "unsupported_inference": [],
+      "gt_first": "pixel_value",
+      "gt_statuses": {
+        "pixel_value": "different",
+        "fragment": "same",
+        "shader": "same",
+        "input_bindings": "same",
+        "shader_input_values": "unknown",
+        "resource_provenance": "same"
+      }
+    }
+  }
+}
