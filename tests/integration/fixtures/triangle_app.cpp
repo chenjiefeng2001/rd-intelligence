@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
 
     HMODULE rdoc_mod = nullptr;
     const char* rdoc_dll = argc > 3 ? argv[3] : nullptr;
+    int draws_per_frame = argc > 4 ? atoi(argv[4]) : 1;
     if (rdoc_dll) {
         rdoc_mod = LoadLibraryA(rdoc_dll);
         fprintf(stderr, "[rdoc] LoadLibrary(%s) -> %p\n", rdoc_dll, (void*)rdoc_mod);
@@ -164,7 +165,9 @@ int main(int argc, char** argv) {
         ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
         ctx->VSSetShader(vs, nullptr, 0);
         ctx->PSSetShader(ps, nullptr, 0);
-        ctx->Draw(3, 0);
+        for (int d = 0; d < draws_per_frame; ++d) {
+            ctx->Draw(3, 0);
+        }
 
         if (g_rdoc && f == g_capture_frame) {
             g_rdoc->TriggerCapture();

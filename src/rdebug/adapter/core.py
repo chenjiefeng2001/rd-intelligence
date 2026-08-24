@@ -177,6 +177,7 @@ class CaptureSession:
             _REPLAY_LIFECYCLE["rd"] = self._rd
             _ENUMS["VarType"] = getattr(self._rd, "VarType", None)
             _ENUMS["ShaderStage"] = getattr(self._rd, "ShaderStage", None)
+            _ENUMS["ResourceUsage"] = getattr(self._rd, "ResourceUsage", None)
         _REPLAY_LIFECYCLE["sessions"] += 1
         self._cap = None
         self._ctrl = None
@@ -370,10 +371,18 @@ class CaptureSession:
 
     def usage(self, rid):
         real = self._to_resource_id(rid)
-        return [
-            {"eventId": int(u.eventId), "usage": str(u.usage)}
-            for u in self._ctrl.GetUsage(real)
-        ]
+        enum_t = _ENUMS.get("ResourceUsage")
+        rows = []
+        for u in self._ctrl.GetUsage(real):
+            raw = u.usage
+            rows.append(
+                {
+                    "eventId": int(u.eventId),
+                    "usage": _enum_name(enum_t, raw) if enum_t else str(raw),
+                    "usageRaw": int(raw),
+                }
+            )
+        return rows
 
     def _to_resource_id(self, rid):
         if isinstance(rid, self._rd.ResourceId):

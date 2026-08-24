@@ -1,4 +1,5 @@
 from ..evidence import make as make_evidence
+from ..model import ResourceRef
 from ..query.events import build_action_index, flatten_actions
 from .common import choose_output_target
 
@@ -245,6 +246,7 @@ def trace_pixel(
         context_eid = session.last_draw_event_id()
     if target is None:
         target = choose_output_target(session, context_eid)
+    target = ResourceRef.parse(target).id
 
     history = session.pixel_history(
         target, x, y, mip=mip, slice_=slice_, sample=sample, context_eid=context_eid

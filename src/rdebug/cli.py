@@ -82,6 +82,15 @@ def _build_parser():
     _add_common(usage)
     usage.add_argument("--resource", required=True)
 
+    flow = sub.add_parser(
+        "trace-resource",
+        help="writers/readers of one resource (Phase 2b data-flow primitive)",
+    )
+    _add_common(flow)
+    flow.add_argument("--resource", required=True)
+    flow.add_argument("--eid", type=int, default=None)
+    flow.add_argument("--include-other", action="store_true")
+
     history = sub.add_parser("pixel-history", help="pixel history on a target resource")
     _add_common(history)
     history.add_argument("--target", required=True, help="resource id of the texture")
@@ -219,6 +228,18 @@ def _dispatch(args, indent):
         with _open_session(args) as s:
             rows = s.usage(args.resource)
         _emit({"resource": args.resource, "usages": rows}, indent)
+        return 0
+    if cmd == "trace-resource":
+        from .analysis.resource_flow import trace_resource
+
+        with _open_session(args) as s:
+            payload = trace_resource(
+                s,
+                args.resource,
+                context_eid=args.eid,
+                include_other=args.include_other,
+            )
+        _emit(payload, indent)
         return 0
     if cmd == "pixel-history":
         with _open_session(args) as s:

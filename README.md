@@ -60,6 +60,7 @@ rdebug pipeline capture.rdc --eid 1234
 rdebug usage capture.rdc --resource 91
 rdebug pixel-history capture.rdc --target 91 --x 824 --y 391
 rdebug trace-pixel capture.rdc --x 824 --y 391
+rdebug trace-resource capture.rdc --resource ResourceId::91   # Phase 2b: writers/readers
 rdebug debug-pixel capture.rdc --x 824 --y 391            # 自动从 pixel history 选 fragment
 rdebug debug-pixel capture.rdc --x 824 --y 391 --primitive 3 --sample 0
 ```
@@ -195,10 +196,18 @@ tests/
 - [x] Phase 1b：Lazy Graph（trace-pixel 局部图，JSON 证据输出）
 - [x] Phase 2a：Shader Debug Adapter（debug-pixel → 结构化 ShaderTrace）+ Evidence Contract
 - [x] Phase 2a 验证：真实 `renderdoc.pyd` + 真实 `.rdc` 端到端（见 `docs/validation/phase2a.md`）
-- [ ] Phase 2b：`trace-resource`（writer/reader 查询）→ 再扩展为 Pixel→Resource→Writer 数据流
-- [ ] Phase 2c：旁路 capture index（`*.rdc.idx`，仅在性能实测需要时引入）
+- [x] Validation：性能基线（Small/Medium 档、重复查询曲线）→ **判定暂不需要 `.rdc.idx`**（见 `docs/validation/perf-baseline.md`）
+- [x] Phase 2b：`trace-resource`（writer/reader 分类 + evidence，基于 `GetUsage`）
+- [ ] Phase 2c：Pixel→Shader→Resource→Writer 完整局部数据流（复用已算 history，避免重复 replay）
 - [ ] Phase 3：Capture Diff
-- [ ] Phase 4：AI Provider 外部适配层（只消费 evidence 引用，绝不反向污染 Layer 0/1）
+- [ ] Phase 4：AI / MCP 外部接入层（Phase 2c 完成前禁止进入代码库）
+
+## 设计原则（由真实验证固化）
+
+- **ResourceId 是不透明引用**：Layer 2 一律使用 `rdebug.model.ResourceRef`，禁止 `int` 假设；
+  `ResourceId::NN` 字符串形式只是 adapter 边界格式。
+- **每条 data-flow 边必须携带 evidence**，可回链 `eventId/resourceId/operation` → RenderDoc 原始事实。
+- **fixture 负责确定性回归，真实游戏 capture 负责真实行为**，两者不可互相替代。
 
 ## 许可证
 

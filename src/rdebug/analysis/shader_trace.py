@@ -1,5 +1,6 @@
 from ..errors import QueryError
 from ..evidence import make as make_evidence
+from ..model import ResourceRef
 from .common import choose_output_target
 
 
@@ -101,7 +102,7 @@ def debug_pixel(
         context_eid = session.last_draw_event_id()
     if target is None:
         target = choose_output_target(session, context_eid)
-    target = str(target)
+    target = ResourceRef.parse(target).id
 
     query_evidence = make_evidence(
         capture=session.path,

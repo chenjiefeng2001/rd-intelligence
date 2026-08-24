@@ -77,6 +77,21 @@ class TestRealReplay(unittest.TestCase):
         for ev in trace["evidence"]:
             self.assertIn("id", ev)
 
+    def test_trace_resource_smoke(self):
+        from rdebug.analysis.resource_flow import trace_resource
+
+        s = self._session
+        pipe = s.pipeline(s.last_draw_event_id())
+        outs = pipe.get("outputTargets") or []
+        self.assertTrue(outs)
+        target = outs[0]["resource"]
+        flow = trace_resource(s, target)
+        self.assertGreater(flow["summary"]["writerCount"], 0)
+        for entry in flow["writers"] + flow["readers"]:
+            ev = entry["evidence"][0]
+            self.assertEqual(ev["resourceId"], target)
+            self.assertIn("id", ev)
+
 
 if __name__ == "__main__":
     unittest.main()
