@@ -59,3 +59,8 @@ exit code: 0=pass  1=regression  2=error
 
 - P5b IDE 原型：消费同一 Semantic API（树视图 = 局部数据流；AI 面板 = 解释 divergence）
 - P5c 并发策略：等真实 CI 多 job 场景出现后再设计（当前 LRU=4 已覆盖单用户多捕获）
+
+> **2026-09-29 核对（历史状态已过时）**：P5b 与 P5c **均已完成**——
+> 分别见 `docs/validation/phase5b-ide.md`（IDE SMOKE OK）与
+> `docs/validation/phase5c-observability.md`（重定义为 opt-in JSONL 遥测；
+> 并发层冻结，除非真实数据证明瓶颈）。上文保留为历史记录。

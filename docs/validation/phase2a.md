@@ -17,6 +17,10 @@
 
 ## 基准数据（scripts/bench_phase2a.py）
 
+> ⚠️ **2026-09-29 核对**：`scripts/bench_phase2a.py` **在当前仓库中不存在**
+> （`scripts/` 下只有 `bench.py`）。上文与第 84 行的复现命令均为历史记录，
+> 按原样复现需先找回该脚本。
+
 | 指标 | 值 |
 | --- | --- |
 | capture 大小 | 405,423 B |
@@ -81,5 +85,13 @@ triangle.exe 30 <out>\triangle.rdc <renderdoc>\x64\Release\renderdoc.dll
 set RDEBUG_RENDERDOC_PATH=<renderdoc>\x64\Release\pymodules
 set RDEBUG_INTEGRATION_CAPTURE=<out>\triangle_frame11.rdc
 C:\Python313\python.exe -m unittest discover -s tests
-C:\Python313\python.exe scripts\bench_phase2a.py %RDEBUG_INTEGRATION_CAPTURE%
+C:\Python313\python.exe -m unittest discover -s tests_transport   :: 见下方注
+C:\Python313\python.exe scripts\bench_phase2a.py %RDEBUG_INTEGRATION_CAPTURE%  :: 脚本已不存在
 ```
+
+> ⚠️ **2026-09-29 核对（复现须知）**：
+> 1. `scripts/bench_phase2a.py` **不存在**（`scripts/` 下只有 `bench.py`）——
+>    本节原复现流程的最后一行无法直接执行。
+> 2. `tests_transport/` **不在** `pyproject.toml` 的 `testpaths = ["tests"]` 内，
+>    默认 `pytest` 会跳过它；上表已补上显式运行命令（31 tests）。
+> 3. 路径分隔符在原文混用 `/` 与 `\`（如第 83 行），Windows 下可运行但不一致。

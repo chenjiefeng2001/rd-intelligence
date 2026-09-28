@@ -55,3 +55,9 @@ Diff → First Divergence → MCP → LLM → Evidence-grounded Explanation`，�
 1. transport 会话复用（2.4–3.3s/调用 → 预期 <100ms/后续调用）
 2. 采样到的纹理内容比较（当前 shader_input_values 只覆盖插值输入）
 3. IDE / CI 集成试点
+
+> **2026-09-29 核对（历史状态已过时）**：第 1 项已由 **Phase 4d** 完成
+> （稳态 184.5ms vs cold 6993.5ms ≈38×，见 `phase4d-session-reuse.md`）；
+> 第 3 项已由 **Phase 5a**（CI 门禁）与 **Phase 5b**（IDE 原型）完成。
+> **仅第 2 项（采样纹理内容比较）仍未开工**，并已在 `DESIGN_SPEC.md:169` 冻结，
+> 触发条件为 unknown 分布证明深层原因需求。

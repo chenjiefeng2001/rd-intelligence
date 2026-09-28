@@ -51,6 +51,10 @@ IDE SMOKE OK
   行为不变，全部既有测试通过）；
 - 坐标参数非法输入 → 400 JSON（不崩服务）。
 
+> **2026-09-29 核对**：「transport 套件 23/23」为本报告撰写时的历史计数，
+> 当前 `tests_transport/` 实为 **31 tests**（后续 commit 新增 `result_shape` 等测试）。
+> 该目录无 `__init__.py` 且不在 `pyproject.toml` 的 `testpaths` 内，默认 pytest 不会运行它。
+
 ## 使用
 
 ```bash

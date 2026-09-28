@@ -2,6 +2,15 @@
 
 RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / replay / pixel history），本项目负责理解事实（查询 / 局部依赖图 / 证据输出）。第一阶段不含 AI、不建数据库、不修改 RDC 格式。
 
+> **当前状态（2026-09-29 核对并修复）**
+> - Phase 1a → 5d 全部完成，每阶段有 `docs/validation/` 下的验证报告与原始数据。
+> - **唯一开放的 roadmap 项是 Real-world Validation（A/B/C），尚未开始**，且其前置条件（≥1 周真实负载遥测）尚不满足。
+> - §2.9 runtime isolation 的已知实现缺陷已修复并经真实 RenderDoc 端到端验证（见下方「Runtime Isolation 实现状态」）。
+> - ⚠️ **工作树仍不干净**：`src/rdebug/workers.py`、`src/rdebug/worker_manager.py` 仍为 untracked，
+>   `docs/DESIGN_SPEC.md`（§2.9）与 `src/rdebug/adapter/core.py`（F-N3-4 修复）仍有未提交改动。
+>   仓库外验证环境 `rdebug-validation` 的 N3-05A 验收证据是在含该修复的脏树上产生的。
+> - 跨仓库完成情况总报告见 `../STATUS.md`。
+
 ## 架构边界
 
 ```
@@ -180,16 +189,33 @@ python -m unittest discover -s tests
 目录结构：
 
 ```
-tests/
-├── unit/            # 不依赖 GPU / renderdoc 模块，CI 可全跑
+tests/                            # 核心：74 tests（unit 65 + integration 9）
+├── unit/                         # 不依赖 GPU / renderdoc 模块，CI 可全跑
+│   ├── test_ci_gate.py
+│   ├── test_clear_semantics.py
+│   ├── test_cli.py
+│   ├── test_dataflow_phase2c.py
 │   ├── test_events_logic.py
 │   ├── test_evidence.py
+│   ├── test_pixel_diff.py
 │   ├── test_pixel_trace_graph.py
-│   ├── test_shader_trace_build.py
-│   └── test_cli.py
-└── integration/     # 通过环境变量开启，验证真实 replay 路径
-    └── test_real_replay.py
+│   ├── test_resource_flow.py
+│   └── test_shader_trace_build.py
+├── integration/                  # 通过环境变量开启，验证真实 replay 路径
+│   └── test_real_replay.py
+└── workload/                     # 10 tests；需 corpus + RDEBUG_RENDERDOC_PATH
+    └── ...
+
+tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与核心完全隔离
+├── test_transport.py
+├── test_session_manager.py
+├── test_observability.py
+└── test_ide_app.py
 ```
+
+> ⚠️ `tests_transport/` 没有 `__init__.py`，且不在 `pyproject.toml` 的
+> `testpaths = ["tests"]` 之内——默认 `pytest` 会**静默跳过**这 31 个测试。
+> 需显式运行：`python -m unittest discover -s tests_transport`。
 
 ## Roadmap
 
@@ -233,10 +259,70 @@ tests/
   （见 `docs/validation/phase5c-observability.md`）
 - [x] **v1 Design Spec 冻结**：`docs/DESIGN_SPEC.md`（五层边界 MUST/MUST-NOT +
   数据驱动决策规则 + 质量门）+ `scripts/audit_boundaries.py` 机械合规审计（8/8）
-- [ ] **Real-world Validation**（当前阶段）：
+- [x] Phase 5d：Workload Test v1（14-capture S/M/L 语料；确定性 / 冷热 / evidence /
+  三态 / 隔离 / LRU / 错误注入 / MCP 契约 / 压测九个套件，共 10 tests）。
+  Round 1 GATE FAIL 暴露 WLF-1（LRU 逐出路径原生 AV），Round 2（2026-08-25）
+  **GATE PASS**：2193 queries、correctness 11/11、0 violation，见
+  `docs/validation/phase5d-workload.md`）
+- [ ] Runtime Isolation（§2.9 WorkerManager 模型）—— **代码已写但未提交、未接线、
+  无测试覆盖**。详见下方「Runtime Isolation 实现状态」。
+
+### Runtime Isolation 实现状态（2026-09-29 核对并修复）
+
+`DESIGN_SPEC.md` §2.9 冻结了「一 worker 进程 = 一 replay runtime = 一 capture」的
+架构事实，证据链来自 W1-R1→W1-R3（记录在仓库外 `rdebug-validation/docs/`）。
+本轮已修复下列缺陷，并用真实 RenderDoc 运行时做了端到端验证。
+
+**已修复**
+
+| 缺陷 | 位置 | 影响 |
+| --- | --- | --- |
+| 内存基线初始化写在 `return` 之后（不可达死代码） | `worker_manager.py` `_death_message()` | `mem_baseline` 恒为 `None` → `max_private_memory_delta` 触发器**永不生效**，`production_default()` 的 Δ128MB 形同虚设。已移入 `_spawn()` 成功路径 |
+| `psutil` 未声明为依赖 | `pyproject.toml` | 干净安装下 private bytes 不可读，内存门禁静默失效。已加入 `dependencies` |
+| `psutil` 缺失时静默降级 | `worker_manager.py` | 现显式置 `None` 并上报 `memory_metric: "unavailable"`，**不回退到 RSS 当门禁**（§2.9 禁止） |
+| 字段名违反 §2.9 命名 MUST | `worker_info()` / `recycle_events` | 曾以 `rss_baseline` / `mem_baseline_mb` 承载 private bytes。改为 `private_memory_baseline_bytes` / `private_memory_baseline_mb` |
+| 崩溃恢复靠错误串子串匹配 | `WorkerManager.query()` | 消息含 "dead" 的查询错误会被误判为进程死亡并触发整进程回收。改为结构化 `WorkerError.transient` |
+| 启动失败遗留孤儿进程 | `_Worker._spawn()` | worker 起来但 ping 失败时进程不被终止，仍持有 replay runtime。已补 `kill()` |
+| 子进程管道句柄泄漏 | `_Worker.kill()` | stdout/stderr 从不关闭，长驻 transport 每次回收泄漏一组句柄。已关闭三路管道 |
+| `pixel_diff.py` 函数重复定义 | `_interpolated_inputs` | 两个逐字相同的定义，后者遮蔽前者。已删其一 |
+
+**端到端验证（真实 RenderDoc，2026-09-29）**
+
+在 `tests/workload/corpus/w01024_frame11.rdc` 上实测：
+
+- spawn 后 `mem_baseline = 198.88 MB`（修复前恒为 `None`）；
+- 私有内存增长实测 **~800 KB/查询**（w00016 约 170 KB/查询），
+  与 W1 的 230–500 KB/query 观测同量级；
+- `max_private_memory_delta` 触发器**实际触发**：6 个 worker 代次、5 次回收，
+  `recycle_events` 记录 `reason: "max_private_memory_delta"`；
+- **§2.9「语义结果不依赖 worker 生命周期」实测成立**：跨 6 代次
+  语义 payload 逐字节一致（该性质在修复前无法验证——因为从不发生回收）。
+
+**仍存在的差距**
+
+| 状态 | 项 |
+| --- | --- |
+| ⚠️ 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示） |
+| ⚠️ 未提交 | `workers.py` / `worker_manager.py` / `DESIGN_SPEC.md` §2.9 / `adapter/core.py` F-N3-4 修复均未进版本库；N3-05A 验收证据仍绑在脏工作树上 |
+| ⚠️ 无 CI | 仓库无 `.github/workflows`。上述测试与边界审计需手工执行 |
+
+测试：`tests/unit/test_worker_manager.py` 新增 **34 tests**（stub worker，
+不依赖 RenderDoc），含针对上述死代码缺陷的回归测试——已验证在缺陷复现时
+会 FAIL（非 skip）。全套件：核心 99（另 integration 9 / workload 10 需真实
+capture）、transport 31、边界审计 15/15 + 1 deviation、`ruff check` 全绿。
+
+- [ ] **Real-world Validation**（唯一开放的 roadmap 项，NOT STARTED）：
   A. 真实项目试点（非 fixture capture 走完整链路）→
   B. 数据驱动优化（只解决 telemetry 证明的问题）→
   C. v1.1 决策（仅由真实需求触发；跨 capture matching 继续冻结）
+
+  `docs/REAL_WORLD_VALIDATION.md` 的 5 项检查全部未勾选。前置条件尚未满足：
+  磁盘上仅有 **1h51m** 遥测（2026-08-25 04:45–06:37，710 事件），
+  不构成 `REAL_WORLD_VALIDATION.md:53` 要求的「≥1 周真实负载归档」。
+  该文档同时写明「从此刻起，『不开发』是默认正确的工程动作」。
+
+  跨机器确定性（D7 / N1）为 OPEN 证据缺口——B/C 机器 `unavailable`，
+  不作跨机器声明；且 N3 侧的 D7 缺口**不能靠替换渲染器关闭**。
 
 ## Stable Core（冻结）
 
@@ -265,8 +351,13 @@ rdebug-mcp          # stdio MCP server，四个 tool：trace_pixel / trace_resou
 - 不出现任何 RenderDoc API 标识（`ReplayController/PixelHistory/GetUsage/DebugPixel/...`）；
 - 对 `rdebug.analysis` 的 import 仅限四个语义函数——**无编排、无分析逻辑**；
 - 结果（含 evidence）原样 JSON 透传，不创建第二套 domain model；
-- 运行期错误以 `{"error": ..., "tool": ...}` JSON 返回，不中断会话；
-- 每次调用独立打开 capture（~1–3s 开销）；会话复用留作加法演进。
+- 运行期错误以 `{"error": ..., "tool": "..."}` JSON 返回，不中断会话；
+- 会话复用已实现（Phase 4d `SessionManager`：路径隔离 / LRU / 健康探测 /
+  失效恢复），稳态 **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4。
+  ⚠️ 但 `server.py:34` 当前仍实例化**遗留的进程内** `SessionManager`，
+  未迁移到 §2.9 的 WorkerManager 模型；W1-R1 的 F-1/F-2（多 controller 共存导致
+  静默值污染 / 原生挂起 / 0xC0000005）正发生在该路径上。
+  缓解：Agent/IDE 切换 capture 即重建 transport。见 `DESIGN_SPEC.md` §2.9。
 
 客户端配置示例（Claude Desktop / 任意 MCP client）：
 

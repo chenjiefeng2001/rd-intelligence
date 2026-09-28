@@ -37,6 +37,12 @@
 `tests_transport/test_observability.py`（6 个）：默认关闭零写入、record/timed、
 写失败不抛错、open/reuse/evict/recovery 事件、查询事件。全套件：transport 28/28、核心 74/74。
 
+> **2026-09-29 核对**：上列为本报告撰写时的历史计数。commit `9134cab`
+>（telemetry `result_shape` 观测）为其后新增 3 个 `result_shape` 测试，
+> 当前 `tests_transport/` 实为 **31 tests**（`test_observability.py` 8 个）。
+> 同时注意 `tests_transport/` 无 `__init__.py` 且不在 `pyproject.toml` 的
+> `testpaths = ["tests"]` 内，默认 pytest 不会运行它。
+
 ## 决策规则（写死，防止架构漂移）
 
 ```text
