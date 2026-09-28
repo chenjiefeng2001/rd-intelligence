@@ -9,10 +9,21 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "src")
 CHECKS = []
+DEVIATIONS = []
 
 
 def check(name, ok, detail=""):
     CHECKS.append((name, bool(ok), detail))
+
+
+def deviation(name, detail):
+    """A gap DESIGN_SPEC explicitly permits, recorded so it stays visible.
+
+    Not a violation, so it must not fail the audit -- but it also must not
+    be able to disappear. A deviation means "the spec allows this today and
+    it still has to be closed".
+    """
+    DEVIATIONS.append((name, detail))
 
 
 def read(path):
@@ -31,6 +42,92 @@ def walk(package):
                 rel = os.path.relpath(full, ROOT).replace("\\", "/")
                 out[rel] = open(full, encoding="utf-8").read()
     return out
+
+
+def audit_29(core, transports):
+    """DESIGN_SPEC §2.9 Runtime Isolation rules.
+
+    §2.9 was the newest normative section and the only one with no
+    mechanical check, so a violation could not be caught by the audit. These
+    checks are deliberately static (naming and layering), not behavioural:
+    behavioural coverage lives in tests/unit/test_worker_manager.py.
+    """
+
+    # 2.9 MUST: memory thresholds and their reported fields use
+    # private-memory naming. An RSS-named field is either an ambiguous name
+    # or -- worse -- a gate fed by working set, which OS trimming makes
+    # unreliable (observed baseline drift up to -35MB).
+    wm_path = "rdebug/worker_manager.py"
+    wm_text = core.get(wm_path, "")
+    if wm_text:
+        reported = set(re.findall(r'"(\w*(?:rss|memory)\w*)"\s*:', wm_text))
+        ambiguous = sorted(
+            f for f in reported
+            if "rss" in f.lower() and "working_set" not in f.lower())
+        check("2.9 no RSS-named reported field in worker_manager",
+              not ambiguous, ", ".join(ambiguous))
+
+        # The policy must expose a private-memory-delta threshold.
+        check("2.9 private-memory-delta threshold exists",
+              "max_private_memory_delta_mb" in wm_text)
+
+        # 2.9 MUST: a missing private-memory metric must not fall back to
+        # RSS as a gate. The RSS fallback is allowed for the *current*
+        # reading; the baseline must stay None so the delta trigger is
+        # inert rather than silently switching metrics.
+        check("2.9 baseline never falls back to RSS",
+              not re.search(
+                  r"mem_baseline\s*=\s*self\.rss_bytes\(\)", wm_text))
+
+        # 2.9 MUST: the baseline must be captured on the spawn path, not
+        # after a return. Regression: it once sat after `return msg` in
+        # _death_message(), so it stayed None and the delta trigger could
+        # never fire.
+        check("2.9 baseline captured on spawn",
+              "_capture_baseline()" in wm_text)
+
+    # 2.9 MUST: one worker process owns one runtime. The worker module must
+    # refuse a capture that is not the one it was started with, and must
+    # never be imported by Stable Core. worker_manager.py is exempt: it is
+    # the launcher and legitimately names the worker as a subprocess module
+    # (-m rdebug.workers) without importing it.
+    workers_path = "rdebug/workers.py"
+    workers_text = core.get(workers_path, "")
+    if workers_text:
+        check("2.9 worker rejects foreign captures",
+              "requested" in workers_text and "worker bound to" in workers_text)
+    violations = []
+    for path, text in core.items():
+        if path in (workers_path, wm_path):
+            continue
+        if re.search(r"rdebug\.workers|from rdebug import workers", text):
+            violations.append(path)
+    check("2.9 worker protocol not imported into Stable Core", not violations,
+          ", ".join(violations))
+
+    # 2.9 MUST NOT: transports must not construct the legacy in-process
+    # multi-session SessionManager in NEW code. MCP/IDE still do. DESIGN_SPEC
+    # explicitly labels them a transitional form, so this is a recorded
+    # deviation rather than a failure -- but it is the single largest open
+    # item in §2.9: F-1/F-2 (silent value corruption, native hang, 0xC0000005
+    # from multiple live controllers) originate on exactly this path.
+    legacy = []
+    for path, text in transports.items():
+        if re.search(r"SessionManager\s*\(", text):
+            legacy.append(path)
+    if legacy:
+        deviation("2.9 transports still on legacy SessionManager",
+                  ", ".join(legacy) + " (W1-R1 F-1/F-2 live here; "
+                  "migrate to WorkerManager)")
+
+    # 2.9 MUST NOT: the bounded-retry recovery must be driven by a
+    # structured signal, not by substring-matching the error text. A query
+    # error whose message contains "dead" would otherwise trigger a full
+    # process recycle.
+    if wm_text:
+        check("2.9 recovery uses structured transient flag",
+              "e.transient" in wm_text
+              and "exited unexpectedly\", " not in wm_text)
 
 
 def main():
@@ -122,6 +219,8 @@ def main():
 
     check("2.8 telemetry default off", observability.record("audit") is False)
 
+    audit_29(core, transports)
+
     width = max(len(name) for name, _ok, _d in CHECKS) + 3
     failed = 0
     for name, ok, detail in CHECKS:
@@ -129,8 +228,14 @@ def main():
         if not ok:
             failed += 1
         print(f"{mark}  {name.ljust(width)}{detail}")
+    if DEVIATIONS:
+        print()
+        for name, detail in DEVIATIONS:
+            print(f"DEVIATION  {name}\n            {detail}")
     print()
-    print(f"{len(CHECKS) - failed}/{len(CHECKS)} boundary checks passed")
+    print(f"{len(CHECKS) - failed}/{len(CHECKS)} boundary checks passed"
+          + (f"; {len(DEVIATIONS)} recorded deviation(s)" if DEVIATIONS
+             else ""))
     sys.exit(1 if failed else 0)
 
 
