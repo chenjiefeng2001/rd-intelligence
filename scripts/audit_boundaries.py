@@ -3,9 +3,12 @@
 Runs the machine-checkable rules and prints a PASS/FAIL table.
 Non-zero exit code = violation."""
 
+import ast
+import io
 import os
 import re
 import sys
+import tokenize
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "src")
 CHECKS = []
@@ -40,7 +43,10 @@ def walk(package):
             if fn.endswith(".py"):
                 full = os.path.join(dirpath, fn)
                 rel = os.path.relpath(full, ROOT).replace("\\", "/")
-                out[rel] = open(full, encoding="utf-8").read()
+                # utf-8-sig: rdebug_mcp/server.py carries a BOM. Python's
+                # import machinery tolerates it, but ast.parse() does not,
+                # so anything that parses these sources needs this.
+                out[rel] = open(full, encoding="utf-8-sig").read()
     return out
 
 
@@ -128,6 +134,127 @@ def audit_29(core, transports):
         check("2.9 recovery uses structured transient flag",
               "e.transient" in wm_text
               and "exited unexpectedly\", " not in wm_text)
+
+    audit_failure_shapes(core, transports)
+
+
+# Files where a swallowed exception is acceptable. Each needs a reason.
+_SWALLOW_ALLOWLIST = {
+    # §2.8: telemetry MUST be best-effort and MUST NOT change query behaviour.
+    "rdebug/observability.py": "2.8 telemetry is best-effort by mandate",
+}
+
+
+def audit_failure_shapes(core, transports):
+    """§2.5: a failure to look must not be reported as an observation.
+
+    The three-state contract only holds if "I could not look" is
+    distinguishable from "I looked and found nothing". The recurring
+    violation is an `except` that substitutes a benign-looking value (an
+    empty list, an empty string) for a failed lookup; that value then
+    compares equal to another empty value and the caller reports `same`.
+
+    Swallowing into None is fine -- None is what `unknown` is built from --
+    and so is a handler that only guards cleanup. What is not fine is
+    inventing an empty observation out of a failure.
+
+    AST-based: a regex version of this check passed while the very bug it
+    was written for was still present, so the pattern is matched
+    structurally instead. A handler may opt out with a comment carrying
+    one of _EMPTY_IS_HONEST markers on the same or the preceding line.
+    """
+    semantic = {
+        path: text for path, text in core.items()
+        if path.startswith(("rdebug/analysis", "rdebug/adapter",
+                            "rdebug/query", "rdebug/model.py",
+                            "rdebug/evidence.py", "rdebug/ci.py"))
+    }
+    violations = []
+    for path, text in sorted(semantic.items()):
+        if path in _SWALLOW_ALLOWLIST:
+            continue
+        comments = _comment_lines(text)
+        tree = ast.parse(text)
+        for handler in (n for n in ast.walk(tree)
+                        if isinstance(n, ast.ExceptHandler)):
+            for node in ast.walk(handler):
+                if not isinstance(node, ast.Assign):
+                    continue
+                if not any(isinstance(t, ast.Name) for t in node.targets):
+                    continue
+                if not _is_empty_observation(node.value):
+                    continue
+                window = comments.get(node.lineno, "") + " " + \
+                    comments.get(node.lineno - 1, "")
+                if not re.search(_EMPTY_IS_HONEST, window, re.I):
+                    violations.append(
+                        f"{path}:{node.lineno} -> {ast.unparse(node.value)}")
+    check("2.5 failed lookups are not reported as empty observations",
+          not violations, "; ".join(violations))
+
+    # 2.6: transports must turn runtime errors into a JSON body. An
+    # exception escaping the request handler drops the connection, which a
+    # client cannot distinguish from a crash. The precise failure mode is a
+    # dispatcher that only catches the domain error while its request
+    # parsers index into the query dict directly: a missing parameter then
+    # raises KeyError and escapes.
+    #
+    # Scoped to the dispatch function's own handlers. A file-level scan for
+    # "somewhere there is an except KeyError" is defeated by an unrelated
+    # handler elsewhere in the module -- which is exactly what happened
+    # when this was first written, so it passed while the bug was present.
+    bad = []
+    for path, text in sorted(transports.items()):
+        tree = ast.parse(text)
+        for fn in ast.walk(tree):
+            if not isinstance(fn, ast.FunctionDef):
+                continue
+            if not re.match(r"(route|dispatch|handle|_safe|wrapper)$",
+                            fn.name):
+                continue
+            handlers = [h.type for st in ast.walk(fn)
+                        if isinstance(st, ast.Try) for h in st.handlers]
+            names = set()
+            for h in handlers:
+                if h is None:
+                    names.add("BARE")
+                elif isinstance(h, ast.Tuple):
+                    names.update(e.id for e in h.elts
+                                 if isinstance(e, ast.Name))
+                elif isinstance(h, ast.Name):
+                    names.add(h.id)
+            if not names:
+                continue
+            if names & {"Exception", "BARE"}:
+                continue  # catch-all converts anything
+            if not names & {"KeyError", "IndexError", "ValueError"}:
+                bad.append(f"{path}:{fn.name} ({', '.join(sorted(names))})")
+    check("2.6 transports convert query errors to a response body",
+          not bad, "; ".join(bad))
+
+
+_EMPTY_IS_HONEST = (r"not the same|distinguish|unknown|could not|failed|"
+                    r"absent|does not mean|≠|error|empty is|honest|no such")
+
+
+def _is_empty_observation(node):
+    """True for a literal that reads as a successful empty observation."""
+    if isinstance(node, (ast.List, ast.Dict, ast.Set, ast.Tuple)):
+        return not (node.elts if hasattr(node, "elts") else node.keys)
+    if isinstance(node, ast.Constant):
+        return node.value in ("", 0) and not isinstance(node.value, bool)
+    return False
+
+
+def _comment_lines(text):
+    out = {}
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT:
+                out[tok.start[0]] = tok.string
+    except Exception:
+        pass
+    return out
 
 
 def main():
