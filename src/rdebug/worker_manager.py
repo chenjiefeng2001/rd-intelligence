@@ -164,8 +164,15 @@ class _Worker:
                 if line:
                     with self._stderr_lock:
                         self._stderr_tail.append(line)
-        except Exception:
-            pass
+        except Exception as e:
+            # A dead drain thread means the ring stops filling AND the pipe
+            # is never drained, so every later death would report
+            # stderr_tail=<empty> -- re-creating the "only observable as
+            # exited unexpectedly" blind spot this buffer exists to remove.
+            # Record the failure in the buffer instead of losing it.
+            with self._stderr_lock:
+                self._stderr_tail.append(
+                    f"<stderr drain thread failed: {type(e).__name__}: {e}>")
         finally:
             self._stderr_done.set()
 
@@ -283,16 +290,36 @@ class _Worker:
             return None
 
     def mem_current(self):
-        """Preferred native-state metric: private bytes, RSS fallback."""
-        cur = self.private_bytes()
-        return cur if cur is not None else self.rss_bytes()
+        """Private bytes, or None when that metric cannot be read.
+
+        No RSS fallback, deliberately. This value is fed to the
+        private-memory-delta gate, and the baseline it is compared against
+        is always private bytes. A fallback here would compare RSS against
+        a private-bytes baseline -- different units, and working sets are
+        trimmed under memory pressure (baseline drift up to -35MB was
+        measured), so the trigger would either silently disable itself or
+        fire spuriously. Returning None leaves the trigger unevaluable,
+        which _recycle_reason() handles and worker_info() reports as
+        memory_metric="unavailable". DESIGN_SPEC §2.9 forbids RSS as a
+        gate input; the diagnostic-only reading stays in rss_bytes().
+        """
+        return self.private_bytes()
 
     def alive(self):
         return self.proc is not None and self.proc.poll() is None
 
     def kill(self):
+        """Terminate the worker, escalating until it is actually gone.
+
+        Returns True when the process is confirmed reaped. A failed kill is
+        not the same as a successful one: the worker would keep an open
+        .rdc handle and a live replay runtime (§2.9) while the registry
+        believes it is disposed. terminate() being ignored is rare but
+        real, so fall through to kill() and then report honestly rather
+        than swallowing the evidence.
+        """
         if self.proc is None:
-            return
+            return True
         try:
             if self.proc.poll() is None:
                 try:
@@ -307,6 +334,13 @@ class _Worker:
                 self.proc.wait(timeout=10)
             except Exception:
                 pass
+            if self.proc.poll() is None:
+                # terminate() was ignored or too slow: escalate.
+                try:
+                    self.proc.kill()
+                    self.proc.wait(timeout=10)
+                except Exception:
+                    pass
         finally:
             # Close every pipe. The stdout/stderr readers are daemon threads
             # blocked on read(); once the process is reaped they see EOF, but
@@ -318,10 +352,12 @@ class _Worker:
                         stream.close()
                 except Exception:
                     pass
+        return not self.alive()
 
     def dispose(self):
+        """Ask the worker to exit, then kill it. True when confirmed gone."""
         if self.proc is None:
-            return
+            return True
         try:
             with self._lock:
                 if self.proc.poll() is None:
@@ -330,7 +366,7 @@ class _Worker:
                     self.proc.stdin.flush()
         except Exception:
             pass
-        self.kill()
+        return self.kill()
 
 
 class WorkerManager:
@@ -529,12 +565,26 @@ class WorkerManager:
     def dispose(self, capture):
         key = os.path.abspath(capture)
         w = self._workers.pop(key, None)
-        if w is not None:
-            w.dispose()
+        if w is not None and not w.dispose():
+            # The registry no longer knows about this worker, so a survivor
+            # would be invisible from here on while still holding the
+            # capture. Record it rather than pretending the dispose worked.
+            self.recycle_events.append({
+                "capture": os.path.basename(key),
+                "reason": "dispose_failed",
+                "pid": w.proc.pid if w.proc else None,
+                "note": "worker survived terminate() and kill(); the replay "
+                        "runtime may still be live in that process",
+            })
 
     def dispose_all(self):
         for key in list(self._workers):
             self.dispose(key)
+
+    def unkillable(self):
+        """Workers that could not be confirmed dead, most recent first."""
+        return [e for e in self.recycle_events
+                if e.get("reason") == "dispose_failed"]
 
     def captures(self):
         return list(self._workers)

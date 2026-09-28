@@ -45,6 +45,27 @@ class TestIdeApi(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("error", payload)
 
+    def test_missing_query_parameter_is_400_json_not_a_dropped_connection(self):
+        # api_trace() does query["x"][0] directly, so a request without "x"
+        # raised KeyError, which escaped the `except RDebugError` handler and
+        # made BaseHTTPRequestHandler drop the connection with no body.
+        # DESIGN_SPEC §2.6 requires runtime errors to return JSON.
+        status, payload = app.route("/api/trace", {"y": ["4"]})
+        self.assertEqual(status, 400)
+        self.assertIn("error", payload)
+        self.assertIn("invalid request parameters", payload["error"])
+
+    def test_non_numeric_coordinate_is_400_json(self):
+        status, payload = app.route("/api/trace",
+                                    {"x": ["not-a-number"], "y": ["4"]})
+        self.assertEqual(status, 400)
+        self.assertIn("error", payload)
+
+    def test_missing_id_is_400_json(self):
+        status, payload = app.route("/api/resource", {})
+        self.assertEqual(status, 400)
+        self.assertIn("error", payload)
+
     def test_explain_prompt_is_grounded(self):
         status, payload = app.route("/api/explain", {"a": ["1,2"], "b": ["3,4"]})
         self.assertEqual(status, 200)

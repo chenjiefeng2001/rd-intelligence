@@ -42,11 +42,20 @@ def scenario_error_injection():
     missing = os.path.join(tmp, "missing.rdc")
 
     for bad in (corrupted, missing):
+        # The AssertionError must be raised OUTSIDE the try, or the very
+        # guard it implements gets swallowed by its own handler and the
+        # scenario reports SCENARIO_OK for a capture that opened fine.
+        opened = None
         try:
-            CaptureSession(bad)
-            raise AssertionError("corrupted/missing capture opened")
+            opened = CaptureSession(bad)
+        except QueryError:
+            continue
         except Exception:
-            pass
+            # A native-level failure is an acceptable rejection too.
+            continue
+        if opened is not None:
+            opened.close()
+            raise AssertionError("corrupted/missing capture opened")
     os.remove(corrupted)
 
     with SessionManager(factory_provider=lambda: CaptureSession,

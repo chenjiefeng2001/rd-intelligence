@@ -199,6 +199,17 @@ def route(path, query):
     except RDebugError as e:
         record("query_error", transport="ide", endpoint=path, error=str(e))
         return 400, {"error": str(e)}
+    except (KeyError, IndexError, ValueError, TypeError) as e:
+        # Malformed query parameters (a missing "x", a non-numeric
+        # coordinate). DESIGN_SPEC §2.6 requires runtime errors to come back
+        # as JSON rather than interrupting the session; without this the
+        # exception escaped the handler and BaseHTTPRequestHandler dropped
+        # the connection with no body at all.
+        detail = f"{type(e).__name__}: {e}"
+        record("query_error", transport="ide", endpoint=path, error=detail,
+               kind="bad_request")
+        return 400, {"error": "invalid request parameters: " + detail,
+                     "endpoint": path}
 
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
