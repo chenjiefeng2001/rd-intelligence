@@ -102,9 +102,17 @@ def _extract_flow(graph, history, actions_index=None):
         "historyEvidence": history.payload.get("evidence", []),
         "writesEvidence": writes_evidence,
         "shader": shader,
-        "inputBindings": sorted(input_bindings),
+        # None, not [], when the read/input-binding set could not be
+        # enumerated. compare_scalar() maps None to "unknown", so an
+        # unobservable set can never be reported as "same" (§2.5). [] would
+        # compare equal to [] and fabricate agreement out of a failure.
+        "inputBindings": (sorted(input_bindings)
+                          if graph.get("summary", {}).get(
+                              "readsEnumerable", True) else None),
         "readsEvidence": reads_evidence,
-        "provenance": provenance,
+        "provenance": (provenance
+                       if graph.get("summary", {}).get(
+                           "readsEnumerable", True) else None),
     }
 
 
@@ -171,9 +179,10 @@ def diff_pixel_flows(flow_a, flow_b, capture, shader_values_a=None, shader_value
 
     bind_a, bind_b = flow_a["inputBindings"], flow_b["inputBindings"]
     ev = flow_a["historyEvidence"] + flow_b["historyEvidence"]
-    for rid in bind_a:
+    # bind_a/bind_b are None when the read set could not be enumerated.
+    for rid in (bind_a or ()):
         ev += flow_a["readsEvidence"].get(rid, [])
-    for rid in bind_b:
+    for rid in (bind_b or ()):
         ev += flow_b["readsEvidence"].get(rid, [])
     layers.append(
         _layer_entry(
@@ -183,6 +192,9 @@ def diff_pixel_flows(flow_a, flow_b, capture, shader_values_a=None, shader_value
             bind_b,
             "sorted direct read resources",
             ev,
+            note=(None if bind_a is not None and bind_b is not None else
+                  "bound descriptors could not be enumerated for at least "
+                  "one side; the read set is not known"),
         )
     )
 
@@ -207,40 +219,56 @@ def diff_pixel_flows(flow_a, flow_b, capture, shader_values_a=None, shader_value
             )
         )
 
-    rids = sorted(set(flow_a["provenance"]) | set(flow_b["provenance"]))
-    prov_status = "same"
-    prov_good, prov_bad, prov_ev = {}, {}, []
-    for rid in rids:
-        pa = flow_a["provenance"].get(rid)
-        pb = flow_b["provenance"].get(rid)
-        wa = pa["writers"] if pa else None
-        wb = pb["writers"] if pb else None
-        st = compare_scalar(wa, wb)
-        if st == "different":
-            prov_status = "different"
-            prov_good[rid] = wa
-            prov_bad[rid] = wb
-        elif st == "unknown":
-            if prov_status != "different":
-                prov_status = "unknown"
-            prov_good[rid] = wa
-            prov_bad[rid] = wb
-        if pa:
-            for eid in pa["writers"]:
-                prov_ev += pa["evidence"]["writers"].get(eid, [])
-            for eid in pa["readers"]:
-                prov_ev += pa["evidence"]["readers"].get(eid, [])
-        if pb:
-            for eid in pb["writers"]:
-                prov_ev += pb["evidence"]["writers"].get(eid, [])
-            for eid in pb["readers"]:
-                prov_ev += pb["evidence"]["readers"].get(eid, [])
-    layers.append(
-        _layer_entry(
-            "resource_provenance", prov_status, prov_good, prov_bad,
-            "writer event ids per read resource", prov_ev,
+    prov_a, prov_b = flow_a["provenance"], flow_b["provenance"]
+    if prov_a is None or prov_b is None:
+        # Writer provenance could not be enumerated. Reporting "same" here
+        # would claim two captures agree on data flow that was never
+        # observed, which is precisely the unknown->same upgrade §2.5
+        # forbids.
+        layers.append(
+            _layer_entry(
+                "resource_provenance", "unknown", None, None,
+                "writer event ids per read resource",
+                flow_a["historyEvidence"] + flow_b["historyEvidence"],
+                note="read resources could not be enumerated for at least "
+                     "one side; writer provenance is not known",
+            )
         )
-    )
+    else:
+        rids = sorted(set(prov_a) | set(prov_b))
+        prov_status = "same"
+        prov_good, prov_bad, prov_ev = {}, {}, []
+        for rid in rids:
+            pa = prov_a.get(rid)
+            pb = prov_b.get(rid)
+            wa = pa["writers"] if pa else None
+            wb = pb["writers"] if pb else None
+            st = compare_scalar(wa, wb)
+            if st == "different":
+                prov_status = "different"
+                prov_good[rid] = wa
+                prov_bad[rid] = wb
+            elif st == "unknown":
+                if prov_status != "different":
+                    prov_status = "unknown"
+                prov_good[rid] = wa
+                prov_bad[rid] = wb
+            if pa:
+                for eid in pa["writers"]:
+                    prov_ev += pa["evidence"]["writers"].get(eid, [])
+                for eid in pa["readers"]:
+                    prov_ev += pa["evidence"]["readers"].get(eid, [])
+            if pb:
+                for eid in pb["writers"]:
+                    prov_ev += pb["evidence"]["writers"].get(eid, [])
+                for eid in pb["readers"]:
+                    prov_ev += pb["evidence"]["readers"].get(eid, [])
+        layers.append(
+            _layer_entry(
+                "resource_provenance", prov_status, prov_good, prov_bad,
+                "writer event ids per read resource", prov_ev,
+            )
+        )
 
     differing = [entry for entry in layers if entry["status"] == "different"]
 
@@ -318,3 +346,4 @@ def _interpolated_inputs(session, x, y, history):
         ]
     except QueryError:
         return None
+

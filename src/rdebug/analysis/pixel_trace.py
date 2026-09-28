@@ -43,6 +43,10 @@ def build_graph(pixel, history, pipelines, actions=None, target=None, capture=No
         nodes.append(node)
         return node
 
+    # Starts optimistic; flipped to False if any bound pipeline's descriptor
+    # list could not be enumerated (see the pipeline loop below).
+    reads_enumerable = True
+
     pixel_id = f"pixel:{pixel['x']},{pixel['y']}"
     add_node(
         {
@@ -131,6 +135,12 @@ def build_graph(pixel, history, pipelines, actions=None, target=None, capture=No
         pipe = pipelines.get(eid)
         if not pipe:
             continue
+        # Checked before the pixel-shader block below: descriptor
+        # enumeration can fail on any bound pipeline, and the flag has to be
+        # recorded even when no Pixel shader is present (otherwise the diff
+        # layer would see readsEnumerable=True and compare [] to []).
+        if pipe.get("descriptorsError"):
+            reads_enumerable = False
         is_fragment = bool(action_info.get("fragmentCandidate", True))
         ps = pipe.get("shaders", {}).get("Pixel")
         if ps and not group["directWrite"] and is_fragment:
@@ -231,6 +241,10 @@ def build_graph(pixel, history, pipelines, actions=None, target=None, capture=No
         "finalValue": final_value,
         "contextEventId": history.get("contextEventId"),
         "evidence": history.get("evidence", []),
+        # False when a bound pipeline's descriptor list could not be
+        # enumerated. Consumers must treat the read/input-binding set as
+        # "not known" rather than "known to be empty" (DESIGN_SPEC §2.5).
+        "readsEnumerable": reads_enumerable,
     }
     return {"nodes": nodes, "edges": edges, "summary": summary}
 

@@ -24,7 +24,13 @@ def build_shader_trace(
     include_disassembly=True,
     evidence=None,
 ):
-    disasm_lines = raw["disassembly"].splitlines()
+    # A failed DisassembleShader() is reported by the adapter as
+    # disassemblyError with an empty body. Keep the empty string out of the
+    # semantic payload in that case: an empty disassembly is a claim about
+    # the shader, while a failed one is a gap in what we could observe.
+    disassembly_error = raw.get("disassemblyError")
+    disasm_lines = ([] if disassembly_error
+                    else raw["disassembly"].splitlines())
     files = raw["files"]
     steps_out = []
     for s in raw["steps"]:
@@ -82,7 +88,10 @@ def build_shader_trace(
         "evidence": trace_evidence,
     }
     if include_disassembly:
-        payload["disassembly"] = raw["disassembly"]
+        if disassembly_error:
+            payload["disassemblyError"] = disassembly_error
+        else:
+            payload["disassembly"] = raw["disassembly"]
     return payload
 
 

@@ -265,8 +265,16 @@ class CaptureSession:
         if _REPLAY_LIFECYCLE["initialised"] and _REPLAY_LIFECYCLE["sessions"] == 0:
             try:
                 _REPLAY_LIFECYCLE["rd"].ShutdownReplay()
-            except Exception:
-                pass
+            except Exception as e:
+                # Do NOT clear the flag on failure. Recording the runtime as
+                # torn down while it is still initialised would let the next
+                # CaptureSession call InitialiseReplay() a second time --
+                # the F-N3-4 condition, which crashed 23/60 Vulkan spawns.
+                # Leaving it initialised instead makes the state honest: the
+                # runtime is still up, and the process is expected to exit.
+                _REPLAY_LIFECYCLE["shutdown_error"] = (
+                    f"{type(e).__name__}: {e}")
+                return
             _REPLAY_LIFECYCLE["initialised"] = False
 
     @property
@@ -352,8 +360,11 @@ class CaptureSession:
             props = self._ctrl.GetAPIProperties()
             info["pipelineType"] = str(props.pipelineType)
             info["shaderDebugging"] = bool(props.shaderDebugging)
-        except Exception:
-            pass
+        except Exception as e:
+            # Make a partial payload self-describing: without this the
+            # caller sees a successful response that is silently missing two
+            # facts and cannot tell a partial answer from a complete one.
+            info["apiPropertiesError"] = f"{type(e).__name__}: {e}"
         return info
 
     def resources(self, name=None, limit=None):
@@ -569,16 +580,22 @@ class CaptureSession:
                     truncated = True
                     break
             pipeline_obj = pipe.GetGraphicsPipelineObject()
-            disasm = ""
+            # A missing disassembly is NOT the same fact as an empty one.
+            # "" used to flow into shader_trace as a real value, so a failed
+            # DisassembleShader() was indistinguishable from a shader with
+            # no readable instructions, and the failure was never
+            # attributable (DESIGN_SPEC §2.4: conclusions are
+            # evidence-backed).
+            disasm, disasm_error = "", None
             try:
                 disasm = str(self._ctrl.DisassembleShader(pipeline_obj, refl, ""))
-            except Exception:
-                pass
+            except Exception as e:
+                disasm_error = f"{type(e).__name__}: {e}"
             files = []
             df = getattr(di, "files", None)
             if df is not None:
                 files = [{"index": i, "filename": str(f.filename)} for i, f in enumerate(df)]
-            return {
+            out = {
                 "stage": _enum_name(_ENUMS.get("ShaderStage"), trace.stage),
                 "entryPoint": str(refl.entryPoint),
                 "shaderResource": _rid_str(sid),
@@ -591,6 +608,9 @@ class CaptureSession:
                 "constantBlocks": [_variable_to_dict(v) for v in trace.constantBlocks],
                 "truncated": truncated,
             }
+            if disasm_error is not None:
+                out["disassemblyError"] = disasm_error
+            return out
         finally:
             try:
                 self._ctrl.FreeTrace(trace)
@@ -652,8 +672,16 @@ class CaptureSession:
             out["shaders"][stage_name] = shader_entry
         try:
             used = pipe.GetAllUsedDescriptors(True)
-        except Exception:
+        except Exception as e:
+            # An empty descriptor list and a failed enumeration are NOT the
+            # same fact. Returning [] here used to make build_graph emit no
+            # "reads" edges, which made diff-pixel compare [] against []
+            # and report input_bindings / resource_provenance as "same" --
+            # a fabricated verdict out of a failure to look, which
+            # DESIGN_SPEC §2.5 forbids. The flag lets the analysis layer map
+            # this to `unknown` instead.
             used = []
+            out["descriptorsError"] = f"{type(e).__name__}: {e}"
         for d in used:
             res = getattr(d.descriptor, "resource", None)
             samp = getattr(d.sampler, "object", None)
