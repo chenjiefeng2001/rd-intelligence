@@ -182,7 +182,30 @@ class CaptureSession:
         self._cap = None
         self._ctrl = None
         try:
-            self._rd.InitialiseReplay(self._rd.GlobalEnvironment(), [])
+            # F-N3-4: InitialiseReplay() used to be called again here,
+            # unconditionally, so the first session in a process always
+            # initialised the RenderDoc replay runtime TWICE in a row.
+            #
+            # That second call is what crashed. Measured with
+            # tools/n3_native_open_probe.py (20 attempts per cell):
+            #
+            #   Vulkan, one InitialiseReplay   0/60 spawns crashed
+            #   Vulkan, two InitialiseReplay  23/60 spawns crashed  (p~1e-8)
+            #   D3D11 / D3D12, either way      0/40 spawns crashed
+            #
+            # The crash is 0xC0000005 inside the cap.OpenCapture() that
+            # follows, i.e. while building the Vulkan replay driver, with
+            # empty stderr. The D3D11-only W1/W2 workload corpus never
+            # exposed it; N3-05A is the first Vulkan capture run through
+            # this path.
+            #
+            # The block above already guarantees the runtime is
+            # initialised by the time we reach here, and shutdown_replay()'s
+            # own docstring states that RenderDoc does not allow
+            # re-initialisation - so this call was both redundant and
+            # contrary to that contract.
+            #
+            # Evidence: reports/n3/N3-native-open-probe-{V1..V6,W1,W2}-*.json
             cap = self._rd.OpenCaptureFile()
             self._cap = cap
             result = cap.OpenFile(self.path, "", None)
