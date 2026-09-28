@@ -4,6 +4,11 @@
 **状态**：Stable Core 与 Semantic API v1 冻结；本规范为长期约束文档，
 任何违反 MUST 规则的变更都需要显式评审并更新本文件。
 
+> ⚠️ **2026-09-29 核对**：§2.9「Runtime Isolation Amendment」是冻结点 `bf1b3c0`
+> **之后追加的规范性条款，目前尚未提交**（工作树为 ` M docs/DESIGN_SPEC.md`）。
+> 冻结点声明不覆盖 §2.9；§2.9 的实现状态见该节末尾的对照表——本节规范
+> **当前未被完整实现**。
+
 ---
 
 ## 1. 定位
@@ -115,6 +120,67 @@ diff_pixel(session, point_a, point_b, ...) -> DiffResult
 | MUST | best-effort：记录失败绝不影响查询行为 |
 | MUST NOT | 改变任何语义结果 |
 | MUST NOT | 被 Stable Core 语义层（analysis/adapter/model/evidence/query/ci）导入 |
+
+### 2.9 Runtime Isolation Amendment（2026-08-25，W1-R1→W1-R3 证据链冻结）
+
+RenderDoc 进程内 replay runtime **不是**可复用服务对象：多 controller
+共存会产生静默值污染 / 原生挂起 / 0xC0000005（W1-R1 F-1/F-2），且其原生
+缓存随深回放查询单调累积、永不逐出（F-3/F-3a，~230–500KB/query）。
+由此冻结以下架构事实（违反任何一条需显式评审并更新本节）：
+
+| 规则 | 约束 |
+| --- | --- |
+| MUST | **一个 worker 进程同时只能拥有一个 replay runtime**；多 capture 并存只允许以进程为边界（WorkerManager 模型），禁止回到进程内 SessionManager 多 session 共存路径 |
+| MUST | **Semantic 结果不得依赖 worker 生命周期**：回收/重建对调用方透明，同 capture 的任意两次查询（无论跨越多少次 recycle）必须产出字段级一致的语义结果（W1-R3 Gate V 为机械验收） |
+| MUST | **Native resource lifetime 必须由 worker recycle 管理**：不尝试进程内清理/逐出原生缓存；寿命上限策略必须可配置（`RecyclePolicy`），预设值是工程默认而非架构常量——不同 capture（demo/AAA/compute）增长曲线不同，允许 per-workload 覆盖 |
+| MUST | 内存门禁与归属判定使用 **private bytes**（Windows commit charge），禁止使用 RSS 作为阈值——working set 受 OS trimming/compression/standby list 影响不可作为占用证据（实测基线漂移可达 -35MB） |
+| MUST | 命名统一：所有内存类指标/阈值/字段一律使用 `private_memory_bytes` / `private_memory_delta` 语义命名（如 `max_private_memory_delta_mb`）；禁止新增 "RSS threshold"、"memory usage" 类歧义命名 |
+| MUST | RSS/working set 仅允许作为**诊断观测字段**存在，且必须显式标注为 `working_set_observation`（或同义明确标注），不得作为任何门禁、阈值、策略输入——诊断字段与门禁字段的身份必须在命名或文档中可区分 |
+| MUST | 恢复模型保持最小闭环：**detect（dead/unhealthy 或策略触发）→ bounded retry respawn → verify（下一查询成功 + 值探针）**。在 telemetry 出现真实触发证据前，不得引入通用 health-check 系统、心跳、预测性驱逐等复杂机制 |
+
+内部结构增补（Stable Core 定义不变，新增 transport/runtime 基础设施层，
+位于 `rdebug` 包内但不属于 Stable Core 语义面）：
+
+```
+rdebug/
+├── adapter/          # Stable Core：唯一接触 renderdoc 模块的层
+├── ...               # （query/analysis/model/evidence/ci 不变）
+├── session_cache.py  # 遗留：单进程多 session（仅旧 transport 兼容；
+│                     #  按 §2.9 第一条 MUST，新代码禁止使用）
+├── workers.py        # runtime isolation：worker 进程入口（一进程一 runtime）
+└── worker_manager.py # runtime isolation：capture → worker 注册表 + RecyclePolicy
+```
+
+Transports（MCP/IDE/CLI/CI）应逐步切换到 WorkerManager；切换完成前，
+MCP server 现存行为按 W1-R1 发现视为**受已知缺陷约束的过渡形态**
+（缓解：Agent/IDE 切换 capture 即重建 transport，或直接迁移 WorkerManager）。
+
+#### 2.9 实现状态（2026-09-29 核对并修复）——本节规范现已**基本实现**
+
+| 规则 | 实现状态 |
+| --- | --- |
+| MUST 一进程一 runtime；禁止进程内多 session 共存 | ❌ **未接线**：`rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留 `SessionManager`（登记为 `audit_boundaries.py` DEVIATION） |
+| MUST 语义结果不依赖 worker 生命周期 | ✅ **实测成立**：w01024 上 6 个 worker 代次 / 5 次回收，语义 payload 逐字节一致 |
+| MUST native lifetime 由 worker recycle 管理 | ✅ **已修复并实测触发**：基线初始化原在 `return` 之后（死代码）导致 `mem_baseline` 恒 `None`、该触发器永不生效；现于 `_spawn()` 成功路径采集，实测 `reason: "max_private_memory_delta"` |
+| MUST 门禁用 private bytes，禁 RSS | ✅ `mem_current()` 优先 `private_bytes()`；psutil 缺失时基线保持 `None` 并上报 `memory_metric: "unavailable"`，**不回退 RSS**；`psutil` 已补入 `dependencies` |
+| MUST 命名统一为 `private_memory_*` | ✅ `private_memory_baseline_bytes` / `private_memory_baseline_mb`；原 `rss_baseline` / `mem_baseline_mb` 已改 |
+| MUST RSS 仅作诊断且显式标注 | ✅ `rss()` / `rss_bytes()` 标注 `working_set_observation`；边界审计检查无 RSS 命名的上报字段 |
+| MUST 恢复最小闭环 | ✅ detect → bounded retry respawn → verify；判定改用结构化 `WorkerError.transient`，不再对错误串做子串匹配 |
+
+本节此前是**唯一未被机械审计的规范性章节**。现 `scripts/audit_boundaries.py`
+已补 7 项 §2.9 检查（合计 15/15 通过 + 1 项登记偏差）。行为层覆盖见
+`tests/unit/test_worker_manager.py`（34 tests，stub worker，不依赖 RenderDoc），
+含针对上述死代码缺陷的回归测试。
+
+跨机器验证基准（Phase 3A）：semantic consistency 以
+`rdebug-validation/baselines/cross-machine-fingerprints.json`（**仓库外路径**，
+不在本仓库内）的内容哈希为准——要求 trace/diff/evidence 在不同
+CPU/GPU/驱动上**哈希一致**；timing 只比较形状（cold/warm 分类分布），
+禁止绝对值断言。
+
+⚠️ **D7 状态**：`rdebug-validation/docs/PHASE3A-CHECKLIST.md:3-6` 将 Machine B/C
+标记为 `unavailable`。因此上述跨机器哈希一致性基准**尚未在任何第二台机器上
+验证过**，不构成已成立的保证；现阶段不得据此作出跨机器声明。
 
 ---
 

@@ -11,6 +11,13 @@ requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [{ name = "rd-intelligence contributors" }]
 keywords = ["renderdoc", "graphics-debugging", "replay", "analysis"]
+dependencies = [
+  # Private-memory accounting for the WorkerManager recycle policy
+  # (DESIGN_SPEC §2.9 makes the private-bytes delta a MUST gate). Without
+  # it the memory trigger is silently unevaluable; Windows provides
+  # memory_info().private, which is the commit charge the gate needs.
+  "psutil>=5.9",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -31,7 +38,10 @@ mcp = ["mcp>=1.0"]
 where = ["src"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Both suites are in the default run. tests_transport was previously absent
+# here, which made the 31 transport tests silently skip under a bare
+# `pytest` while still looking "green" in the core suite.
+testpaths = ["tests", "tests_transport"]
 
 [tool.ruff]
 line-length = 100

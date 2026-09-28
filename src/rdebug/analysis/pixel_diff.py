@@ -318,14 +318,3 @@ def _interpolated_inputs(session, x, y, history):
         ]
     except QueryError:
         return None
-
-
-def _interpolated_inputs(session, x, y, history):
-    try:
-        trace = debug_pixel(session, x, y, history=history, include_disassembly=False)
-        return [
-            {"name": i.get("name"), "value": i.get("value")}
-            for i in trace.get("inputs", [])
-        ]
-    except QueryError:
-        return None
