@@ -5,10 +5,11 @@ RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / repl
 > **当前状态（2026-09-29 核对并修复）**
 > - Phase 1a → 5d 全部完成，每阶段有 `docs/validation/` 下的验证报告与原始数据。
 > - **唯一开放的 roadmap 项是 Real-world Validation（A/B/C），尚未开始**，且其前置条件（≥1 周真实负载遥测）尚不满足。
-> - §2.9 runtime isolation 的已知实现缺陷已修复并经真实 RenderDoc 端到端验证（见下方「Runtime Isolation 实现状态」）。
-> - ⚠️ **工作树仍不干净**：`src/rdebug/workers.py`、`src/rdebug/worker_manager.py` 仍为 untracked，
->   `docs/DESIGN_SPEC.md`（§2.9）与 `src/rdebug/adapter/core.py`（F-N3-4 修复）仍有未提交改动。
->   仓库外验证环境 `rdebug-validation` 的 N3-05A 验收证据是在含该修复的脏树上产生的。
+> - 系统性排查「失败被伪装成结果」类缺陷，**共修复 20 项**并全部提交入库。
+>   其中最严重的一项（`GetAllUsedDescriptors` 失败被当成空列表 → `diff-pixel`
+>   报 **`same`**）此前一路通过 15 项机械审计——已补上针对该类缺陷的
+>   §2.5 / §2.6 审计。详见 `../STATUS.md` §2.3。
+> - ⚠️ **§2.9 唯一未满足的 MUST**：MCP/IDE 仍走遗留进程内 `SessionManager`。
 > - 跨仓库完成情况总报告见 `../STATUS.md`。
 
 ## 架构边界
@@ -302,14 +303,38 @@ tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与�
 
 | 状态 | 项 |
 | --- | --- |
-| ⚠️ 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示） |
-| ⚠️ 未提交 | `workers.py` / `worker_manager.py` / `DESIGN_SPEC.md` §2.9 / `adapter/core.py` F-N3-4 修复均未进版本库；N3-05A 验收证据仍绑在脏工作树上 |
+| ⚠️ 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST |
 | ⚠️ 无 CI | 仓库无 `.github/workflows`。上述测试与边界审计需手工执行 |
 
-测试：`tests/unit/test_worker_manager.py` 新增 **34 tests**（stub worker，
-不依赖 RenderDoc），含针对上述死代码缺陷的回归测试——已验证在缺陷复现时
-会 FAIL（非 skip）。全套件：核心 99（另 integration 9 / workload 10 需真实
-capture）、transport 31、边界审计 15/15 + 1 deviation、`ruff check` 全绿。
+### 语义层「失败不得冒充观测」（2026-09-29 第二轮修复）
+
+`DESIGN_SPEC` §2.5 要求 `unknown` 既非 `same` 也非 `different`，任何层不得把
+unknown 升级为确定结论。多个路径曾把「查不到」转成空值，于是空值与另一个空值
+相等，被读成「一致」：
+
+| 缺陷 | 后果 |
+| --- | --- |
+| `GetAllUsedDescriptors` 失败 → `used = []` | **最严重**：`build_graph` 不产 `reads` 边 → `diff-pixel` 比 `[]` vs `[]` → `input_bindings`/`resource_provenance` 报 **`same`**。单边失败则报 `different` 且值为空，等于断言另一侧「不读任何资源」。**该结论直达 CI 判定器** |
+| `DisassembleShader` 失败 → `disasm = ""` | 空串成为语义结果，`disassemblyText` 在每个 step 静默缺失，失败不可归因 |
+| `GetAPIProperties` 失败 → 键缺失 | `rdebug info` 返回 200 但静默少两个字段 |
+
+修复方式：`core.py` 报告 `descriptorsError` / `disassemblyError` /
+`apiPropertiesError`；`build_graph` 传播 `summary.readsEnumerable`；
+`_extract_flow` 在不可枚举时返回 `None` 而非 `[]`（`compare_scalar` 已把
+`None` 映射为 `unknown`）。**诚实的「无描述符」仍是 `same`**——空观测仍是观测。
+
+教训已固化：这两类缺陷此前能一路通过 15 项机械审计，因为审计对异常处理
+零覆盖。现补 **§2.5**（语义层禁止用空值冒充失败查询，AST 结构匹配）与
+**§2.6**（transport 必须把参数错误转成响应体）两条检查。
+两条检查在写成后都**实测抓不到自己的目标 bug**（一版正则被无关 handler 骗过，
+一版全文件扫描被 3 个函数外的 `except ValueError` 骗过），改为结构化匹配后才
+真正生效——详见 `../STATUS.md` §2.3。
+
+**后续新增机械检查的纪律：先回退被修的缺陷、确认检查会 FAIL，再恢复。**
+
+测试：`tests/unit/test_worker_manager.py`（34）+ `test_unknown_discipline.py`（13），
+`tests_transport/` 37。核心 112、transport 34、integration 9、workload 10
+（需真实 capture）。边界审计 17/17 + 1 deviation，`ruff check` 全绿。
 
 - [ ] **Real-world Validation**（唯一开放的 roadmap 项，NOT STARTED）：
   A. 真实项目试点（非 fixture capture 走完整链路）→
