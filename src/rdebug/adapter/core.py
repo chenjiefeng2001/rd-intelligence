@@ -355,8 +355,32 @@ class CaptureSession:
     def current_event_id(self):
         return self._current_eid
 
+    def valid_event_ids(self):
+        """Event ids that really exist in this capture's action tree.
+
+        Membership, not a numeric range: event ids are not contiguous, and not
+        draw-only: nested non-draw actions are real events too. Cached per
+        controller because a capture's action tree is immutable, so a warm
+        query pays for this once.
+        """
+        ctrl = self._ctrl
+        cached = getattr(self, "_eid_cache", None)
+        if cached is not None and cached[0] is ctrl:
+            return cached[1]
+        ids = frozenset(r["eventId"] for r in self.action_rows())
+        self._eid_cache = (ctrl, ids)
+        return ids
+
     def set_event(self, event_id):
         eid = int(event_id)
+        valid = self.valid_event_ids()
+        if eid not in valid:
+            raise QueryError(
+                f"context event {eid} is not an event in this capture"
+                + (f" (events {min(valid)}..{max(valid)})" if valid else
+                   " (capture has no events)"),
+                kind="bad_request",
+            )
         self._ctrl.SetFrameEvent(eid, True)
         self._current_eid = eid
 

@@ -282,8 +282,14 @@ def main(argv=None):
             payload = fn(session, **call_args)
             send({"id": rid, "ok": True, "result": to_json(payload)})
         except RDebugError as e:
-            send({"id": rid, "ok": True,
-                  "result": json.dumps({"error": str(e), "tool": tool})})
+            # Keep the classification across the process boundary. Without
+            # it a parameter error (an illegal context_eid) reached the
+            # transport indistinguishable from a query failure.
+            body = {"error": str(e), "tool": tool}
+            kind = getattr(e, "kind", None)
+            if kind:
+                body["kind"] = kind
+            send({"id": rid, "ok": True, "result": json.dumps(body)})
         except Exception as e:
             send({"id": rid, "ok": False,
                   "error": f"{type(e).__name__}: {e}"})

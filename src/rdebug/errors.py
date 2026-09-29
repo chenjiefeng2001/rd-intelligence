@@ -15,4 +15,13 @@ class ReplayUnsupportedError(CaptureOpenError):
 
 
 class QueryError(RDebugError):
-    pass
+    """A query that cannot be answered for a reason the caller controls.
+
+    kind is an optional classification carried to the transports. Transports
+    already distinguish parameter problems from replay/query failures; this
+    reuses that distinction instead of introducing a second error hierarchy.
+    """
+
+    def __init__(self, *args, kind=None):
+        super().__init__(*args)
+        self.kind = kind

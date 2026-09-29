@@ -261,11 +261,26 @@ def route(path, query):
         with timed("query", transport="ide", endpoint=path):
             payload = fn(query)
         if isinstance(payload, dict):
+            # A classified error from the worker arrives as a result dict; it
+            # is still a 400, and must not be logged as a good result.
+            if payload.get("error") and payload.get("kind"):
+                record("query_error", transport="ide", endpoint=path,
+                       error=payload["error"], kind=payload["kind"])
+                return 400, dict(payload)
             record_result("ide", path, payload)
         return 200, payload
     except RDebugError as e:
-        record("query_error", transport="ide", endpoint=path, error=str(e))
-        return 400, {"error": str(e)}
+        # A QueryError may already be classified by the query layer (an
+        # illegal context_eid is a parameter problem, not a replay failure).
+        # Reuse the existing bad_request distinction rather than adding one,
+        # so a rejected parameter is not recorded as a runtime failure.
+        kind = getattr(e, "kind", None)
+        record("query_error", transport="ide", endpoint=path, error=str(e),
+               **({"kind": kind} if kind else {}))
+        body = {"error": str(e)}
+        if kind:
+            body["kind"] = kind
+        return 400, body
     except (KeyError, IndexError, ValueError, TypeError) as e:
         # Malformed query parameters (a missing "x", a non-numeric
         # coordinate). DESIGN_SPEC §2.6 requires runtime errors to come back

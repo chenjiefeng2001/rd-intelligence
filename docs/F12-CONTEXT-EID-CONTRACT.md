@@ -206,12 +206,12 @@ invalid eid → bad parameter → JSON error body → no semantic result
 
 ```
 D4                         NOT_ESTABLISHED / DEFER
-D6                         MEASURED / NO BLOCKER
-eid silent wrong result    CONTRACT DEFINED（裁决 A）/ FIX NOT YET APPLIED
-                           ⚠️ 尚**未**推进到 FIXED / VERIFIED——
-                           该状态须待实现 + 三对照 + 恢复检查全部成立后才可写入
-                           （Contract 文本见 DESIGN_SPEC §2.10；
-                             假阳性对照的环境缺口见 §0）
+D6                         MEASURED / NO BLOCKER（修复后复测：校验 ~4µs vs
+                           SetFrameEvent ~9ms，<0.05%，无可测量回归）
+eid silent wrong result    FIXED / CONTRACT DEFINED / VERIFIED
+                           证据：16 项对照（真实 capture + 合成嵌套树 +
+                           双 transport）；缺陷回退复测 8 FAIL / 修复后 16 OK
+                           （假阳性对照为合成树证据，见 §0 环境缺口）
 shader reflection         OPEN
 CI                         OPEN
 D5                         DEFER
@@ -222,3 +222,20 @@ N3-05B / F-N3-1            NOT AUTHORIZED
 **本文件记录的调查阶段未修改任何生产代码。**
 实现阶段严格按裁决顺序执行：Contract 文本 → 缺陷回退/三对照机械验证
 → 实现 → MCP/IDE 错误契约钉住。
+
+### 实现过程中的两项额外发现
+
+1. **错误分类在 worker 进程边界被压平**。`workers.py` 原先把 `RDebugError`
+   序列化为 `{"error": str(e), "tool": tool}`，**丢弃异常类型与分类**。
+   因此即使 session 层正确抛出 `QueryError(kind=...)`，MCP 侧也只会看到一个
+   普通结果 dict，分类永远到不了 transport。已在 worker 侧透传 `kind`，
+   并在 MCP/IDE 两处识别「带 kind 的 error 结果 dict」。
+   （`WorkerError` 无 `kind`，故 M15 N3「worker 死亡不得被标为 bad_request」
+   的既有断言不受影响，实测仍通过。）
+
+2. **IDE 端点当前不接受 `eid`**。全部 `api_*` 处理函数均不接受也不转发
+   `eid`，因此**非法 eid 在 IDE 侧今天无法产生**。
+   本次只补齐分类链路（`route()` 对带 `kind` 的 `QueryError` 返回 400 +
+   `kind="bad_request"`），并加测试**钉住「当前无端点暴露 eid」这一事实**——
+   将来若新增 eid 参数，该测试会失败以提示必须补齐对应分类与覆盖。
+   **未新增 IDE 的 eid 参数**（超出本次授权范围）。

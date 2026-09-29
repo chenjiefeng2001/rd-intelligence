@@ -57,17 +57,36 @@ def _safe(fn):
             with timed("query", transport="mcp", tool=fn.__name__):
                 result = fn(*args, **kwargs)
             try:
-                record_result("mcp", fn.__name__, json.loads(result))
+                parsed = json.loads(result)
             except Exception:
-                pass
+                parsed = None
+            # A classified error that crossed the worker boundary comes back
+            # as a result dict. Record it as the error it is, keeping the
+            # kind, so an illegal parameter is not logged as a good result.
+            if isinstance(parsed, dict) and parsed.get("error") and parsed.get("kind"):
+                record("query_error", transport="mcp", tool=fn.__name__,
+                       error=parsed["error"], kind=parsed["kind"])
+            else:
+                try:
+                    record_result("mcp", fn.__name__, parsed)
+                except Exception:
+                    pass
             return result
         except RDebugError as e:
             # WorkerError derives from RDebugError, so a dead worker, a spawn
             # failure and a bad capture all arrive here and become an
             # error payload rather than an unhandled tool error (M1.0/D3).
+            # A QueryError may already carry a kind (an illegal context_eid is
+            # a parameter problem); forward it so it is not recorded as a
+            # query failure. WorkerError has no kind, so this cannot relabel
+            # a dead worker as bad_request.
+            kind = getattr(e, "kind", None)
             record("query_error", transport="mcp", tool=fn.__name__,
-                   error=str(e))
-            return json.dumps({"error": str(e), "tool": fn.__name__})
+                   error=str(e), **({"kind": kind} if kind else {}))
+            body = {"error": str(e), "tool": fn.__name__}
+            if kind:
+                body["kind"] = kind
+            return json.dumps(body)
 
     return wrapper
 
