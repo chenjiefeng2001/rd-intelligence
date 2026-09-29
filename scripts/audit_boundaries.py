@@ -111,21 +111,6 @@ def audit_29(core, transports):
     check("2.9 worker protocol not imported into Stable Core", not violations,
           ", ".join(violations))
 
-    # 2.9 MUST NOT: transports must not construct the legacy in-process
-    # multi-session SessionManager in NEW code. MCP/IDE still do. DESIGN_SPEC
-    # explicitly labels them a transitional form, so this is a recorded
-    # deviation rather than a failure -- but it is the single largest open
-    # item in §2.9: F-1/F-2 (silent value corruption, native hang, 0xC0000005
-    # from multiple live controllers) originate on exactly this path.
-    legacy = []
-    for path, text in transports.items():
-        if re.search(r"SessionManager\s*\(", text):
-            legacy.append(path)
-    if legacy:
-        deviation("2.9 transports still on legacy SessionManager",
-                  ", ".join(legacy) + " (W1-R1 F-1/F-2 live here; "
-                  "migrate to WorkerManager)")
-
     # 2.9 MUST NOT: the bounded-retry recovery must be driven by a
     # structured signal, not by substring-matching the error text. A query
     # error whose message contains "dead" would otherwise trigger a full
@@ -135,7 +120,87 @@ def audit_29(core, transports):
               "e.transient" in wm_text
               and "exited unexpectedly\", " not in wm_text)
 
+    # 2.9 MUST NOT: transports must not construct the legacy in-process
+    # multi-session SessionManager. MCP/IDE still do. §2.9 labels them a
+    # transitional form, so this is a recorded deviation rather than a
+    # failure -- but it is the single largest open item in §2.9: F-1/F-2
+    # (silent value corruption, native hang, 0xC0000005 from multiple live
+    # controllers) originate on exactly this path.
+    #
+    # GATE A. AST-based, so citing the file in a comment or docstring does
+    # not fire. Flips from deviation to a hard check at M1.3, when MCP is
+    # wired to WorkerManager.
+    gate_a_hits = []
+    for path, text in sorted(transports.items()):
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                fn = node.func
+                name = (fn.id if isinstance(fn, ast.Name)
+                        else getattr(fn, "attr", None))
+                if name == "SessionManager":
+                    gate_a_hits.append(f"{path}:{node.lineno} constructs "
+                                       f"SessionManager")
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                mod = getattr(node, "module", "") or ""
+                names = [a.name for a in node.names]
+                if "session_cache" in mod or "SessionManager" in names:
+                    gate_a_hits.append(f"{path}:{node.lineno} imports "
+                                       f"{mod or names}")
+    if gate_a_hits:
+        deviation("2.9 GATE A: transports still construct SessionManager",
+                  "; ".join(gate_a_hits) + " -- becomes a hard check at M1.3")
+
+    # 2.9 MUST: a process must not hold a second live ReplayController.
+    # core.py holds _REPLAY_LIFECYCLE as a process global, so N sessions
+    # share one replay runtime with N controllers coexisting.
+    #
+    # GATE B is a PROXY, and is labelled as one: it can only check that the
+    # enforcement exists, not that the invariant holds. The invariant itself
+    # is a runtime property and is proven directly by
+    # tests/integration/test_runtime_isolation.py, whose
+    # test_transport_path_keeps_one_controller is a tracked expectedFailure
+    # until the migration lands. Flips to a hard check at M1.3.
+    core_py = core.get("rdebug/adapter/core.py", "")
+    if core_py and not _has_second_controller_guard(core_py):
+        deviation("2.9 GATE B: no guard against a second live controller",
+                  "rdebug/adapter/core.py CaptureSession.__init__ has no "
+                  "branch that raises when a replay runtime is already live "
+                  "in this process -- becomes a hard check at M1.3. PROXY: "
+                  "the runtime invariant is proven by "
+                  "tests/integration/test_runtime_isolation.py")
+
     audit_failure_shapes(core, transports)
+
+
+def _has_second_controller_guard(capture_session_src):
+    """True when __init__ refuses to open a second controller.
+
+    The invariant is "no second live ReplayController in a process", not
+    "the session counter must disappear" -- a counter plus a refusal is
+    correct, and a first version of this check that demanded the counter be
+    removed was rejected by its own negative control.
+    """
+    try:
+        tree = ast.parse(capture_session_src)
+    except SyntaxError:
+        return False
+    fn = next((n for n in ast.walk(tree)
+               if isinstance(n, ast.FunctionDef) and n.name == "__init__"), None)
+    if fn is None:
+        return False
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.If):
+            continue
+        test = ast.unparse(node.test)
+        if "_REPLAY_LIFECYCLE" not in test or "sessions" not in test:
+            continue
+        if any(isinstance(b, ast.Raise) for b in node.body):
+            return True
+    return False
 
 
 # Files where a swallowed exception is acceptable. Each needs a reason.
@@ -257,6 +322,32 @@ def _comment_lines(text):
     return out
 
 
+def _imported_modules(text):
+    """Absolute module names actually imported by `text`.
+
+    Comments, docstrings and string literals are excluded because the
+    module name is a value to the import machinery, not to the reader --
+    citing a file in prose is not a dependency on it.
+    """
+    mods = set()
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return mods
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                mods.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:  # relative import; resolved within the package
+                continue
+            if node.module:
+                mods.add(node.module)
+                for alias in node.names:
+                    mods.add(f"{node.module}.{alias.name}")
+    return mods
+
+
 def main():
     core = {p: t for p, t in walk("rdebug").items()}
     mcp = walk("rdebug_mcp")
@@ -274,12 +365,20 @@ def main():
     check("2.2 renderdoc import isolated to adapter/", not violations,
           ", ".join(violations))
 
-    # Rule 2.2: Stable Core must not import transports
+    # Rule 2.2: Stable Core must not import transports.
+    #
+    # AST-based. The previous version was a substring scan for "rdebug_mcp"
+    # / "rdebug_ide", which cannot tell an import from a docstring that
+    # *cites* the file it found a bug in -- so documenting the
+    # WorkerError-inheritance fix in worker_manager.py's own docstring turned
+    # this check red. A check that punishes writing down what you learned is
+    # a check that will be worked around.
     violations = []
     for path, text in core.items():
-        for token in ("import mcp", "from mcp", "rdebug_mcp", "rdebug_ide"):
-            if token in text:
-                violations.append(f"{path}: {token}")
+        for mod in _imported_modules(text):
+            head = mod.split(".")[0]
+            if head in ("mcp", "rdebug_mcp", "rdebug_ide"):
+                violations.append(f"{path}: {mod}")
     check("2.2 Stable Core has no transport dependency", not violations,
           "; ".join(violations))
 
