@@ -291,7 +291,7 @@ MUST NOT 让**未经观测**的 reflection 字段参与任何**等值比较**，
 | §2.11.2 消费边界 | ❌ **未实现** | 无 `shadersError` 类 flag；`pixel_trace.py:155` 的 `entryPoint` 缺省为 `""` |
 | §2.11.2 不参与等值比较 | ✅ **当前成立** | diff 层只比较 `input_bindings` / `shader_input_values` / `resource_provenance`；`entryPoint` / `debuggable` 不在任何比较点 |
 | `debug_pixel` 路径的失败传播 | ✅ **当前成立** | `core.py:642` 无 try，失败即抛；另有 `debuggable` 与 `trace is None` 两处 `QueryError` 检查 |
-| §2.11.3 对照规则 | ❌ **无法执行** | 当前 corpus 不可达该路径（全部 fixture 为 `directShaderWrite` → shader 节点被抑制） |
+| §2.11.3 对照规则 | ❌ **无法执行** | 路径**可达**（S2.1 已证，见 `docs/S2-REFLECTION-EVIDENCE.md`），但**失败未发生** → 负对照无可用输入 |
 
 **实现变更的授权条件**（三者**全部**成立前不得改行为）：
 
@@ -306,6 +306,20 @@ MUST NOT 让**未经观测**的 reflection 字段参与任何**等值比较**，
 **不是**已确认的运行时错误。缺陷在代码中真实存在但在当前环境**休眠**；
 此时修复将使一个无法观测的分支被改动，且无法构造真实 capture 对照——
 不得把「看起来应该修」的分支写成「已修复缺陷」。
+
+> **2026-09-29 更新（S2 进展）**：
+> 条件 1 **已满足** —— `w00001_frame11.rdc`（D3D11，单 draw）上
+> `trace_pixel(320,240)` 产生真实 shader 节点，
+> `entryPoint='main'`、`debuggable=true`（`docs/S2-REFLECTION-EVIDENCE.md` §1）。
+> 条件 2 **未满足** —— 19 个 capture × 全部事件 × 全部 6 个 stage
+> **零失败**；且 `PipeState.GetShaderReflection` 的 API 契约
+> **只文档化** `None`（无 shader 绑定）与 `ShaderReflection`，
+> **无失败返回**；`None` 情形已由 `core.py:753-755` 的
+> `sid == null` 提前处理。故条件 2 在当前 API 契约下**结构性不可得**。
+> 条件 3 **无法评估**（无 failure 即无从评估）。
+>
+> 结论：`runtime defect = NOT ESTABLISHED`；
+> **§2.11 仍只有规范、没有实现**；行为变更仍不授权。
 
 **不得**以合成注入的 reflection 失败作为最终证据。
 

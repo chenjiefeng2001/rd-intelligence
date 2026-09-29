@@ -112,14 +112,19 @@ failure → "" → semantic comparison accepts
    （:189、:201-220、:230、:268）。全仓 `entryPoint` 仅出现于
    `pixel_trace.py:155`（写入图节点）与 `shader_trace.py:77`，
    **均非比较点**。
-2. **当前 corpus 上不可达。** 全部 fixture 的像素修改均为
-   `directShaderWrite` → `group["directWrite"] = True` →
-   `pixel_trace.py:146` 的 `not group["directWrite"]` 为假 →
-   **shader 节点根本不生成**。实测 0..9 全部像素均无 shader 节点。
-   （`hasPS=True`、`fragmentCandidate=True`，唯一阻断条件是 `directWrite`。）
+2. **⚠️ 本条判定已被 S2 推翻（2026-09-29）。**
+   原文称「当前 corpus 上不可达 / 缺陷休眠」，该结论**错误**，
+   源于探针缺陷：采样只覆盖像素 `0..9`（640x480 目标的角落，
+   仅被 event 1 的 **clear** 写过，而 clear 的 `fragmentCandidate=false`
+   会正确抑制 shader 节点），且首轮扫描用 `except: continue` 吞掉了异常。
 
-> 即：`entryPoint: ""` 这条路径在现有语料上**休眠**。
-> 缺陷真实存在于代码中，但在本环境**不可观测**。
+   **更正**：在 fragment candidate 像素上（如 `w00001_frame11.rdc` 的
+   `(320,240)`，写入事件 `[1(clear), 11(draw)]`），**路径可达**，
+   且 `entryPoint='main'` / `debuggable=true` 是真实 observed fact。
+   证据与 provenance 见 `docs/S2-REFLECTION-EVIDENCE.md` §1。
+
+> `entryPoint: ""` 这条**失败**路径在现有语料上仍未观测到，
+> 但**不能**再表述为「代码路径不可达」——路径本身是可达的。
 
 ## 5. 结论：Phase 3 未触发
 
