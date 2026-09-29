@@ -33,10 +33,28 @@ import uuid
 
 
 def _dispatch():
+    """Route a call to something that needs the capture's session.
+
+    The first four entries mirror the Semantic API v1 tools exactly and are
+    what the MCP transport exposes. `ci_check` is a fifth entry because
+    rdebug.ci is Stable Core and the IDE consumes it directly (it did so
+    before M1.4, in-process); it needs a session, so it has to run where
+    the capture lives.
+
+    Putting it here rather than behind a separate op is a correction: the
+    first version made it an op, which forced the IDE through
+    WorkerManager.query() and failed with "unknown tool". Keeping it as an
+    op would have meant adding a second call path to WorkerManager purely
+    to preserve a boundary that is enforced where it actually matters --
+    the MCP tool surface, which is what an LLM sees. That surface is still
+    exactly four tools, checked by
+    tests_transport/test_transport.py::TransportInvariants.
+    """
     from rdebug.analysis.pixel_diff import diff_pixel
     from rdebug.analysis.pixel_trace import trace_pixel
     from rdebug.analysis.resource_flow import trace_resource
     from rdebug.analysis.shader_trace import debug_pixel
+    from rdebug.ci import check as ci_check
 
     def _tp(session, **a):
         return trace_pixel(
@@ -69,8 +87,15 @@ def _dispatch():
                               "include_shader_values", False),
                           expand_reads=a.get("expand_reads", True)).to_dict()
 
+    def _ci_check(session, **a):
+        # **a because the transport forwards transport-level keys such as
+        # `capture` alongside the call arguments; the other four entries
+        # read the keys they need out of the same dict.
+        return ci_check(session, a.get("baseline") or {})
+
     return {"trace_pixel": _tp, "trace_resource": _tr,
-            "debug_pixel": _dp, "diff_pixel": _df}
+            "debug_pixel": _dp, "diff_pixel": _df,
+            "ci_check": _ci_check}
 
 
 _prev_snapshot = None
@@ -212,32 +237,6 @@ def main(argv=None):
             try:
                 send({"id": rid, "ok": True,
                       "result": json.dumps(_identity(session, bound))})
-            except Exception as e:
-                send({"id": rid, "ok": False,
-                      "error": f"{type(e).__name__}: {e}"})
-            continue
-        if op == "ci_check":
-            # ci.check needs a session, so it has to run where the capture
-            # lives. rdebug.ci is Stable Core and the IDE already consumed
-            # it directly; routing it through the worker keeps every
-            # capture-touching operation inside the isolation boundary
-            # instead of opening a second, unmanaged capture in the
-            # transport process.
-            #
-            # Deliberately NOT added to _dispatch(): that table mirrors the
-            # four Semantic API v1 tools and stays exactly those four, so
-            # the semantic surface cannot quietly grow. This is a runtime op
-            # alongside mem / inventory / identity, not a fifth tool.
-            try:
-                from rdebug.ci import check as _ci_check
-                report = _ci_check(session,
-                                   (req.get("args") or {}).get("baseline")
-                                   or {})
-                send({"id": rid, "ok": True, "result": to_json(report)})
-            except RDebugError as e:
-                send({"id": rid, "ok": True,
-                      "result": json.dumps({"error": str(e),
-                                            "tool": "ci_check"})})
             except Exception as e:
                 send({"id": rid, "ok": False,
                       "error": f"{type(e).__name__}: {e}"})
