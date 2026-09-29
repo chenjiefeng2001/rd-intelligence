@@ -28,7 +28,19 @@ _FAILURE_FLAGS = (
     "stencilTestFailed",
 )
 
-_REPLAY_LIFECYCLE = {"initialised": False, "sessions": 0, "rd": None}
+_REPLAY_LIFECYCLE = {
+    "initialised": False,
+    "sessions": 0,
+    "rd": None,
+    # Read-only observation counters. Not part of any Contract and not an
+    # input to health, recycle or any gate -- they exist so a migration
+    # acceptance check can read a fact instead of inferring one.
+    #
+    # initialise_epoch counts InitialiseReplay() calls in this process. It
+    # exists to make the F-N3-4 double-initialisation condition observable:
+    # a healthy process is always at 1.
+    "initialise_epoch": 0,
+}
 _ENUMS = {}
 
 
@@ -174,6 +186,8 @@ class CaptureSession:
         if not _REPLAY_LIFECYCLE["initialised"]:
             self._rd.InitialiseReplay(self._rd.GlobalEnvironment(), [])
             _REPLAY_LIFECYCLE["initialised"] = True
+            _REPLAY_LIFECYCLE["initialise_epoch"] = \
+                _REPLAY_LIFECYCLE.get("initialise_epoch", 0) + 1
             _REPLAY_LIFECYCLE["rd"] = self._rd
             _ENUMS["VarType"] = getattr(self._rd, "VarType", None)
             _ENUMS["ShaderStage"] = getattr(self._rd, "ShaderStage", None)
@@ -280,6 +294,62 @@ class CaptureSession:
     @property
     def rd(self):
         return self._rd
+
+    @staticmethod
+    def replay_identity():
+        """READ-ONLY observation of the replay runtime. Not a Contract.
+
+        Answers "what runtime is serving this process?" to the extent the
+        current RenderDoc API actually permits, and says so plainly where it
+        does not. It is never an input to health, recycle or any gate, and no
+        transport may depend on it to work.
+
+        RenderDoc exposes no public identity for the replay runtime or for a
+        ReplayController: there is no ObjectIdentity/ObjectId on the module
+        and no identity-like member on ReplayController. Rather than fill
+        that gap with a proxy, the two identity fields below are reported as
+        "unobservable" with the reason attached. A PID is a real and
+        verifiable fact, but it is process identity -- reporting it as
+        runtime identity would overstate what was measured.
+
+        What IS verifiable and is reported:
+          owning_process         -- the process the runtime lives in
+          initialise_epoch       -- InitialiseReplay() call count; 1 in a
+                                    healthy process, >1 means the F-N3-4
+                                    double-initialisation condition
+          live_sessions          -- controllers currently open here; the
+                                    §2.9 invariant is that this stays <= 1
+        """
+        import os as _os
+        return {
+            "owning_process": _os.getpid(),
+            "initialise_epoch": _REPLAY_LIFECYCLE.get("initialise_epoch", 0),
+            "live_sessions": _REPLAY_LIFECYCLE["sessions"],
+            "identity": "unobservable",
+            "identity_reason": (
+                "RenderDoc exposes no public identity for the replay "
+                "runtime: InitialiseReplay() returns no handle and the module "
+                "has no ObjectIdentity/ObjectId. Reported as unobservable "
+                "rather than approximated."),
+        }
+
+    @staticmethod
+    def controller_identity():
+        """READ-ONLY observation of a ReplayController. Not a Contract.
+
+        Same limitation as replay_identity(): RenderDoc gives a
+        ReplayController no public identity. `opaque_local_token` is a
+        per-process Python-side token that distinguishes controllers created
+        in THIS process; it is explicitly not a RenderDoc-level identity and
+        is not comparable across processes.
+        """
+        return {
+            "identity": "unobservable",
+            "identity_reason": (
+                "ReplayController exposes no public identity in the RenderDoc "
+                "Python API; a distinct id() is not an identity claim."),
+            "opaque_local_token": None,  # filled in by the observer below
+        }
 
     @property
     def current_event_id(self):

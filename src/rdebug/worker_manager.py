@@ -489,11 +489,21 @@ class WorkerManager:
         Returns the parsed payload; structured query errors surface as
         {"error": ..., "tool": ...} dicts exactly like the MCP transport.
 
+        The capture is always forwarded into the args the worker receives, so
+        the worker's own bound-capture guard (workers.py) actually engages.
+        It used to be absent, which made the guard pass vacuously: a
+        transport that forgot to forward `capture` got no check at all, and
+        §2.9's "one worker = one capture" was enforced only by the registry
+        key and never re-verified inside the worker. This is a fix to an
+        existing guard, not a new correctness mechanism -- the guard was
+        already written and already mandatory.
+
         If the worker died between health checks (pipe write fails), one
         forced dispose+respawn retry is made -- crash recovery must be
         deterministic (DESIGN_SPEC §2.9)."""
 
         key = os.path.abspath(capture)
+        args.setdefault("capture", key)
         try:
             result = self._get(capture).request(tool, args,
                                                  timeout=timeout)
@@ -512,6 +522,28 @@ class WorkerManager:
                                                  timeout=timeout)
         payload = json.loads(result)
         return payload
+
+    def identity(self, capture, timeout=60):
+        """READ-ONLY observation of who serves `capture`. Not a Contract.
+
+        Diagnostic only: it is not an input to health, recycle or any gate,
+        and no transport depends on it to work. Exists so the migration
+        acceptance checks can read a fact instead of inferring one from logs
+        or object addresses.
+
+        Note what it does and does not prove. worker_pid is a real,
+        verifiable process identity, so distinct captures having distinct
+        worker_pids is genuine *process* isolation. It is NOT runtime
+        isolation: RenderDoc exposes no identity for the replay runtime or a
+        ReplayController, so those fields come back "unobservable" with a
+        reason rather than an approximation. Do not read a PID difference as
+        a runtime-level observation.
+        """
+        key = os.path.abspath(capture)
+        w = self._workers.get(key)
+        if w is None:
+            raise WorkerError(f"no worker for {key}")
+        return json.loads(w.request(op="identity", timeout=timeout))
 
     def ping(self, capture, timeout=60):
         return bool(self._get(capture).request(op="ping", timeout=timeout))

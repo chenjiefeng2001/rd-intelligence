@@ -29,6 +29,7 @@ import argparse
 import json
 import os
 import sys
+import uuid
 
 
 def _dispatch():
@@ -73,6 +74,38 @@ def _dispatch():
 
 
 _prev_snapshot = None
+
+# Per-process token identifying THIS worker process. Generated once at
+# startup and constant for the process's life, so it is stable within a
+# capture's lifetime and changes on respawn -- which is exactly the
+# lifetime the D1 ruling asks for. It is a process token, not a RenderDoc
+# object identity, and is not comparable to any other worker's.
+_WORKER_INSTANCE_ID = uuid.uuid4().hex[:12]
+
+
+def _identity(session, bound):
+    """READ-ONLY observation payload for the migration acceptance checks.
+
+    Deliberately reports what is verifiable and says "unobservable" where
+    it is not. In particular the controller's RenderDoc-level identity is
+    NOT reported: the API has none, and a Python id() would look like an
+    identity claim while proving only that two Python objects differ.
+    """
+    runtime = session.replay_identity()
+    controller = session.controller_identity()
+    # Distinguishes controllers opened in THIS process. Named
+    # opaque_local_token precisely so it cannot be mistaken for a
+    # RenderDoc-level identity, and it is not comparable across processes.
+    controller["opaque_local_token"] = f"{_WORKER_INSTANCE_ID}:{id(session)}"
+    return {
+        "worker_pid": os.getpid(),
+        "worker_instance_id": _WORKER_INSTANCE_ID,
+        "capture": bound,
+        "capture_session_index": 0,
+        "runtime": runtime,
+        "controller": controller,
+        "contract_status": "diagnostic_only__not_part_of_the_contract",
+    }
 
 
 def _mem_stats(args):
@@ -170,6 +203,18 @@ def main(argv=None):
         if op == "mem":
             send({"id": rid, "ok": True,
                   "result": json.dumps(_mem_stats(req.get("args") or {}))})
+            continue
+        if op == "identity":
+            # READ-ONLY. Answers "who actually served this request?" for the
+            # migration acceptance checks. It observes; it never gates, never
+            # affects health or recycle, and the transport does not depend on
+            # it. See workers.py module docstring and DESIGN_SPEC §2.9.
+            try:
+                send({"id": rid, "ok": True,
+                      "result": json.dumps(_identity(session, bound))})
+            except Exception as e:
+                send({"id": rid, "ok": False,
+                      "error": f"{type(e).__name__}: {e}"})
             continue
         if op == "inventory":
             # Structural/legal-arg-space metadata only (W2 blinding):

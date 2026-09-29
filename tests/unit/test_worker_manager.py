@@ -298,7 +298,30 @@ class TestWorkerLifecycle(_StubWorkerBase):
         self.addCleanup(mgr.dispose_all)
         out = mgr.query(self.capture, "trace_pixel", x=1, y=2)
         self.assertEqual(out["tool"], "trace_pixel")
-        self.assertEqual(out["args"], {"x": 1, "y": 2})
+        self.assertEqual(out["args"]["x"], 1)
+        self.assertEqual(out["args"]["y"], 2)
+
+    def test_query_always_forwards_the_capture_into_the_worker_args(self):
+        # The worker's bound-capture guard reads args["capture"]. It used to
+        # be absent, so the guard passed vacuously and §2.9's "one worker =
+        # one capture" was enforced only by the registry key. A transport
+        # that forgot to forward it got no check at all.
+        mgr = WorkerManager()
+        self.addCleanup(mgr.dispose_all)
+        out = mgr.query(self.capture, "trace_pixel", x=1, y=2)
+        self.assertEqual(out["args"]["capture"],
+                         os.path.abspath(self.capture))
+
+    def test_capture_is_a_reserved_parameter_name(self):
+        # `capture` is the registry key parameter, so it cannot also be
+        # passed as a forwarded kwarg -- Python raises before the injection
+        # runs. Pinning this so a future transport author learns it from a
+        # test rather than from a TypeError in production.
+        mgr = WorkerManager()
+        self.addCleanup(mgr.dispose_all)
+        with self.assertRaises(TypeError):
+            mgr.query(self.capture, "trace_pixel",
+                      capture=self.capture, x=1)
 
     def test_only_call_ops_increment_the_query_counter(self):
         w = self.new_worker()
@@ -355,7 +378,8 @@ class TestWorkerManagerRecovery(_StubWorkerBase):
         first = mgr.pid(self.capture)
         self.assertTrue(self.kill_worker(mgr._get(self.capture)))
         out = mgr.query(self.capture, "trace_pixel", x=3, y=4)
-        self.assertEqual(out["args"], {"x": 3, "y": 4})
+        self.assertEqual(out["args"]["x"], 3)
+        self.assertEqual(out["args"]["y"], 4)
         self.assertNotEqual(mgr.pid(self.capture), first)
         self.assertTrue(any(e["reason"] == "worker_died"
                             for e in mgr.recycle_events))
