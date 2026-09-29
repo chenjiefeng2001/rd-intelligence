@@ -346,7 +346,69 @@ M1.3 落地后该测试会开始通过，unittest 随即报 `unexpectedSuccess`
 
 ---
 
-## 7. 回归矩阵
+### 6.5 M1 执行记录
+
+| 阶段 | 状态 | 关键产出 |
+| --- | --- | --- |
+| M1.0 D3 | **完成** | `WorkerError` 改为 `RDebugError` 子类；15 tests 钉住完整链路（9 个经回退验证会 FAIL） |
+| M1.1 GATE B | **完成** | 运行时不变量测试；`expectedFailure` 迁移锁 |
+| M1.2 GATE A | **完成** | AST 化；三对照验证 |
+| M1.3 MCP 接线 | **完成 / ACCEPTED** | 两个 capture → 两个 worker PID |
+| M1.4 IDE 接线 | **完成** | ownership/dispose 配对；GATE A 转硬检查 |
+| M1.5 acceptance matrix | 未开始 | — |
+
+### 6.6 D1/D2 落地形态：可证与不可证的分界
+
+M1.4 完成后实测（真实 RenderDoc，`w01024` / `w00064`）：
+
+| 判定 | 证据 | 结论 |
+| --- | --- | --- |
+| **A1** | 两个 capture → `worker_pid` 7432 / 51904，`worker_instance_id` 不同 | **process isolation 已证实** |
+| | MCP transport 本进程 `live_controllers == 0` | |
+| | 每个 worker `initialise_epoch == 1` | F-N3-4 双初始化条件不存在 |
+| **A2** | `runtime.identity` = `unobservable`；`controller.identity` = `unobservable` | **runtime isolation 不可判定** |
+
+**RenderDoc 不暴露 replay runtime 或 ReplayController 的任何公开身份**
+（模块无 `ObjectIdentity`/`ObjectId`，`ReplayController` 无 identity 类成员）。
+因此按 D2 裁决「无法可靠取得则降级记录为不可观测，不得用代理值冒充」：
+
+- **不得**用 PID 冒充 runtime identity。PID 不同是真实的 **process 隔离**，
+  但把它写成 runtime 级观察就是夸大。
+- `opaque_local_token` 命名为「不透明本地 token」即为此：它**不是**
+  RenderDoc 级身份，且**跨进程不可比**；两个不同的 `id()` 不是身份断言。
+
+**M1.5 必须继续维持这个措辞。**「两个独立 replay runtime」只能作为
+**架构假设**陈述，不能写成直接观测事实。
+
+### 6.7 M1.4 的一处必要偏离：迁移锁的最终形态
+
+裁决要求「M1.4 完成后主动移除 `expectedFailure` 装饰器」。执行时发现：
+按字面移除后测试**立即失败**——这是正确的。
+
+`SessionManager` 作为类仍然存在且可被任何人 import，仍然允许单进程内
+多个 live `ReplayController`。这与「没有 transport 使用它」是**两个不同的事实**，
+而迁移在两者之下都已完成（GATE A 已是硬检查）。
+
+因此把两者拆开：
+
+| 事实 | 承载方式 |
+| --- | --- |
+| 没有 transport 使用 `SessionManager` | GATE A **硬检查**（重引入 import 即审计转红） |
+| `SessionManager` 类本身允许多 controller | `test_session_manager_permits_multiple_controllers_hazard_pin` **正向断言**该风险 |
+
+保留 `expectedFailure` 反而是**错误的终态**：它会持续暗示「还有修复待办」，
+而这个类现在正确的状态就是「保持不用 + 风险被记录在案」。
+
+### 6.8 M1.4 顺带修掉的两个审计假阳性
+
+均为「惩罚把学到的东西写下来」的类型，与 §10 记录的第三次实例同类：
+
+| 检查 | 原实现 | 后果 | 处置 |
+| --- | --- | --- | --- |
+| `2.6 transports free of RenderDoc API` | 子串扫描 `ReplayController` 等 | 在 `rdebug_ide/app.py` 的 docstring 里写「isolates a ReplayController per process」即触发 | 改为 AST（属性访问 / 裸名 / 调用 / 真实 import），8 项对照验证 |
+| `2.9 GATE A` | 同为 AST，但作为 deviation 存在 | 迁移完成后即成为「永远不会失败」的检查 | M1.4 完成后**转硬检查**，重引入 import 实测转红 |
+
+
 
 M1 完成后必须全绿。**「重命名即通过」不算通过**——属性保留、机制变更
 的测试必须重写为新机制下的等价断言。
@@ -362,7 +424,11 @@ M1 完成后必须全绿。**「重命名即通过」不算通过**——属性�
 | `tests/unit/test_worker_manager.py` | 34 PASS | 扩展：加 transport 接线层测试 | 已是不依赖 RenderDoc 的主力 |
 | `scripts/session_bench.py` | 可用 | 重写 import（`:13` 从 transport import SessionManager） | A8 的执行者 |
 | `scripts/mcp_smoke.py` / `ide_smoke.py` | 可用 | 迁移前后**字节级对照** | 端到端 canary |
-| `audit_boundaries.py` | 17/17 + 1 deviation | **17/17 + 0 deviation**，且 DEVIATION 转硬检查 | 见 §4 |
+| `audit_boundaries.py` | 17/17 + 2 deviations | **18/18 + 1 deviation**（GATE A 转硬检查；GATE B 仍为 deviation，见 §6.4） | 见 §4 |
+
+---
+
+## 7. 回归矩阵
 
 ---
 
@@ -384,15 +450,31 @@ M1 完成后必须全绿。**「重命名即通过」不算通过**——属性�
 
 ## 9. 本阶段（M0）明确不做
 
-- ❌ 修改任何生产代码（`src/**`）
-- ❌ 修改 `WorkerManager`
-- ❌ 删除 `SessionManager`
-- ❌ 修改 Semantic API v1 或任何 Contract
-- ❌ 把 Gate A / Gate B 装进 `audit_boundaries.py`（属 M1）
+M0 已冻结，M1.0–M1.4 已按裁决执行完毕。以下 M0 的「不做」清单中，
+**M0 本身仍然不做**的部分：
+
+- ❌ 把 Gate A / Gate B 装进 `audit_boundaries.py`（属 M1 —— **已于 M1.1/M1.2 完成**）
 - ❌ 重跑 N3 acceptance 以制造新结论
 - ❌ 触碰 N3 封存物（14/14 哈希已于 2026-09-29 复核 MATCH）
 
+以下**至今仍然不做**（M1 范围内亦未触碰）：
+
+- ❌ 通用 health check（D4 拒绝作为 M1 项；§2.9:139 在无 telemetry 证据前禁止）
+- ❌ telemetry 换基到 `worker_*`（D5 暂缓）
+- ❌ performance gate 变更（D6 暂缓，不作为 M1 blocker）
+- ❌ CLI 迁移（D7 移出范围）
+- ❌ Semantic API v1 签名或 JSON 形状变更（C8）
+
 M0 唯一产物是本文件 + §4 两道 Gate 的验证证据。
+
+### 9.1 M1 执行中发现的、与本文件预测不符之处
+
+| 项 | 本文件原预测 | 实际 |
+| --- | --- | --- |
+| `WorkerManager.query` 的 `capture` 转发 | 记为「迁移陷阱」，建议 M1 让 transport 显式转发 | 改为 `query()` 内部注入。理由：守卫本就强制存在，让每个 transport 各自记得转发是把强制约束变成约定 |
+| `expectedFailure` 终态 | 记为「M1.4 移除装饰器即转硬断言」 | 移除后立即失败。`SessionManager` 类本身仍是隐患，正确终态是**正向断言该风险**（§6.7） |
+| `api_ci` | 未预见 | `ci.check` 需要 session，worker 无对应 op。新增 `ci_check` **运行时 op**（不进 `_dispatch()`，故四工具面不变） |
+| `configure` 时机 | 未预见 | 改为**急切建立**，使失败的 configure 可在启动时检出；这使 I2 的「失败不留半初始化对象」成为可测事实 |
 
 ---
 
