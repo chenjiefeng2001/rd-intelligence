@@ -22,9 +22,33 @@ import sys
 import threading
 import time
 
+from .errors import RDebugError
 
-class WorkerError(RuntimeError):
+
+class WorkerError(RDebugError):
     """Worker/runtime failure.
+
+    Subclasses RDebugError, not RuntimeError. Every transport discriminates
+    on RDebugError to decide "this is an answer-shaped failure" versus "this
+    escaped the handler":
+
+        rdebug_mcp/server.py:54   except RDebugError -> {"error": ...} JSON
+        rdebug_ide/app.py:199     except RDebugError -> HTTP 400 + body
+        rdebug/cli.py:196         except RDebugError -> _fail(e), exit 2
+
+    While this was a RuntimeError, a worker death or spawn failure bypassed
+    all of them. In the IDE that is the F-19 failure mode exactly: the
+    exception escapes route(), BaseHTTPRequestHandler drops the connection
+    with no body, and the client cannot tell a crash from a rejected
+    request. A separate lossy path existed as well -- workers.py:214-216
+    converts an RDebugError into a JSON *payload* rather than raising, so
+    MCP's handler never ran and the `query_error` telemetry event stopped
+    firing without any signal.
+
+    It is a direct RDebugError, deliberately not a QueryError or
+    CaptureOpenError: those mean "the capture said no", this means "the
+    process serving the capture is gone". Callers that distinguish those
+    kinds of failure should keep doing so.
 
     `transient` marks the failures DESIGN_SPEC §2.9 requires to recover
     from with a bounded respawn+retry (the process died, the pipe broke, a
