@@ -252,17 +252,97 @@ M1 须把 `configure()` 的重配与 dispose 配对。
 
 ---
 
-## 6. 需要裁决的开放项（M1 前必须定）
+## 6. 裁决记录（2026-09-29，负责人裁决）
 
-| # | 问题 | 候选 | 影响 |
-| --- | --- | --- | --- |
-| **D1** | A1 如何在运行时断言「请求进入 worker path」？ | (a) worker 侧返回 pid 供 transport 上报；(b) transport 侧断言本地无 `CaptureSession` 实例 | 无内省点则 A1 不可测 |
-| **D2** | A2 需要 worker 暴露其 `_REPLAY_LIFECYCLE` 状态 | 在 `workers.py` 增加只读 `lifecycle` op | 无则 A2 只能靠间接推断 |
-| **D3** | **`WorkerError` 是否继承 `RDebugError`？** | (a) 改为继承 → 现有 handler 无需改动，风险最低；(b) 保持 `RuntimeError` + 在 transport 显式捕获 | **最高风险项。** 决定 A5/A7 能否成立 |
-| **D4** | health probe 能力回退如何处置？ | (a) 接受回退（记入已知限制）；(b) worker 增加周期性 value probe（**注意 §2.9:134 禁止在遥测出现真实触发证据前引入通用 health-check**）；(c) 用 recycle policy 覆盖 | (b) 与 §2.9 冲突，除非有新证据 |
-| **D5** | telemetry 是重新发出 `session_*` 还是换基到 `worker_*`？ | (a) 兼容层继续发 `session_*`；(b) 换基 + 修订 `REAL_WORLD_VALIDATION.md` 的指标类 1/4 | 影响 §5.5 两类指标的证据链 |
-| **D6** | perf gate 在 worker 路径上还是进程内 harness 上？ | 建议：两个都留，worker 路径单设一组阈值 | 影响 §5.6-8 |
-| **D7** | CLI 是否也在范围内？ | 本文件按 M0 实测定为**不在范围内** | 若纳入，工作量显著增加 |
+| 项 | 裁决 | 理由 |
+| --- | --- | --- |
+| **D1** 内省点 | **接受，限诊断/验证，不进 Contract** | 可定位 controller/runtime 生命周期，但不得把实现细节升级为协议不变量 |
+| **D2** 内省点 | **接受，同上** | 作为迁移验证的辅助证据；不得成为生产正确性的必要条件 |
+| **D3** `WorkerError` 层级 | **接受，优先处理** | 现有错误语义的直接断裂。改为 `RDebugError` 子类是**最小、局部**的修复 |
+| **D4** 通用 health-check | **拒绝作为 M1 迁移项** | §2.9 明文禁止在无 telemetry 证据时重新引入；不能为补迁移后的理论能力而违反冻结设计 |
+| **D5** telemetry 换基 | **暂缓** | 迁移首先解决 runtime isolation；无证据表明现有 telemetry 阻碍 M1 验收时，不应同时改变观测基线 |
+| **D6** perf gate | **暂缓，不加入 M1 blocker** | 当前问题是 correctness/isolation；除非迁移本身产生明确性能回归证据 |
+| **D7** 范围 | **收窄为 MCP；IDE 保留验证项；CLI 移出** | 暴露面已实测分开：MCP 是正常 multi-capture 形态；IDE 是潜伏 ghost 风险；CLI 已是单 capture/进程 |
+
+### 6.1 D3 的裁决附加要求
+
+裁决明确要求 D3 不能只验证 `WorkerError → RDebugError`，还须验证
+**错误语义没有在边界处再次被吞掉**：
+
+```text
+worker failure → WorkerError → RDebugError-compatible
+               → transport handler → JSON response body
+               → query_error telemetry
+```
+
+至少覆盖两条现有失败模式：**IDE**（worker error → 有 body，不丢连接）与
+**MCP**（worker error → JSON error payload，同时 `query_error` 可观测）。
+已在 `tests_transport/test_error_boundary.py` 实现（15 tests），
+并含**负对照**，防止 D3 被以「加宽 handler」的方式假修复：
+若两个 transport 都改成 `except Exception`，上述测试**全部仍会通过**，
+因此另有 4 项测试断言无关异常**必须继续逃逸**（转成 400 只会把 bug 藏起来）。
+
+### 6.2 health probe 的定位
+
+**迁移后没有 `unhealthy` 检测，不等于迁移失败。**
+
+当前冻结的恢复模型是 `detect(dead / policy-triggered) → bounded retry respawn → verify`。
+M0 已证实现存「live but internally contaminated controller」，
+因此这是一条**已知能力边界**；但在 telemetry 证明它需要生产级通用检测之前，
+不能因为迁移暴露了这个边界就反过来把 health-check 引入架构。
+
+**M1 的目标是消除已证实的 shared-runtime isolation violation，
+不是顺手解决所有潜在的 unhealthy-runtime detection 问题。**
+
+### 6.3 M1 正式顺序
+
+```text
+M1.0  D3 修复 + 回归闭环              ← 已完成（本轮）
+  ↓
+M1.1  GATE B：≤1 live ReplayController
+  ↓
+M1.2  GATE A：transport 不得 import/construct SessionManager
+  ↓
+M1.3  MCP 接入 WorkerManager
+  ↓
+M1.4  IDE 接入 WorkerManager
+  ↓
+M1.5  migration acceptance matrix
+```
+
+**M1.1 / M1.2 必须再次执行三对照纪律**（见 §10）。
+且 **GATE B 必须检查实际不变量**（「一个进程内不存在第二个 live
+ReplayController」），不得检查某个计数器是否存在/消失——
+后者是当前实现的影子检查。
+
+### 6.4 关键设计判断：两道 Gate 在 M1.1/M1.2 只能是 DEVIATION
+
+**这是对裁决顺序的一处必要偏离，需要确认。**
+
+若在 M1.1/M1.2 就把 Gate A / Gate B 设为**硬失败**：
+
+- Gate B 硬失败 = `CaptureSession.__init__` 拒绝第二个 controller
+  → **MCP 立刻坏掉**（`max_sessions=4` 是它的正常使用形态）
+  → `tests/workload` 的 isolation 场景与
+    `test_different_captures_isolated` 同时失败
+- Gate A 硬失败 = 审计转红（当前树确实违规）
+
+因此 M1.1/M1.2 的正确姿态是：
+
+| 组件 | M1.1/M1.2 形态 | M1.3 起 |
+| --- | --- | --- |
+| Gate A（审计） | DEVIATION，带精确证据行号 | 硬检查 |
+| Gate B（审计） | DEVIATION，**并明确标注是 PROXY** | 硬检查 |
+| **§2.9 不变量本身** | `tests/integration/test_runtime_isolation.py` 的 **expectedFailure** | 同一断言自动转绿 |
+
+关键点：**不变量的真实验证是运行时的那个 expectedFailure 测试，
+不是审计里的静态 proxy。** 审计只能证明「执行手段存在」，
+证明不了「性质成立」——所以 Gate B 在审计里被显式标注为 PROXY。
+
+`expectedFailure` 而非 `skip`：违规是真实的且必须保持可见。
+M1.3 落地后该测试会开始通过，unittest 随即报 `unexpectedSuccess`
+**使套件失败**，直到装饰器被移除——这正是意图：
+违规无法被遗忘，修复也无法被悄悄放过。
 
 ---
 
@@ -316,7 +396,7 @@ M0 唯一产物是本文件 + §4 两道 Gate 的验证证据。
 
 ---
 
-## 10. 方法论记录：本次 Gate 设计中「抓不到自己 bug」的两次实例
+## 10. 方法论记录：机械检查的三对照纪律
 
 按项目纪律，新增机械检查必须先确认它对违规状态 FAIL。M0 设计 Gate B 时
 **两次**未通过该验证：
@@ -327,7 +407,36 @@ M0 唯一产物是本文件 + §4 两道 Gate 的验证证据。
    而正确表述是「必须存在拒绝路径」。**被负对照当场证伪**
    ——加了拒绝路径但保留计数器的正确实现被判 FAIL。
 
-两次都由「负对照」而非「正对照」暴露。结论已固化为项目纪律：
+两次都由**负对照**而非正对照暴露。M1.0 修 D3 时又出现第三次，
+方向相反：
 
-> 新增机械检查必须同时具备：正对照（违规→FAIL）、负对照（正确→PASS）、
-> 假阳性对照（无关提及→PASS）。缺任一不予接受。
+3. **审计 2.2 的假阳性**：`2.2 Stable Core has no transport dependency`
+   原是子串扫描 `rdebug_mcp` / `rdebug_ide`，无法区分 import 与
+   **在注释里引用该文件**。于是把 D3 的修复依据写进 `worker_manager.py`
+   的 docstring（`rdebug_mcp/server.py:54`、`rdebug_ide/app.py:199`）
+   就让审计变红。已改为 AST 导入分析，并用 7 项对照验证。
+
+> 一个会惩罚「把学到的东西写下来」的检查，最终一定会被绕过。
+
+### 固化为纪律
+
+新增或修改任何机械检查，必须同时具备三类对照并留下观测结果：
+
+| 对照 | 目的 | 缺了会怎样 |
+| --- | --- | --- |
+| **正对照**：违规状态 | 必须 FAIL | 检查抓不到目标 bug |
+| **负对照**：正确状态 | 必须 PASS | 检查无法被满足，会被绕过 |
+| **假阳性对照**：语义相似但不违规 | 必须 PASS | 检查惩罚正确的代码/文档 |
+
+已完成的对照验证：
+
+| 检查 | 正对照 | 负对照 | 假阳性对照 |
+| --- | --- | --- | --- |
+| `2.2` transport 依赖 | 2 例真实 import → FAIL | 4 例（docstring / 注释 / 字面量 / 自包 / 相对导入）→ PASS | ✅ 7/7 |
+| `2.9 GATE A` | 2 例（构造 / import） | 1 例已迁移形态 → PASS | 2 例（docstring / 注释）→ PASS |
+| `2.9 GATE B` | 3 例（仅计数 / raise 非计数条件 / 无 `__init__`） | 1 例（计数+拒绝）→ PASS | — |
+| `2.5` 空值冒充 | 回退 `core.py` → 报 `core.py:673 -> []` | — | 注释说明者豁免 |
+| `2.6` transport 响应体 | 回退 IDE 修复 → 报 `app.py:route (RDebugError)` | — | — |
+| `2.9` baseline 采集 | 回退修复 → 2 tests FAIL | — | — |
+
+**M1.1 / M1.2 落地时必须再次执行本表。**
