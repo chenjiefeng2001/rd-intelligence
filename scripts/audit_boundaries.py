@@ -120,16 +120,15 @@ def audit_29(core, transports):
               "e.transient" in wm_text
               and "exited unexpectedly\", " not in wm_text)
 
-    # 2.9 MUST NOT: transports must not construct the legacy in-process
-    # multi-session SessionManager. MCP/IDE still do. §2.9 labels them a
-    # transitional form, so this is a recorded deviation rather than a
-    # failure -- but it is the single largest open item in §2.9: F-1/F-2
-    # (silent value corruption, native hang, 0xC0000005 from multiple live
-    # controllers) originate on exactly this path.
-    #
     # GATE A. AST-based, so citing the file in a comment or docstring does
-    # not fire. Flips from deviation to a hard check at M1.3, when MCP is
-    # wired to WorkerManager.
+    # not fire.
+    #
+    # Promoted from deviation to HARD CHECK when the IDE was wired to
+    # WorkerManager in M1.4. It was a deviation while rdebug_ide still
+    # constructed the legacy in-process SessionManager; that is the only
+    # reason it ever existed, and leaving it as a deviation after the fact
+    # would make it decorative. A transport that reaches for
+    # session_cache again now fails the audit outright.
     gate_a_hits = []
     for path, text in sorted(transports.items()):
         try:
@@ -150,9 +149,8 @@ def audit_29(core, transports):
                 if "session_cache" in mod or "SessionManager" in names:
                     gate_a_hits.append(f"{path}:{node.lineno} imports "
                                        f"{mod or names}")
-    if gate_a_hits:
-        deviation("2.9 GATE A: transports still construct SessionManager",
-                  "; ".join(gate_a_hits) + " -- becomes a hard check at M1.3")
+    check("2.9 GATE A: transports do not construct SessionManager",
+          not gate_a_hits, "; ".join(gate_a_hits))
 
     # 2.9 MUST: a process must not hold a second live ReplayController.
     # core.py holds _REPLAY_LIFECYCLE as a process global, so N sessions
@@ -406,12 +404,35 @@ def main():
     check("2.8 observability not imported by semantic layers", not violations,
           ", ".join(violations))
 
-    # Rule 2.6: transports free of RenderDoc API identifiers
+    # Rule 2.6: transports free of RenderDoc API identifiers.
+    #
+    # AST-based. The previous version was a substring scan, so a docstring
+    # *citing* ReplayController -- which is how the §2.9 notes in
+    # rdebug_ide/app.py describe the isolation they enforce -- was reported
+    # as the transport using ReplayController. Same failure class as the
+    # 2.2 check: a check that punishes documenting what you learned gets
+    # worked around.
     violations = []
     for path, text in transports.items():
-        for token in forbidden_api:
-            if token in text:
-                violations.append(f"{path}: {token}")
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in forbidden_api:
+                violations.append(f"{path}:{node.lineno} {node.attr}")
+            elif (isinstance(node, ast.Name)
+                  and node.id in forbidden_api):
+                violations.append(f"{path}:{node.lineno} {node.id}")
+            elif isinstance(node, ast.Call):
+                fn = node.func
+                name = fn.id if isinstance(fn, ast.Name) else getattr(
+                    fn, "attr", None)
+                if name in forbidden_api:
+                    violations.append(f"{path}:{node.lineno} {name}()")
+        for mod in _imported_modules(text):
+            if mod.split(".")[0] == "renderdoc":
+                violations.append(f"{path}: import {mod}")
     check("2.6 transports free of RenderDoc API", not violations,
           "; ".join(violations))
 
