@@ -29,10 +29,18 @@ class RecordingWorkers:
         # reuse is keyed by capture, not by (capture, tool).
         self.spawned = []
         self.query_log = []
+        # Ownership tracking, so a lifecycle test can assert that whatever
+        # configure() established is actually released by dispose().
+        self.disposed = 0
+        self.live = []
+        self.recycle_events = []
+        self.unkillable_report = []
 
     def _note_spawn(self, capture):
         if capture not in self.spawned:
             self.spawned.append(capture)
+        if capture not in self.live:
+            self.live.append(capture)
 
     def query(self, capture, tool, timeout=600, **args):
         from rdebug.errors import RDebugError
@@ -57,5 +65,12 @@ class RecordingWorkers:
         self._note_spawn(capture)
         return True
 
+    def captures(self):
+        return list(self.live)
+
+    def unkillable(self):
+        return list(self.unkillable_report)
+
     def dispose_all(self):
-        pass
+        self.disposed += 1
+        self.live = []

@@ -141,8 +141,16 @@ class _StubSession:
 
 
 def _configure_ide(app):
+    # configure() takes a worker registry (M1.4). Built on the real dispatch
+    # so the session is a real analysis input, not None.
+    try:
+        from test_transport import FakeSession
+        from worker_stub import RecordingWorkers
+    except ImportError:  # pragma: no cover - runner-dependent
+        from tests_transport.test_transport import FakeSession
+        from tests_transport.worker_stub import RecordingWorkers
     app.configure(os.path.join(tempfile.gettempdir(), "nonexistent.rdc"),
-                  session_factory=lambda capture: _StubSession())
+                  workers=RecordingWorkers(FakeSession()))
 
 
 def _raiser(exc):
@@ -169,9 +177,7 @@ class TestIdeChain(unittest.TestCase):
         _configure_ide(app)
 
     def tearDown(self):
-        if self.app._manager is not None:
-            self.app._manager.dispose_all()
-            self.app._manager = None
+        self.app.dispose()
 
     def test_worker_error_returns_400_with_a_body(self):
         with mock.patch.dict(
@@ -244,9 +250,7 @@ class TestNegativeControls(unittest.TestCase):
                 with self.assertRaises(_UnrelatedFailure):
                     app.route("/api/resource", {"id": ["ResourceId::1"]})
         finally:
-            if app._manager is not None:
-                app._manager.dispose_all()
-                app._manager = None
+            app.dispose()
 
     def test_ide_keeps_its_parse_error_classification(self):
         # A local KeyError from query parsing keeps its bad-request branch.
@@ -259,9 +263,7 @@ class TestNegativeControls(unittest.TestCase):
             self.assertEqual(status, 400)
             self.assertIn("invalid request parameters", payload["error"])
         finally:
-            if app._manager is not None:
-                app._manager.dispose_all()
-                app._manager = None
+            app.dispose()
 
     def test_worker_error_does_not_fire_the_bad_request_telemetry_kind(self):
         from rdebug_ide import app
@@ -278,9 +280,7 @@ class TestNegativeControls(unittest.TestCase):
                              "malformed request; metric class 4 would be "
                              "polluted if it were labelled bad_request")
         finally:
-            if app._manager is not None:
-                app._manager.dispose_all()
-                app._manager = None
+            app.dispose()
 
 
 if __name__ == "__main__":

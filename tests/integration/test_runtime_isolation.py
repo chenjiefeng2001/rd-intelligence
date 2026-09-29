@@ -80,35 +80,45 @@ class TestOneLiveControllerPerProcess(unittest.TestCase):
         finally:
             s.close()
 
-    @unittest.expectedFailure
-    def test_legacy_session_manager_path_keeps_one_controller(self):
-        """The §2.9 invariant, on the path that still violates it.
+    def test_session_manager_permits_multiple_controllers_hazard_pin(self):
+        """Pins the hazard that made this migration necessary.
 
-        Since M1.3 the MCP transport is served by WorkerManager, so MCP no
-        longer appears here; this now covers the legacy in-process
-        SessionManager, which rdebug_ide still uses. SessionManager defaults
-        to max_sessions=4, so holding two captures is normal usage there.
+        This is not the migration lock any more. The migration completed in
+        M1.4: no transport constructs SessionManager, and Gate A in
+        audit_boundaries.py is now a hard check that fails if one does. What
+        remains true is a property of the class itself, which is still
+        importable by anyone: it will happily hold several live
+        ReplayControllers in one process against one shared replay runtime.
 
-        expectedFailure, not skipped: the violation is real and must stay
-        visible. When the IDE is wired to WorkerManager (M1.4) this test
-        will start passing and unittest will report unexpectedSuccess,
-        failing the suite until the decorator is removed.
+        It used to carry @unittest.expectedFailure, which was correct while
+        the IDE was still on it -- the lock meant "this violation is known
+        and will be removed by the migration". With the migration done, the
+        decorator would have been misleading in a different way: a pending
+        failure implies something still has to be fixed, when in fact the
+        correct end state is that this class stays unused and its hazard
+        stays documented.
+
+        So the hazard is asserted positively instead. If someone wires a
+        transport back to SessionManager, Gate A fails; if someone deletes
+        the class, this test fails for having nothing to pin.
         """
         from rdebug.session_cache import SessionManager
 
         a, b = _captures(2)
-        # factory_provider is a zero-arg callable returning the class,
-        # matching how the transports wire it.
         mgr = SessionManager(factory_provider=lambda: CaptureSession)
         try:
             with mgr.use(a) as sa, mgr.use(b) as sb:
                 self.assertIsNot(sa, sb, "sanity: two distinct sessions")
-                self.assertLessEqual(
+                self.assertGreater(
                     self._live_controllers(), 1,
-                    "two CaptureSessions are live in one process, sharing "
-                    "one replay runtime: the W1-R1 F-1/F-2 shape")
+                    "SessionManager is expected to permit multiple live "
+                    "controllers in one process -- the W1-R1 F-1/F-2 shape. "
+                    "No transport may use it; Gate A enforces that.")
         finally:
             mgr.dispose_all()
+        self.assertEqual(self._live_controllers(), 0,
+                         "dispose must release both sessions, so the hazard "
+                         "is transient and not a leak")
 
     def test_mcp_transport_path_keeps_one_controller(self):
         """The same invariant, on the path migrated in M1.3.
@@ -116,7 +126,7 @@ class TestOneLiveControllerPerProcess(unittest.TestCase):
         Two captures go through the real MCP transport, so each gets its own
         worker process and this process never holds a second controller.
         This is the property the migration was for, and it is the control
-        that shows the expectedFailure above is about the legacy path rather
+        that shows the hazard pin above is about the unused class rather
         than about the measurement being wrong.
         """
         from rdebug_mcp import server
@@ -138,6 +148,27 @@ class TestOneLiveControllerPerProcess(unittest.TestCase):
             # F-N3-4 double-initialisation condition is absent.
             self.assertEqual(info["runtime"]["initialise_epoch"], 1)
             self.assertEqual(info["runtime"]["live_sessions"], 1)
+
+    def test_ide_transport_path_keeps_one_controller(self):
+        """The same invariant on the IDE path, migrated in M1.4.
+
+        The IDE owns one capture at a time, so this also asserts that
+        reconfiguration does not accumulate controllers -- the ghost that
+        used to happen here. Full ownership/dispose coverage, including the
+        worker-process side, is in tests/integration/test_ide_ownership.py.
+        """
+        from rdebug_ide import app
+
+        a, b = _captures(2)
+        self.addCleanup(app.dispose)
+        for capture in (a, b):
+            app.configure(capture)
+            app.route("/api/trace", {"x": ["4"], "y": ["4"]})
+            self.assertEqual(
+                self._live_controllers(), 0,
+                "the IDE must not open a controller in its own process")
+        app.dispose()
+        self.assertEqual(self._live_controllers(), 0)
 
 
 @unittest.skipUnless(_ready(), _SKIP)

@@ -1,18 +1,116 @@
+import json
+import os
 import unittest
 
-from test_transport import FakeSession
+try:  # unittest discover puts tests_transport/ on sys.path; pytest does not
+    from test_transport import FakeSession
+    from worker_stub import RecordingWorkers
+except ImportError:  # pragma: no cover - runner-dependent
+    from tests_transport.test_transport import FakeSession
+    from tests_transport.worker_stub import RecordingWorkers
 
 from rdebug_ide import app
 
 
-class TestIdeApi(unittest.TestCase):
-    def setUp(self):
-        app.configure("cap.rdc", session_factory=lambda c: FakeSession())
+class TestIdeOwnership(unittest.TestCase):
+    """M1.4 acceptance invariants I1-I3 at the unit level.
+
+    The real-RenderDoc versions, including the ghost check across
+    configure(A); configure(B); dispose(B), live in
+    tests/integration/test_ide_ownership.py. These use the worker double so
+    the lifecycle logic is covered without a capture, and so a failure
+    points at the ownership code rather than at a worker spawn.
+    """
 
     def tearDown(self):
-        if app._manager is not None:
-            app._manager.dispose_all()
-        app._manager = None
+        app.dispose()
+
+    def test_configure_establishes_exactly_one_owner(self):
+        w = RecordingWorkers(FakeSession())
+        app.configure("A.rdc", workers=w)
+        self.assertEqual(app._STATE["capture"], os.path.abspath("A.rdc"))
+        self.assertTrue(app._STATE["ready"])
+        self.assertEqual(w.captures(), [os.path.abspath("A.rdc")])
+
+    def test_reconfigure_releases_the_previous_owner_before_claiming(self):
+        # I1: configure(A) -> owner A; configure(B) -> A disposed, owner B.
+        # Never sessions=[A,B] with the surface reporting B.
+        first = RecordingWorkers(FakeSession())
+        app.configure("A.rdc", workers=first)
+        first._note_spawn(os.path.abspath("A.rdc"))
+        second = RecordingWorkers(FakeSession())
+        app.configure("B.rdc", workers=second)
+        self.assertEqual(first.disposed, 1,
+                         "the previous owner must be released explicitly")
+        self.assertEqual(first.captures(), [])
+        self.assertEqual(app._STATE["capture"], os.path.abspath("B.rdc"))
+
+    def test_dispose_is_symmetric_with_configure(self):
+        # I2: every established capture has an explicit termination path.
+        w = RecordingWorkers(FakeSession())
+        app.configure("A.rdc", workers=w)
+        w._note_spawn(os.path.abspath("A.rdc"))
+        app.dispose()
+        self.assertEqual(w.disposed, 1)
+        self.assertEqual(w.captures(), [])
+        self.assertFalse(app._STATE["ready"])
+        self.assertIsNone(app._STATE["capture"])
+
+    def test_dispose_is_idempotent(self):
+        w = RecordingWorkers(FakeSession())
+        app.configure("A.rdc", workers=w)
+        app.dispose()
+        app.dispose()
+        self.assertEqual(w.disposed, 1,
+                         "the second dispose has nothing to release")
+
+    def test_failed_configure_leaves_no_owner_and_no_registry_entry(self):
+        # I2: a failed configure must not leave a half-initialised object.
+        class _Failing(RecordingWorkers):
+            def ping(self, capture, timeout=60):
+                raise RuntimeError("simulated spawn failure")
+
+        w = _Failing(FakeSession())
+        with self.assertRaises(RuntimeError):
+            app.configure("bad.rdc", workers=w)
+        self.assertEqual(w.disposed, 1, "the manager it made must be released")
+        self.assertIsNone(app._STATE["capture"])
+        self.assertFalse(app._STATE["ready"])
+        self.assertIsNone(app._workers)
+
+    def test_queries_refuse_to_run_unconfigured(self):
+        # A half-configured IDE must fail loudly, not query a stale capture.
+        app.dispose()
+        status, payload = app.route("/api/trace", {"x": ["1"], "y": ["2"]})
+        self.assertEqual(status, 400)
+        self.assertIn("not configured", payload["error"])
+
+    def test_stats_reports_the_owner_and_recycles(self):
+        w = RecordingWorkers(FakeSession())
+        app.configure("A.rdc", workers=w)
+        # The owner exists from configure(), not from the first query: that
+        # is what makes a failed configure detectable at startup.
+        payload = json.loads(json.dumps(app.api_stats({})))
+        self.assertEqual(payload["sessions"]["count"], 1)
+        self.assertEqual(payload["sessions"]["paths"], ["A.rdc"])
+        self.assertEqual(payload["sessions"]["recycles"], 0)
+        self.assertEqual(payload["sessions"]["unkillable"], [])
+        app.route("/api/trace", {"x": ["1"], "y": ["2"]})
+        payload = json.loads(json.dumps(app.api_stats({})))
+        self.assertEqual(payload["sessions"]["count"], 1)
+        # One owner, not one per request.
+        self.assertEqual(payload["sessions"]["paths"], ["A.rdc"])
+
+
+class TestIdeApi(unittest.TestCase):
+    def setUp(self):
+        # configure() takes a worker registry, not a session factory: it now
+        # establishes ownership eagerly and dispose() is its counterpart.
+        self.workers = RecordingWorkers(FakeSession())
+        app.configure("cap.rdc", workers=self.workers)
+
+    def tearDown(self):
+        app.dispose()
 
     def test_info_and_unknown_route(self):
         status, payload = app.route("/api/info", {})
@@ -80,21 +178,9 @@ class TestIdeApi(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(payload["enabled"])
 
-    def test_session_reused_across_calls(self):
-        app.configure("cap.rdc", session_factory=lambda c: FakeSession())
-        calls = {"n": 0}
-
-        real_factory = app._session_factory
-
-        def counting(c):
-            calls["n"] += 1
-            return real_factory(c)
-
-        app.configure("cap.rdc", session_factory=counting)
-        app.route("/api/trace", {"x": ["1"], "y": ["2"]})
-        app.route("/api/trace", {"x": ["1"], "y": ["2"]})
-        self.assertEqual(calls["n"], 1)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
