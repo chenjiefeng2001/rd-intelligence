@@ -221,6 +221,110 @@ CPU/GPU/驱动上**哈希一致**；timing 只比较形状（cold/warm 分类分
 + 非法输入后的恢复检查。其中假阳性对照（合法嵌套非-draw event 必须被接受）
 是三者中最易做错的一条。
 
+### 2.11 Reflection Evidence Contract（2026-09-29，调查结论）
+
+本节规定 shader reflection 的**失败语义与消费边界**。调查过程与分类矩阵见
+`docs/SHADER-REFLECTION-INVESTIGATION.md`。
+
+> ⚠️ **本节目前只有规范，没有实现。** 下列规则**尚未**被代码满足；
+> 逐条实现状态见 §2.11.4。在 §2.11.4 的三项条件全部成立之前，
+> **不得**以本节为据声称该路径已修复。
+
+#### 2.11.1 三种状态必须互不相同
+
+| 情况 | 允许的输出 | 含义 |
+| --- | --- | --- |
+| shader 存在且 reflection 查询成功，无输入 | **明确的 empty reflection** | 已观测：该 shader 确无反射输入 |
+| reflection API 返回失败 / 空结果 | **error 或 unknown 状态** | 未观测：查了，没查到 |
+| 调用抛出异常 | **error 状态**（携带原因） | 未观测：查的过程失败 |
+
+MUST NOT 把上述三者压缩为同一个值。具体禁止：
+
+```
+except:
+    reflection = {}          # 制造第三种状态，禁止
+```
+
+**理由**：空对象同时表示「合法为空」与「没查到」，二者不可区分；
+这与 §2.5 的 `unknown ≠ same` 是同一条纪律——
+**没观测到的事实不得呈现为已观测的事实**。
+
+MUST NOT 用空集合/空对象代表查询失败（`shaderInputs=[]` 之类）。
+若某字段确实「不可用」，它必须被显式标记为 unavailable，而不是留空。
+
+#### 2.11.2 downstream 消费边界
+
+每一个由 reflection 派生的字段，必须可归入以下三类之一，且该归类对调用方可见：
+
+| 类别 | 含义 | 允许的表示 |
+| --- | --- | --- |
+| **observed fact** | 反射查询成功得到的值 | 实际值（可为空集合，但语义为「确无」） |
+| **derived semantic** | 由 observed fact 推导的结论 | 结论 + 所依据的 observed fact |
+| **unavailable** | 未观测到，原因可区分 | 显式 unavailable 标记 + 原因（查询失败 / 异常 / 无该 shader） |
+
+MUST NOT 把 **unavailable** 折叠为 **observed fact 的空值**。
+
+MUST NOT 让**未经观测**的 reflection 字段参与任何**等值比较**，
+并据此产出 `same` / `different` 判定。无法比较时必须产出 §2.5 的 `unknown`。
+
+> **已确立的先例**：descriptors 路径已按此规则修复
+> （`core.py` 的 `descriptorsError` flag → `pixel_trace.py` 的
+> `reads_enumerable = False` → diff 输出 `unknown`）。
+> 本节要求 reflection 路径遵循**同一条**规则，而非第二种设计。
+
+#### 2.11.3 对照规则（实现阶段必须满足）
+
+| 对照 | 期望 |
+| --- | --- |
+| 正对照：reflection 成功且有输入 | 字段为 observed fact，值正确 |
+| 正对照：reflection 成功但无输入 | 字段为 **explicit empty**，且**不等于** unavailable |
+| 负对照：reflection API 失败 | 字段为 unavailable + 原因，**不得**为 explicit empty |
+| 负对照：调用抛异常 | 字段为 unavailable + 异常原因，**不得**为 explicit empty |
+| 假阳性对照：**合法存在的嵌套非-draw event 语义等价物** | 不得被误判为 unavailable |
+| 后置检查：失败后合法查询 | 结果与 baseline 一致，runtime 保持可用 |
+
+#### 2.11.4 实现状态（2026-09-29：**Contract 缺口已识别，行为未修复**）
+
+| 规则 | 实现状态 | 依据 |
+| --- | --- | --- |
+| §2.11.1 三态互不相同 | ❌ **未实现** | `core.py:757-765` 的 `except Exception: pass` 把失败压成 `{"resource": ...}`，无 error flag |
+| §2.11.2 消费边界 | ❌ **未实现** | 无 `shadersError` 类 flag；`pixel_trace.py:155` 的 `entryPoint` 缺省为 `""` |
+| §2.11.2 不参与等值比较 | ✅ **当前成立** | diff 层只比较 `input_bindings` / `shader_input_values` / `resource_provenance`；`entryPoint` / `debuggable` 不在任何比较点 |
+| `debug_pixel` 路径的失败传播 | ✅ **当前成立** | `core.py:642` 无 try，失败即抛；另有 `debuggable` 与 `trace is None` 两处 `QueryError` 检查 |
+| §2.11.3 对照规则 | ❌ **无法执行** | 当前 corpus 不可达该路径（全部 fixture 为 `directShaderWrite` → shader 节点被抑制） |
+
+**实现变更的授权条件**（三者**全部**成立前不得改行为）：
+
+```
+1. 取得一份 PS/fragment shader 写入像素的真实 capture（directWrite=False），
+   使该路径可达；
+2. 在该 capture 上复现 reflection 失败（注入或观测）；
+3. 证明该字段确实被某 semantic consumer 使用，并展示其影响。
+```
+
+**理由**：目前已证明的是 **Contract 缺口**，
+**不是**已确认的运行时错误。缺陷在代码中真实存在但在当前环境**休眠**；
+此时修复将使一个无法观测的分支被改动，且无法构造真实 capture 对照——
+不得把「看起来应该修」的分支写成「已修复缺陷」。
+
+**不得**以合成注入的 reflection 失败作为最终证据。
+
+#### 2.11.5 语料要求（S2，暂缓）
+
+真实 capture 必须满足：
+
+```
+PS/fragment shader 写入像素
+AND
+reflection 路径被执行
+AND
+reflection 失败可注入或可观测
+```
+
+自制 capture 的要求：单 draw、pixel shader 输出颜色、有明确资源绑定、
+可重复采集，且 provenance 单独登记。**不得**直接使用大型 workload ——
+失败归因会变困难。
+
 ---
 
 ## 3. 数据驱动决策规则（防止架构漂移）
