@@ -10,6 +10,10 @@ RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / repl
 >   报 **`same`**）此前一路通过 15 项机械审计——已补上针对该类缺陷的
 >   §2.5 / §2.6 审计。详见 `../STATUS.md` §2.3。
 > - ⚠️ **§2.9 唯一未满足的 MUST**：MCP/IDE 仍走遗留进程内 `SessionManager`。
+>   已实测确认为真实隔离问题（同一进程内 2 个 ReplayController 与 1 个
+>   replay runtime 并存，即 W1-R1 F-1/F-2 形态）。
+>   **当前阶段 M0：迁移范围与验收设计已交付**（`docs/SESSIONMANAGER-MIGRATION-SCOPE.md`），
+>   含两道已验证的机械架构 Gate 与 7 项待裁决。M0 未改任何生产代码。
 > - 跨仓库完成情况总报告见 `../STATUS.md`。
 
 ## 架构边界
@@ -303,7 +307,7 @@ tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与�
 
 | 状态 | 项 |
 | --- | --- |
-| ⚠️ 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST |
+| ⚠️ 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST。**迁移设计见 `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`（M0，未实施）** |
 | ⚠️ 无 CI | 仓库无 `.github/workflows`。上述测试与边界审计需手工执行 |
 
 ### 语义层「失败不得冒充观测」（2026-09-29 第二轮修复）
