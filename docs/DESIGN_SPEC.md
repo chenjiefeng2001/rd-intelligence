@@ -182,6 +182,44 @@ CPU/GPU/驱动上**哈希一致**；timing 只比较形状（cold/warm 分类分
 标记为 `unavailable`。因此上述跨机器哈希一致性基准**尚未在任何第二台机器上
 验证过**，不构成已成立的保证；现阶段不得据此作出跨机器声明。
 
+### 2.10 `context_eid` 事件选择语义（2026-09-29，裁决 A）
+
+本节补齐 Semantic API v1 此前**完全缺失**的一条契约。此前 `DESIGN_SPEC`
+从未定义 `context_eid`；§2.3 的 `eventId` 只讲**证据回链**（输出来处），
+与**输入事件的选取**无关。缺失导致不存在的 event id 被静默接受，
+返回形状正常但不指向 capture 中任何真实 event 的语义结果
+（F12 家族，见 `docs/F12-CONTEXT-EID-CONTRACT.md`）。
+
+| 规则 | 约束 |
+| --- | --- |
+| MUST | `context_eid=None` 保持既有缺省行为（由调用方所在层解析为默认 context，通常是 `last_event_id()`），**语义不变** |
+| MUST | `context_eid=<eid>` 必须是**当前 capture 的 action tree 中实际存在的 event ID** |
+| MUST | 合法性按**成员关系**判定：取 `action_rows()`（= `flatten_actions(root_actions())`）的 `eventId` 集合。**禁止**按数值区间判定（`0 <= eid <= last_event_id()`），**禁止**退化为 draw-only 集合 |
+| MUST | 判定必须发生在 `SetFrameEvent` **之前**；未通过判定不得调用它 |
+| MUST | 非法 `context_eid` 走明确的**参数错误**路径，**不得产生任何 semantic result** |
+| MUST NOT | **不存在 fallback event。** 不得在非法输入后回退到某个 event 再声称那就是实际 context |
+| MUST | 合法请求的 `contextEventId` 表示**经校验的**请求 context |
+| MUST NOT | 非法请求不得让 payload 冒充成功结果；`contextEventId` 不得作为「已生效」的证据出现在失败响应中 |
+| MUST | 非法 `context_eid` 之后，runtime 与 worker 必须保持可用，后续合法查询结果与基线一致 |
+| MUST NOT | 参数错误不得被归类为 worker death / unhealthy / replay failure，以免污染 §2.9 的恢复遥测 |
+
+**为什么只能选 A（严格成员判定）**：RenderDoc 的 `ReplayController` 只暴露
+`SetFrameEvent` 与 `GetFrameInfo`（capture 级 `FrameDescription`），
+**没有 current-event 读回**。因此「回退后的实际 context」不可观测——
+任何回退标签都是无法证实的断言，恰好是本条要修的同一形态。
+
+**为什么不能用区间判定**：实测 event ID **不是连续区间**
+（`w20000_frame11.rdc`：20003 unique id，`contiguous=False`）。在某 capture 上
+`[0,12]` 区间内有 9 个不存在的 id，区间检查会全部错误接受并继续产出错误结果。
+
+**为什么不能是 draw-only**：嵌套 action（如 dispatch / indirect）不是 draw，
+却是合法 event。`flatten_actions()` 递归进入 `action.children`，
+因此成员集合天然覆盖它们；用 draw 集合会误杀合法输入。
+
+**本节的验证要求**：A 严格成员契约 + 真实 capture 回归 + 正/负/假阳性三对照
++ 非法输入后的恢复检查。其中假阳性对照（合法嵌套非-draw event 必须被接受）
+是三者中最易做错的一条。
+
 ---
 
 ## 3. 数据驱动决策规则（防止架构漂移）

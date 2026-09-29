@@ -5,19 +5,41 @@
 优先级：**高于 shader reflection 与 CI**（本项已有实证证明能把错误数据
 伪装成成功结果，且正落在 F12 家族）。
 
-## 0. 裁决建议
+## 0. 裁决（2026-09-29）
 
-> **`context_eid` 目前没有 Contract。这既是 Contract ambiguity，也是一个
-> 已确认的 correctness defect。**
-> 证据倾向候选 **A（严格语义）**，且给出了 A 唯一可被诚实实现、
-> B 无法被诚实实现的关键理由。但**本文件不选定修法**——按授权，
-> 先补 Contract，再实现。
+> **采用 A：`context_eid` 严格成员判定。**
+> **不采用 B（显式回退语义），也不采用「双字段回退语义」。**
+
+选择依据**不是偏好，而是当前证据边界已把 B 排除**：
+
+| 依据 | 出处 |
+| --- | --- |
+| `context_eid` 无 Contract，必须先定义再实现 | §1 |
+| RenderDoc 无可验证的「实际生效 event」读回 → 任何 fallback 后的「实际 context」字段都是**不可证实的断言** | §5 |
+| event ID 非连续区间 → 区间检查**可证伪为错误** | §4 |
+| `action_rows()` / `flatten_actions()` 提供完整 action tree 的成员集合 | §4 |
+| 内部调用方全部传入真实 event ID → 严格判定不破坏内部路径 | §6 |
+| **合法嵌套非-draw event 必须被接受**，不得退化为 draw-only 集合 | §4、§9 |
+
+裁决同时冻结的规则已写入规范正文：
+`DESIGN_SPEC.md` **§2.10 `context_eid` 事件选择语义**。
+
+### ⚠️ 环境缺口（影响假阳性对照的证据等级）
+
+假阳性对照要求**合法嵌套非-draw event 必须被接受**。实测：
 
 ```
-eid silent wrong result   CONFIRMED / CONTRACT UNDEFINED
-                         → Contract ambiguity + correctness defect
-                         → 证据支持 A；修法待裁决
+本机全部 19 个 .rdc（corpus 14 + validation 5）→ nested = 0
+无任何 capture 含嵌套 action（含 20003 行的 w20000）
 ```
+
+因此**该对照无法在真实 capture 上验证**。处理方式：
+
+- **谓词层**：以**合成 action tree**（含嵌套非-draw 子 action）验证
+  ——这能精确证明谓词是「flattened tree 成员判定」而非 draw-only。
+- **真实 capture 层**：由正/负对照 + 恢复检查覆盖集成路径。
+- **诚实标注**：假阳性对照的证据等级为**合成树证明**，**非真实 capture 证明**。
+  需要含 dispatch/indirect 的 capture 才能补齐；不得以合成结果冒充真实证据。
 
 ---
 
@@ -180,24 +202,23 @@ invalid eid → bad parameter → JSON error body → no semantic result
 | 负对照 | 不存在的 id（含 `0`、中间空洞、`999999`）→ 参数错误、无 semantic payload | 条件 2/3 |
 | **假阳性对照** | **嵌套/非 draw 的合法 id 必须仍然被接受** | **这是最关键的一条**：`flatten_actions` 递归进入 children，若谓词只用 draw 集合就会误杀合法嵌套事件 |
 
-## 10. 状态与未做之事
+## 10. 状态
 
 ```
 D4                         NOT_ESTABLISHED / DEFER
 D6                         MEASURED / NO BLOCKER
-eid silent wrong result    CONFIRMED / CONTRACT UNDEFINED（本文件）
-shader reflection         OPEN（优先级低于本项）
+eid silent wrong result    CONTRACT DEFINED（裁决 A）/ FIX NOT YET APPLIED
+                           ⚠️ 尚**未**推进到 FIXED / VERIFIED——
+                           该状态须待实现 + 三对照 + 恢复检查全部成立后才可写入
+                           （Contract 文本见 DESIGN_SPEC §2.10；
+                             假阳性对照的环境缺口见 §0）
+shader reflection         OPEN
 CI                         OPEN
 D5                         DEFER
 D7                         OPEN
 N3-05B / F-N3-1            NOT AUTHORIZED
 ```
 
-**未做**：未修改任何生产代码；未选定修法；未实现校验；未改错误分类；
-未改 Contract 文本。
-
-**待裁决**：A（严格成员判定）vs B（显式回退）vs 第三方案
-（保留意图语义但把 `contextEventId` 改为「请求值 + 实际生效值」双字段，
-后者同样受限于无法读回实际值）。证据倾向 A；
-**但 A 的 Contract 文本需先补齐再实现**——包括向调用方说明什么算合法 eid，
-以及错误应归入哪一类。
+**本文件记录的调查阶段未修改任何生产代码。**
+实现阶段严格按裁决顺序执行：Contract 文本 → 缺陷回退/三对照机械验证
+→ 实现 → MCP/IDE 错误契约钉住。
