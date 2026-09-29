@@ -81,16 +81,16 @@ class TestOneLiveControllerPerProcess(unittest.TestCase):
             s.close()
 
     @unittest.expectedFailure
-    def test_transport_path_keeps_one_controller(self):
-        """The §2.9 invariant, on the path that currently violates it.
+    def test_legacy_session_manager_path_keeps_one_controller(self):
+        """The §2.9 invariant, on the path that still violates it.
 
-        SessionManager defaults to max_sessions=4 and MCP passes a
-        per-call `capture` argument to all four tools, so holding two
-        captures at once is MCP's normal usage. M0 measured 2 distinct
-        ReplayControllers sharing 1 runtime in one process.
+        Since M1.3 the MCP transport is served by WorkerManager, so MCP no
+        longer appears here; this now covers the legacy in-process
+        SessionManager, which rdebug_ide still uses. SessionManager defaults
+        to max_sessions=4, so holding two captures is normal usage there.
 
         expectedFailure, not skipped: the violation is real and must stay
-        visible. When the transports are wired to WorkerManager this test
+        visible. When the IDE is wired to WorkerManager (M1.4) this test
         will start passing and unittest will report unexpectedSuccess,
         failing the suite until the decorator is removed.
         """
@@ -109,6 +109,35 @@ class TestOneLiveControllerPerProcess(unittest.TestCase):
                     "one replay runtime: the W1-R1 F-1/F-2 shape")
         finally:
             mgr.dispose_all()
+
+    def test_mcp_transport_path_keeps_one_controller(self):
+        """The same invariant, on the path migrated in M1.3.
+
+        Two captures go through the real MCP transport, so each gets its own
+        worker process and this process never holds a second controller.
+        This is the property the migration was for, and it is the control
+        that shows the expectedFailure above is about the legacy path rather
+        than about the measurement being wrong.
+        """
+        from rdebug_mcp import server
+
+        a, b = _captures(2)
+        self.addCleanup(server._WORKERS.dispose_all)
+        # Two different captures, so two workers, and a query against each.
+        server.trace_pixel(a, 4, 4)
+        server.trace_pixel(b, 4, 4)
+        self.assertEqual(self._live_controllers(), 0,
+                         "the transport must not open a controller here; "
+                         "the work is done in the worker processes")
+        pids = {server._WORKERS.pid(a), server._WORKERS.pid(b)}
+        self.assertEqual(len(pids), 2,
+                         "two captures must be served by two processes")
+        for cap in (a, b):
+            info = server._WORKERS.identity(cap)
+            # Each worker initialised the runtime exactly once, so the
+            # F-N3-4 double-initialisation condition is absent.
+            self.assertEqual(info["runtime"]["initialise_epoch"], 1)
+            self.assertEqual(info["runtime"]["live_sessions"], 1)
 
 
 @unittest.skipUnless(_ready(), _SKIP)
