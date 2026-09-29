@@ -3,44 +3,94 @@
 Proves the workflow: CI regression -> pixel -> firstDivergence ->
 resource provenance -> evidence -> grounded AI prompt. No GPU viewer,
 no analysis logic here — every fact comes from Semantic API v1.
+
+M1.4: the capture is served by a dedicated worker process, and the
+ownership of that worker is explicit. Previously configure() rebound a
+module-global SessionManager without disposing the old one, so a second
+configure() left the previous capture's ReplayController alive and
+invisible: the surface reported the new capture while a stale session was
+still holding native state. configure() and dispose() are now a matched
+pair, and a failed configure establishes nothing.
 """
 
 import json
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from rdebug.analysis.pixel_diff import diff_pixel
-from rdebug.analysis.pixel_trace import trace_pixel
-from rdebug.analysis.resource_flow import trace_resource
-from rdebug.ci import check as ci_check
 from rdebug.errors import RDebugError
 from rdebug.jsonutil import to_json
-from rdebug.session_cache import SessionManager
+from rdebug.worker_manager import RecyclePolicy, WorkerManager
 
-_STATE = {"capture": None, "baseline": None}
-_session_factory = None
-_manager = None
-
-
-def configure(capture, baseline=None, session_factory=None):
-    global _STATE, _session_factory, _manager
-    _STATE["capture"] = os.path.abspath(capture)
-    _STATE["baseline"] = baseline
-    _session_factory = session_factory
-
-    def provider():
-        if session_factory is not None:
-            return session_factory
-        from rdebug.adapter.core import CaptureSession
-
-        return CaptureSession
-
-    _manager = SessionManager(factory_provider=provider)
+# The IDE owns at most one capture at a time, and says so in one place.
+_STATE = {"capture": None, "baseline": None, "ready": False}
+_workers = None
+_config_lock = threading.RLock()
 
 
-def _session():
-    return _manager.use(_STATE["capture"])
+def configure(capture, baseline=None, workers=None):
+    """Establish `capture` as the IDE's single current owner.
+
+    Invariant 1 -- one current owner. Whatever was owned before is released
+    BEFORE the new owner is claimed, so the registry can never hold a
+    capture that the surface no longer reports.
+
+    Invariant 2 -- symmetric termination. dispose() releases whatever
+    configure() established, and a configure that fails establishes
+    nothing: no owner, no registry entry, no half-initialised manager.
+
+    The worker is established eagerly rather than on first request, so a
+    bad capture or a missing renderdoc module fails here, at startup,
+    instead of surfacing as a confusing error on the first click.
+
+    `workers` exists for tests; production passes nothing.
+    """
+    global _workers, _STATE
+    with _config_lock:
+        dispose()
+        target = os.path.abspath(capture)
+        mgr = workers if workers is not None else WorkerManager(
+            recycle=RecyclePolicy.production_default())
+        try:
+            if not mgr.ping(target):
+                raise RDebugError(f"worker did not come up for {target}")
+        except BaseException:
+            # A failed configure must leave nothing behind, including the
+            # manager it created: re-establishing ownership is the caller's
+            # next move, not a leftover to discover later.
+            try:
+                mgr.dispose_all()
+            except Exception:
+                pass
+            _workers = None
+            _STATE = {"capture": None, "baseline": None, "ready": False}
+            raise
+        _workers = mgr
+        _STATE = {"capture": target, "baseline": baseline, "ready": True}
+    return _STATE["capture"]
+
+
+def dispose():
+    """Symmetric with configure. Idempotent, and safe to call unconfigured."""
+    global _workers, _STATE
+    with _config_lock:
+        mgr, _workers = _workers, None
+        if mgr is not None:
+            mgr.dispose_all()
+        _STATE = {"capture": None, "baseline": None, "ready": False}
+
+
+def _run(tool, **args):
+    """Forward a query to the worker that owns the current capture.
+
+    None arguments are dropped so the worker's own defaults apply, matching
+    the MCP transport and the pre-migration in-process behaviour.
+    """
+    if not _STATE["ready"] or _workers is None:
+        raise RDebugError("IDE capture is not configured; call configure()")
+    return _workers.query(_STATE["capture"], tool,
+                          **{k: v for k, v in args.items() if v is not None})
 
 
 def _parse_xy(text):
@@ -52,14 +102,17 @@ def _parse_xy(text):
 
 
 def api_info(query):
-    return {"capture": _STATE["capture"], "ci": bool(_STATE["baseline"])}
+    return {"capture": _STATE["capture"], "ci": bool(_STATE["baseline"]),
+            "ready": _STATE["ready"]}
 
 
 def api_ci(query):
     if not _STATE["baseline"]:
         return {"enabled": False}
-    with _session() as s:
-        report = ci_check(s, _STATE["baseline"])
+    # ci.check needs a session, so it runs in the worker like every other
+    # capture-touching operation rather than opening a second, unmanaged
+    # capture in this process.
+    report = _run("ci_check", baseline=_STATE["baseline"])
     failures = []
     for f in report.get("failures", []):
         item = dict(f)
@@ -77,22 +130,21 @@ def api_ci(query):
 
 def api_trace(query):
     x, y = int(query["x"][0]), int(query["y"][0])
-    with _session() as s:
-        return trace_pixel(s, x, y, max_draws=int(query.get("max_draws", ["4"])[0]))
+    return _run("trace_pixel", x=x, y=y,
+                max_draws=int(query.get("max_draws", ["4"])[0]))
 
 
 def api_diff(query):
     a = _parse_xy(query["a"][0])
     b = _parse_xy(query["b"][0])
     deep = query.get("deep", ["0"])[0] == "1"
-    with _session() as s:
-        return diff_pixel(s, a, b, include_shader_values=deep).to_dict()
+    return _run("diff_pixel", a_x=a[0], a_y=a[1], b_x=b[0], b_y=b[1],
+                include_shader_values=deep)
 
 
 def api_resource(query):
-    rid = query["id"][0]
-    with _session() as s:
-        return trace_resource(s, rid)
+    return _run("trace_resource", resource=query["id"][0])
+
 
 
 def _evidence_lines(diff_payload):
@@ -147,8 +199,8 @@ def api_explain(query):
     a = _parse_xy(query["a"][0])
     b = _parse_xy(query["b"][0])
     deep = query.get("deep", ["0"])[0] == "1"
-    with _session() as s:
-        payload = diff_pixel(s, a, b, include_shader_values=deep).to_dict()
+    payload = _run("diff_pixel", a_x=a[0], a_y=a[1], b_x=b[0], b_y=b[1],
+                   include_shader_values=deep)
     return {
         "prompt": explain_prompt(payload, _STATE["capture"]),
         "evidenceIds": sorted(_collect_ids(payload)),
@@ -169,8 +221,23 @@ def _collect_ids(node):
 
 
 def api_stats(query):
-    stats = _manager.stats() if _manager is not None else {"count": 0}
-    return {"sessions": stats, "telemetry": bool(os.environ.get("RDEBUG_TELEMETRY"))}
+    # Re-sourced from the worker registry. Not a new telemetry foundation
+    # (D5 is deferred): this is the same endpoint answering from the layer
+    # that now owns the capture.
+    mgr = _workers
+    if mgr is None:
+        sessions = {"count": 0, "paths": [], "recycles": 0}
+    else:
+        sessions = {
+            "count": len(mgr.captures()),
+            "paths": [os.path.basename(c) for c in mgr.captures()],
+            "recycles": len(mgr.recycle_events),
+            # Any worker that survived terminate()+kill() is reported, never
+            # hidden: the registry cannot see one it no longer holds.
+            "unkillable": mgr.unkillable(),
+        }
+    return {"sessions": sessions,
+            "telemetry": bool(os.environ.get("RDEBUG_TELEMETRY"))}
 
 
 _ROUTES = {
@@ -252,10 +319,17 @@ def main():
     args = p.parse_args()
     if args.rd_path:
         os.environ.setdefault("RDEBUG_RENDERDOC_PATH", args.rd_path)
+    # Eager: a bad capture or a missing renderdoc module fails here, at
+    # startup, instead of on the first click.
     configure(args.capture, baseline=args.baseline)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"rdebug-ide serving {args.capture} at http://127.0.0.1:{args.port}/")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        # Symmetric with configure(): the worker process is torn down rather
+        # than left holding an open capture when the server stops.
+        dispose()
 
 
 if __name__ == "__main__":

@@ -207,11 +207,37 @@ def main(argv=None):
         if op == "identity":
             # READ-ONLY. Answers "who actually served this request?" for the
             # migration acceptance checks. It observes; it never gates, never
-            # affects health or recycle, and the transport does not depend on
-            # it. See workers.py module docstring and DESIGN_SPEC §2.9.
+            # affects health or recycle, and the transport does not depend
+            # on it. See workers.py module docstring and DESIGN_SPEC §2.9.
             try:
                 send({"id": rid, "ok": True,
                       "result": json.dumps(_identity(session, bound))})
+            except Exception as e:
+                send({"id": rid, "ok": False,
+                      "error": f"{type(e).__name__}: {e}"})
+            continue
+        if op == "ci_check":
+            # ci.check needs a session, so it has to run where the capture
+            # lives. rdebug.ci is Stable Core and the IDE already consumed
+            # it directly; routing it through the worker keeps every
+            # capture-touching operation inside the isolation boundary
+            # instead of opening a second, unmanaged capture in the
+            # transport process.
+            #
+            # Deliberately NOT added to _dispatch(): that table mirrors the
+            # four Semantic API v1 tools and stays exactly those four, so
+            # the semantic surface cannot quietly grow. This is a runtime op
+            # alongside mem / inventory / identity, not a fifth tool.
+            try:
+                from rdebug.ci import check as _ci_check
+                report = _ci_check(session,
+                                   (req.get("args") or {}).get("baseline")
+                                   or {})
+                send({"id": rid, "ok": True, "result": to_json(report)})
+            except RDebugError as e:
+                send({"id": rid, "ok": True,
+                      "result": json.dumps({"error": str(e),
+                                            "tool": "ci_check"})})
             except Exception as e:
                 send({"id": rid, "ok": False,
                       "error": f"{type(e).__name__}: {e}"})
