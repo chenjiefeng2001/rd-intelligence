@@ -6,7 +6,7 @@ import unittest
 from test_transport import FakeSession
 
 from rdebug import errors, observability
-from rdebug_mcp.server import SessionManager
+from rdebug.session_cache import SessionManager
 
 
 class TestObservability(unittest.TestCase):
@@ -138,15 +138,18 @@ class TestResultShape(unittest.TestCase):
         os.environ["RDEBUG_TELEMETRY"] = self.path2
         try:
             from rdebug_mcp import server
+            try:
+                from worker_stub import RecordingWorkers
+            except ImportError:  # pragma: no cover - runner-dependent
+                from tests_transport.worker_stub import RecordingWorkers
+            from test_transport import FakeSession
 
-            prev_factory = server._session_factory
-            server._session_factory = lambda c: FakeSession()
-            server._MANAGER.dispose_all()
+            prev_workers = server._WORKERS
+            server._WORKERS = RecordingWorkers(FakeSession())
             try:
                 server.diff_pixel("cap.rdc", 1, 2, 3, 4)
             finally:
-                server._session_factory = prev_factory
-                server._MANAGER.dispose_all()
+                server._WORKERS = prev_workers
             with open(self.path2, encoding="utf-8") as f:
                 events = [json.loads(line) for line in f if line.strip()]
             shapes = [e for e in events if e["event"] == "result_shape"]
@@ -162,3 +165,4 @@ class TestResultShape(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -4,8 +4,12 @@ import unittest
 from test_transport import FakeSession
 
 from rdebug import errors
+
+# SessionManager is no longer re-exported from the MCP transport, which has
+# used WorkerManager since M1.3. The module itself still exists and the IDE
+# still uses it, so its behaviour stays covered here.
+from rdebug.session_cache import SessionManager
 from rdebug_mcp import server
-from rdebug_mcp.server import SessionManager
 
 
 class CountingFactory:
@@ -104,30 +108,51 @@ class TestSessionManager(unittest.TestCase):
         self.assertEqual(len(factory.calls), 3)
 
 
-class TestServerReuse(unittest.TestCase):
+class TestTransportReuse(unittest.TestCase):
+    """The reuse property, on the path that now serves MCP.
+
+    MCP moved from an in-process SessionManager to a WorkerManager in
+    M1.3, so "one session per capture" became "one worker process per
+    capture". The property is the same and still the reason the manager
+    exists; only the mechanism changed, so the assertions are restated
+    against the worker registry rather than deleted.
+    """
+
     def setUp(self):
-        self._prev = server._session_factory
-        self.factory = CountingFactory()
-        server._session_factory = self.factory
-        server._MANAGER.dispose_all()
+        self._prev = server._WORKERS
+        # One registry, reused by every call: the transport must not build a
+        # manager per request.
+        try:
+            from worker_stub import RecordingWorkers
+        except ImportError:  # pragma: no cover - runner-dependent
+            from tests_transport.worker_stub import RecordingWorkers
+        server._WORKERS = RecordingWorkers(FakeSession())
+        self.workers = server._WORKERS
 
     def tearDown(self):
-        server._session_factory = self._prev
-        server._MANAGER.dispose_all()
+        server._WORKERS.dispose_all()
+        server._WORKERS = self._prev
 
-    def test_sequential_tools_share_one_session(self):
+    def test_sequential_tools_share_one_worker(self):
         server.trace_pixel("cap.rdc", 1, 2)
         server.trace_resource("cap.rdc", "ResourceId::47")
         server.diff_pixel("cap.rdc", 1, 2, 3, 4)
-        self.assertEqual(len(self.factory.calls), 1)
+        self.assertEqual(len(self.workers.spawned), 1,
+                         "three calls on one capture must reuse one worker")
+        self.assertEqual(len(self.workers.query_log), 3)
 
     def test_cold_warm_semantic_equivalence(self):
+        # DESIGN_SPEC §2.9 MUST #2: results must not depend on worker
+        # lifetime. Previously "cold vs warm" was first call vs later calls
+        # on the same session; it is now first call vs later calls on the
+        # same worker process.
         cold = json.loads(server.diff_pixel("cap.rdc", 1, 2, 3, 4))
         server.trace_pixel("cap.rdc", 5, 6)
         warm = json.loads(server.diff_pixel("cap.rdc", 1, 2, 3, 4))
         self.assertEqual(cold, warm)
-        self.assertEqual(len(self.factory.calls), 1)
+        self.assertEqual(len(self.workers.spawned), 1)
 
 
 if __name__ == "__main__":
     unittest.main()
+

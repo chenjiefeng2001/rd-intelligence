@@ -1,9 +1,20 @@
 ﻿"""Thin MCP transport over Semantic API v1.
 
-This layer exposes exactly four tools 鈥?trace_pixel, trace_resource,
-debug_pixel, diff_pixel 鈥?and adds nothing else: no orchestration, no
+This layer exposes exactly four tools — trace_pixel, trace_resource,
+debug_pixel, diff_pixel — and adds nothing else: no orchestration, no
 analysis logic, no RenderDoc API access, no extra domain models. Results
 (including evidence) are passed through verbatim as JSON.
+
+M1.3: each capture is served by a dedicated worker process, one replay
+runtime per capture, instead of an in-process SessionManager. DESIGN_SPEC
+§2.9 first MUST: the RenderDoc in-process replay runtime does not
+safely support multiple live controllers, which produced silent value
+corruption, native hangs and 0xC0000005 (W1-R1 F-1/F-2). MCP is where
+that was most exposed, because `capture` is a per-call argument to all
+four tools and the old manager defaulted to holding four sessions at once.
+
+Stable Core is untouched. The tools are thin wrappers that forward their
+arguments to a worker and return its JSON.
 """
 
 import functools
@@ -14,28 +25,27 @@ from mcp.server.fastmcp import FastMCP
 
 from rdebug.errors import RDebugError
 from rdebug.jsonutil import to_json
-from rdebug.session_cache import SessionManager
+from rdebug.worker_manager import RecyclePolicy, WorkerManager
 
 mcp = FastMCP("rdebug")
 
-_session_factory = None
+# One worker process per capture, recycled on the frozen W1-R4 policy
+# (q250 / 128MB private-memory delta / 1800s). The policy values are
+# engineering defaults, not architectural constants (DESIGN_SPEC §2.9).
+_WORKERS = WorkerManager(recycle=RecyclePolicy.production_default())
 
 
-def _default_session_factory(capture):
-    from rdebug.adapter.core import CaptureSession
+def _run(capture, tool, **args):
+    """Forward a tool call to the capture's worker process.
 
-    return CaptureSession(capture)
-
-
-def _current_factory():
-    return _session_factory or _default_session_factory
-
-
-_MANAGER = SessionManager(factory_provider=_current_factory)
-
-
-def _open(capture):
-    return _MANAGER.use(capture)
+    Arguments whose value is None are dropped so the worker's own defaults
+    apply, exactly as Python's did on the in-process path. `include_disassembly
+    =False` and similar falsy-but-meaningful values are preserved -- only
+    None is dropped, because forwarding None would override a worker's
+    default with a null it never expected (e.g. sample=None in place of 0).
+    """
+    return _WORKERS.query(capture, tool,
+                          **{k: v for k, v in args.items() if v is not None})
 
 
 def _safe(fn):
@@ -52,6 +62,9 @@ def _safe(fn):
                 pass
             return result
         except RDebugError as e:
+            # WorkerError derives from RDebugError, so a dead worker, a spawn
+            # failure and a bad capture all arrive here and become an
+            # error payload rather than an unhandled tool error (M1.0/D3).
             record("query_error", transport="mcp", tool=fn.__name__,
                    error=str(e))
             return json.dumps({"error": str(e), "tool": fn.__name__})
@@ -77,23 +90,10 @@ def trace_pixel(
     """Local causal flow graph for one pixel: Pixel -> Draw -> Shader ->
     read Resources -> Writers. Every edge carries evidence referencing the
     underlying capture facts (eventId / resourceId / operation)."""
-    from rdebug.analysis.pixel_trace import trace_pixel
-
-    with _open(capture) as session:
-        payload = trace_pixel(
-            session,
-            x,
-            y,
-            target=target,
-            context_eid=eid,
-            mip=mip,
-            slice_=slice,
-            sample=sample,
-            max_draws=max_draws,
-            expand_reads=expand_reads,
-            max_writers_per_resource=max_writers,
-        )
-    return to_json(payload)
+    return to_json(_run(
+        capture, "trace_pixel", x=x, y=y, target=target, eid=eid, mip=mip,
+        slice=slice, sample=sample, max_draws=max_draws,
+        expand_reads=expand_reads, max_writers=max_writers))
 
 
 @mcp.tool()
@@ -106,13 +106,8 @@ def trace_resource(
 ) -> str:
     """Writers and readers of one resource (usage timeline classified into
     write/read/other). Every entry carries evidence."""
-    from rdebug.analysis.resource_flow import trace_resource
-
-    with _open(capture) as session:
-        payload = trace_resource(
-            session, resource, context_eid=eid, include_other=include_other
-        )
-    return to_json(payload)
+    return to_json(_run(capture, "trace_resource", resource=resource, eid=eid,
+                        include_other=include_other))
 
 
 @mcp.tool()
@@ -131,22 +126,10 @@ def debug_pixel(
 ) -> str:
     """Structured shader debug trace for one pixel fragment: inputs, per-step
     variable changes, source/disassembly mapping. Evidence included."""
-    from rdebug.analysis.shader_trace import debug_pixel
-
-    with _open(capture) as session:
-        payload = debug_pixel(
-            session,
-            x,
-            y,
-            target=target,
-            context_eid=eid,
-            primitive=primitive,
-            sample=sample,
-            view=view,
-            max_steps=max_steps,
-            include_disassembly=include_disassembly,
-        )
-    return to_json(payload)
+    return to_json(_run(
+        capture, "debug_pixel", x=x, y=y, target=target, eid=eid,
+        primitive=primitive, sample=sample, view=view, max_steps=max_steps,
+        include_disassembly=include_disassembly))
 
 
 @mcp.tool()
@@ -164,23 +147,21 @@ def diff_pixel(
     """Compare two pixels' local causal flows and report the first provable
     divergence. States are strictly same/different/unknown; every layer entry
     carries evidence for both sides."""
-    from rdebug.analysis.pixel_diff import diff_pixel
-
-    with _open(capture) as session:
-        payload = diff_pixel(
-            session,
-            (a_x, a_y),
-            (b_x, b_y),
-            max_draws=max_draws,
-            include_shader_values=include_shader_values,
-            expand_reads=expand_reads,
-        ).to_dict()
-    return to_json(payload)
+    return to_json(_run(
+        capture, "diff_pixel", a_x=a_x, a_y=a_y, b_x=b_x, b_y=b_y,
+        max_draws=max_draws, include_shader_values=include_shader_values,
+        expand_reads=expand_reads))
 
 
 def main():
-    mcp.run()
+    try:
+        mcp.run()
+    finally:
+        # Dispose every worker rather than leaving a live replay runtime per
+        # capture behind in a process that is exiting anyway.
+        _WORKERS.dispose_all()
 
 
 if __name__ == "__main__":
     main()
+

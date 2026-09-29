@@ -7,6 +7,11 @@ from rdebug import errors
 from rdebug.model import PixelHistoryResult
 from rdebug_mcp import server
 
+try:  # unittest discover puts tests_transport/ on sys.path; pytest does not
+    from worker_stub import RecordingWorkers
+except ImportError:  # pragma: no cover - runner-dependent
+    from tests_transport.worker_stub import RecordingWorkers
+
 
 class FakeAction:
     def __init__(self, eid, name):
@@ -94,13 +99,11 @@ class FakeSession:
 
 class ToolCallTests(unittest.TestCase):
     def setUp(self):
-        self._prev = server._session_factory
-        server._MANAGER.dispose_all()
-        server._session_factory = lambda capture: FakeSession()
+        self._prev = server._WORKERS
+        server._WORKERS = RecordingWorkers(FakeSession())
 
     def tearDown(self):
-        server._session_factory = self._prev
-        server._MANAGER.dispose_all()
+        server._WORKERS = self._prev
 
     def test_trace_pixel_passthrough_with_evidence(self):
         raw = server.trace_pixel("cap.rdc", 1, 2)
@@ -126,6 +129,39 @@ class ToolCallTests(unittest.TestCase):
         raw = server.debug_pixel("cap.rdc", 1, 2)
         payload = json.loads(raw)
         self.assertIn("error", payload)
+
+    def test_mcp_arguments_reach_the_worker_unrenamed(self):
+        # Guards the mapping MCP -> rdebug.workers._dispatch. A rename on
+        # either side must fail here rather than silently changing
+        # behaviour in production.
+        server.trace_pixel("cap.rdc", 7, 9, mip=2, slice=1, max_writers=3,
+                           expand_reads=False, eid=11, target="ResourceId::1")
+        _capture, tool, args = server._WORKERS.calls[-1]
+        self.assertEqual(tool, "trace_pixel")
+        self.assertEqual(args["x"], 7)
+        self.assertEqual(args["y"], 9)
+        self.assertEqual(args["mip"], 2)
+        self.assertEqual(args["slice"], 1)
+        self.assertEqual(args["max_writers"], 3)
+        self.assertEqual(args["eid"], 11)
+        self.assertIs(args["expand_reads"], False)
+
+    def test_none_arguments_are_dropped_so_worker_defaults_apply(self):
+        # Forwarding target=None would override the worker's default with a
+        # null it never expects (sample=None in place of 0). Falsy-but-meaningful
+        # values such as expand_reads=False must survive.
+        server.trace_pixel("cap.rdc", 1, 2, target=None, expand_reads=False)
+        _capture, _tool, args = server._WORKERS.calls[-1]
+        self.assertNotIn("target", args)
+        self.assertIs(args["expand_reads"], False)
+
+    def test_capture_is_forwarded_so_the_worker_guard_engages(self):
+        # workers.py refuses a capture it is not bound to. That check reads
+        # args["capture"], so if MCP stopped forwarding it the guard would
+        # pass vacuously.
+        server.trace_pixel("cap.rdc", 1, 2)
+        _capture, _tool, args = server._WORKERS.calls[-1]
+        self.assertEqual(args["capture"], "cap.rdc")
 
 
 class TransportInvariants(unittest.TestCase):
