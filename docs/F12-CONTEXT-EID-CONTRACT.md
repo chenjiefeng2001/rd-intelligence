@@ -209,9 +209,10 @@ D4                         NOT_ESTABLISHED / DEFER
 D6                         MEASURED / NO BLOCKER（修复后复测：校验 ~4µs vs
                            SetFrameEvent ~9ms，<0.05%，无可测量回归）
 eid silent wrong result    FIXED / CONTRACT DEFINED / VERIFIED
-                           证据：16 项对照（真实 capture + 合成嵌套树 +
-                           双 transport）；缺陷回退复测 8 FAIL / 修复后 16 OK
-                           （假阳性对照为合成树证据，见 §0 环境缺口）
+                           ⚠️ 假阳性对照为**合成 action tree** 证据，
+                           **真实 capture 确认待补**（见 §0 环境缺口）
+                           → 不得升级为「all real nested events verified」
+                           冻结点见 docs/FREEZE-EID-2026-09-29.md
 shader reflection         OPEN
 CI                         OPEN
 D5                         DEFER

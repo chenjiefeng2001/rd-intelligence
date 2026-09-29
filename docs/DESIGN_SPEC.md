@@ -188,7 +188,8 @@ CPU/GPU/驱动上**哈希一致**；timing 只比较形状（cold/warm 分类分
 从未定义 `context_eid`；§2.3 的 `eventId` 只讲**证据回链**（输出来处），
 与**输入事件的选取**无关。缺失导致不存在的 event id 被静默接受，
 返回形状正常但不指向 capture 中任何真实 event 的语义结果
-（F12 家族，见 `docs/F12-CONTEXT-EID-CONTRACT.md`）。
+（F12 家族，见 `docs/F12-CONTEXT-EID-CONTRACT.md`；
+冻结点见 `docs/FREEZE-EID-2026-09-29.md`）。
 
 | 规则 | 约束 |
 | --- | --- |
