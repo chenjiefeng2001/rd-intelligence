@@ -11,3 +11,9 @@ venv/
 *.rdc.idx
 tests/workload/corpus/
 tests/workload/reports/
+
+# gate run outputs
+gate_report.json
+ci_pipeline_report.json
+.gate3_verdict.json
+.g3probe.json

@@ -1,0 +1,121 @@
+{
+  "schema": "rdebug-ci-pipeline/1",
+  "declared_at": "2026-09-29",
+  "note": "Forge-neutral description of how a CI system should run the DESIGN_SPEC section 4 gates. It declares what the environment must provide, because a pipeline cannot provision something the gate spec does not ask for. It does not schedule anything and blocks no pull request; scripts/ci_pipeline.py is what a pipeline would invoke.",
+  "forge_target": {
+    "kind": "github-actions",
+    "config": ".github/workflows/ci.yml",
+    "remote_present": false,
+    "caveat": "rd-intelligence has no git remote, so this configuration cannot execute here. It is written against the conventional target and is auditable as a declaration, not as a running pipeline."
+  },
+  "entry": {
+    "command": [
+      "python",
+      "scripts/release_gate.py"
+    ],
+    "spec": "ci-pipeline.json",
+    "gate_spec": "release-gates.json",
+    "orchestrator": "scripts/release_gate.py"
+  },
+  "conclusion_mapping": {
+    "0": {
+      "conclusion": "success",
+      "meaning": "all section 4 gates implemented, required execution satisfied, all passed"
+    },
+    "2": {
+      "conclusion": "failure",
+      "meaning": "a gate reported REGRESSION: a content difference was observed"
+    },
+    "3": {
+      "conclusion": "failure",
+      "meaning": "a gate could not execute: missing environment, unrunnable gate, or a discovery failure. Fail-closed, and never reported as a regression."
+    },
+    "4": {
+      "conclusion": "neutral",
+      "meaning": "UNKNOWN or NOT_IMPLEMENTED: no content conclusion was formed. Needs a human; must not be auto-promoted."
+    }
+  },
+  "pipeline_preconditions": {
+    "note": "A failure here is the pipeline layer's own, and is INFRASTRUCTURE. It is distinct from any gate verdict and must never be recorded as a regression.",
+    "python_package_importable": true,
+    "files_required": [
+      "ci-pipeline.json",
+      "release-gates.json",
+      "scripts/ci_pipeline.py",
+      "scripts/release_gate.py",
+      "scripts/audit_boundaries.py",
+      "scripts/audit_fork_integrity.py",
+      "scripts/cold_warm_gate.py"
+    ]
+  },
+  "environment_requirements": [
+    {
+      "gate": "unit",
+      "requires": [],
+      "provided_by": "none",
+      "note": "pure Python"
+    },
+    {
+      "gate": "transport",
+      "requires": [],
+      "provided_by": "none",
+      "note": "pure Python"
+    },
+    {
+      "gate": "boundary_audit",
+      "requires": [],
+      "provided_by": "none",
+      "note": "pure Python"
+    },
+    {
+      "gate": "integration",
+      "requires": [
+        "renderdoc module",
+        "capture file"
+      ],
+      "env": [
+        "RDEBUG_RENDERDOC_PATH",
+        "RDEBUG_INTEGRATION_CAPTURE"
+      ],
+      "provided_by": "runner with a GPU and a matching driver, plus a built RenderDoc pymodule and a capture",
+      "note": "A hosted runner without a GPU cannot satisfy this. The correct outcome is INFRASTRUCTURE_FAILURE, not a pass and not a regression. The capture is NOT in version control: tests/workload/corpus is gitignored and zero .rdc files are tracked, so a fresh clone cannot run this gate until the corpus is supplied out of band. The correct outcome of a missing capture is INFRASTRUCTURE_FAILURE.",
+      "capture_in_version_control": false
+    },
+    {
+      "gate": "cold_warm_equivalence",
+      "requires": [
+        "renderdoc module",
+        "capture file"
+      ],
+      "env": [
+        "RDEBUG_RENDERDOC_PATH"
+      ],
+      "provided_by": "same as integration",
+      "note": "It spawns workers that replay, so it needs the same environment even though it runs no unittest suite. The capture is NOT in version control: tests/workload/corpus is gitignored and zero .rdc files are tracked, so a fresh clone cannot run this gate until the corpus is supplied out of band. The correct outcome of a missing capture is INFRASTRUCTURE_FAILURE.",
+      "capture_in_version_control": false
+    },
+    {
+      "gate": "fork_integrity",
+      "requires": [
+        "sibling RenderDoc fork checkout at ../renderdoc"
+      ],
+      "provided_by": "a second checkout next to this repository",
+      "note": "Without it the fork audit cannot run and reports INFRASTRUCTURE_FAILURE. The pipeline must not substitute a copy of the F1 to F4 logic to make this pass."
+    },
+    {
+      "gate": "benchmark_archive",
+      "requires": [],
+      "provided_by": "none",
+      "note": "PROCESS_ONLY. A process requirement with no executable check. It is declared here so every gate in the gate spec has a stated environment, and it keeps the overall result off PASS. No runner capability can satisfy it, and none is invented."
+    }
+  ],
+  "artifacts": {
+    "gate_report": "gate_report.json",
+    "pipeline_report": "ci_pipeline_report.json",
+    "note": "Both are machine readable. The report has to carry gate-level state, executed, required_execution, command, result and the overall state, so that a reader can tell what ran from what was merely reported."
+  },
+  "release_blocking": {
+    "enabled": false,
+    "note": "Release blocking is not authorized. Until it is, an exit 4 is a legitimate resting state and the overall result stays NEEDS_REVIEW because section 4 gate 4 has no executable check."
+  }
+}

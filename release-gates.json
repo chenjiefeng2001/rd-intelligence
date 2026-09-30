@@ -1,10 +1,11 @@
 {
-  "schema": "rdebug-release-gates/3",
+  "schema": "rdebug-release-gates/4",
   "declared_at": "2026-09-29",
   "schema_history": {
     "rdebug-release-gates/1": "gate set and I1/I2 enforcement",
     "rdebug-release-gates/2": "adds spec_gate mapping, per-gate state, required_execution, blocking, four-state aggregate exit codes and the JSON report. Gate 3 and gate 4 are declared here as NOT_IMPLEMENTED and PROCESS_ONLY so the aggregate can see that they have nothing to run.",
-    "rdebug-release-gates/3": "gate 3 becomes IMPLEMENTED: cold_warm_equivalence now has a command and a verdict. The release runner needs a new runner kind so the gate four-state verdict is consumed rather than collapsed into pass or non-zero, which is what exit_code would do."
+    "rdebug-release-gates/3": "gate 3 becomes IMPLEMENTED: cold_warm_equivalence now has a command and a verdict. The release runner needs a new runner kind so the gate four-state verdict is consumed rather than collapsed into pass or non-zero, which is what exit_code would do.",
+    "rdebug-release-gates/4": "gate 3 declares the environment it actually needs. It was listed as pure python, which is wrong: it spawns workers that replay, so without the renderdoc module and a capture it aborts as INFRASTRUCTURE_FAILURE. A pipeline cannot provision what the spec does not declare."
   },
   "note": "Gate definitions for DESIGN_SPEC section 4. This file declares what must run before a change can be treated as verified. It is not a pipeline: nothing here schedules, blocks a pull request, or talks to a forge. Running it by hand is still a manual action, and that residual gap is recorded rather than claimed solved.",
   "exit_codes": {
@@ -111,7 +112,15 @@
       "rationale": "DESIGN_SPEC 4.3 cold-equals-warm equivalence. Compares the complete semantic payload of five mandatory cases across four collection points spanning a real worker recycle, and asserts the worker boundary by pid rather than assuming it. No field allowlist and no volatile-field exclusion: a difference is a REGRESSION to be investigated, not tolerated. CAPTURE_PLACEHOLDER is substituted by the runner from the gate spec capture field.",
       "runner": "verdict_json",
       "spec_ref": "docs/GATE3-COLD-WARM-CONTRACT.md",
-      "verdict_path": ".gate3_verdict.json"
+      "verdict_path": ".gate3_verdict.json",
+      "requires": {
+        "env": [
+          "RDEBUG_RENDERDOC_PATH"
+        ],
+        "module": "renderdoc",
+        "capture": true
+      },
+      "capture_env": "RDEBUG_GATE3_CAPTURE"
     },
     {
       "id": "benchmark_archive",

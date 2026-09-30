@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "rdebug-release-gates/3"
+SCHEMA = "rdebug-release-gates/4"
 
 PASS = "PASS"
 REGRESSION = "REGRESSION"
@@ -182,15 +182,40 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         if resolved:
             gate["command"] = resolved
 
+    def record(outcome, detail, executed=None, **extra):
+        """Every gate record carries the same accounting fields.
+
+        A report that omits state or required_execution cannot answer whether
+        a gate was expected to run, which is the question that distinguishes
+        verified from merely reported.
+        """
+        out = {
+            "gate": gate["id"],
+            "spec_gate": gate.get("spec_gate"),
+            "state": gate.get("state", "IMPLEMENTED"),
+            "outcome": outcome,
+            "required_execution": bool(gate.get("required_execution", True)),
+            "blocking": bool(gate.get("blocking", True)),
+            "attempted": True,
+            "executed": executed,
+            "command": gate.get("command"),
+            "exit_code": None,
+            "detail": detail,
+        }
+        out.update(extra)
+        return out
+
     missing = check_requires(gate, repo_root, env)
     if missing:
-        return {
-            "gate": gate["id"],
-            "outcome": INFRA,
-            "detail": "missing prerequisites: {}".format(", ".join(missing)),
-            "executed": 0,
-        }
+        return record(INFRA,
+                      "missing prerequisites: " + ", ".join(missing),
+                      executed=0)
 
+    # Marker so a test that exercises the whole pipeline can detect that it is
+    # being run from inside the gate it exercises, and stand down. Without it
+    # that test re-enters this runner, which re-enters the suite, which re-enters
+    # the test, and the run times out having proved nothing.
+    env["RDEBUG_GATE_RUN"] = "1"
     proc = subprocess.run(
         gate["command"], cwd=repo_root, env=env,
         capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -204,87 +229,61 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         # so the verdict is read from the JSON the gate wrote.
         report_path = _verdict_path(gate, repo_root, env)
         if not report_path or not os.path.isfile(report_path):
-            return {"gate": gate["id"], "outcome": INFRA, "executed": None,
-                    "detail": "gate produced no verdict file at %s"
-                              % (report_path or "<unset>")}
+            return record(INFRA, "gate produced no verdict file at %s"
+                          % (report_path or "<unset>"))
         try:
             with open(report_path, encoding="utf-8") as fh:
                 verdict = json.load(fh)
         except Exception as e:  # noqa: BLE001
-            return {"gate": gate["id"], "outcome": INFRA, "executed": None,
-                    "detail": f"unreadable verdict: {e}"}
-        outcome = verdict.get("outcome", INFRA)
-        detail = _verdict_detail(verdict)
-        return {
-            "gate": gate["id"], "outcome": outcome, "executed": None,
-            "detail": detail, "verdict": verdict,
-        }
+            return record(INFRA, f"unreadable verdict: {e}")
+        return record(verdict.get("outcome", INFRA),
+                      _verdict_detail(verdict),
+                      verdict=verdict, exit_code=proc.returncode)
 
     if kind == "unittest":
         try:
             counts = _parse_unittest(stream)
         except GateError as e:
-            return {"gate": gate["id"], "outcome": INFRA, "detail": str(e),
-                    "executed": 0}
+            return record(INFRA, str(e), executed=0)
         floor = gate.get("min_executed")
         if counts["executed"] == 0:
-            return {
-                "gate": gate["id"], "outcome": INFRA,
-                "detail": f"I1: 0 of {counts['total']} tests executed; a "
-                          f"gate that verified nothing is not a pass",
-                "executed": 0, **counts,
-            }
+            return record(INFRA,
+                          f"I1: 0 of {counts['total']} tests executed; a gate "
+                          f"that verified nothing is not a pass",
+                          exit_code=proc.returncode, **counts)
         if floor is not None and counts["executed"] < floor:
-            return {
-                "gate": gate["id"], "outcome": INFRA,
-                "detail": f"I1: only {counts['executed']} tests executed, "
+            return record(INFRA,
+                          f"I1: only {counts['executed']} tests executed, "
                           f"declared floor is {floor}",
-                "executed": counts["executed"], **counts,
-            }
+                          exit_code=proc.returncode, **counts)
         if counts["discovery_anomalies"]:
-            return {
-                "gate": gate["id"], "outcome": INFRA,
-                "detail": "G2: test discovery failed for "
+            return record(INFRA,
+                          "G2: test discovery failed for "
                           + ", ".join(counts["discovery_anomalies"])
                           + "; a module that cannot be imported is a "
                             "test-infrastructure problem, not a content "
                             "regression",
-                "executed": counts["executed"], **counts,
-            }
+                          exit_code=proc.returncode, **counts)
         if counts["failures"] or counts["errors"]:
-            return {
-                "gate": gate["id"], "outcome": REGRESSION,
-                "detail": f"{counts['failures']} failure(s), "
+            return record(REGRESSION,
+                          f"{counts['failures']} failure(s), "
                           f"{counts['errors']} error(s) with "
                           f"{counts['executed']} executed",
-                "executed": counts["executed"], **counts,
-            }
+                          exit_code=proc.returncode, **counts)
         if counts["skipped"]:
-            return {
-                "gate": gate["id"], "outcome": UNKNOWN,
-                "detail": (
-                    f"{counts['skipped']} of {counts['total']} tests skipped; "
-                    "no content conclusion for the skipped part"
-                ),
-                "executed": counts["executed"], **counts,
-            }
-        return {
-            "gate": gate["id"], "outcome": PASS,
-            "detail": f"{counts['executed']} checks executed, all passed",
-            "executed": counts["executed"], **counts,
-        }
+            return record(UNKNOWN,
+                          f"{counts['skipped']} of {counts['total']} tests "
+                          f"skipped; no content conclusion for the skipped part",
+                          exit_code=proc.returncode, **counts)
+        return record(PASS,
+                      f"{counts['executed']} checks executed, all passed",
+                      exit_code=proc.returncode, **counts)
 
     if proc.returncode != 0:
         tail = (stream.strip().splitlines() or ["<no output>"])[-1]
-        return {
-            "gate": gate["id"], "outcome": REGRESSION,
-            "detail": f"exit {proc.returncode}: {tail[:120]}",
-            "executed": None,
-        }
-    return {
-        "gate": gate["id"], "outcome": PASS,
-        "detail": "exit 0", "executed": None,
-    }
+        return record(REGRESSION, f"exit {proc.returncode}: {tail[:120]}",
+                      exit_code=proc.returncode)
+    return record(PASS, "exit 0", exit_code=proc.returncode)
 
 
 def run_all(spec, repo_root, env=None, only=None, timeout=None, runner=None):

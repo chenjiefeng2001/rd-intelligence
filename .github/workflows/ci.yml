@@ -1,0 +1,54 @@
+name: ci
+
+# Concrete instantiation of ci-pipeline.json for GitHub Actions.
+#
+# Two facts about this file are recorded rather than smoothed over.
+#
+# rd-intelligence has no git remote, so this configuration cannot execute
+# today. It is a declaration that can be audited, not a pipeline that runs.
+#
+# A GitHub-hosted runner has no GPU and no RenderDoc replay runtime, and this
+# repository has no sibling ../renderdoc checkout. The two replay gates
+# (integration and cold_warm_equivalence) and the fork integrity gate
+# therefore cannot run there. The correct outcome of that is
+# INFRASTRUCTURE_FAILURE, which this pipeline reports as a failure with
+# conclusion "failure" and a neutral-to-failure distinction preserved in the
+# report. Making them pass on a GPU-less runner would require fabricating
+# validation, which section 4.1 forbids.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  section4-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the package so rdebug is importable
+        run: python -m pip install -e .
+
+      - name: Run the section 4 gates
+        id: gates
+        run: python scripts/ci_pipeline.py --json ci_pipeline_report.json
+
+      - name: Upload the gate reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-reports
+          path: |
+            ci_pipeline_report.json
+            gate_report.json
+
+      - name: Release blocking is not enabled
+        if: always()
+        run: |
+          echo "release blocking is NOT authorized; an exit 4 is a legitimate"
+          echo "resting state and must not be treated as a green build."
