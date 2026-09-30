@@ -7,6 +7,11 @@
 ```text
 CURRENT EVIDENCE FREEZE
 ──────────────────────────────────────────────
+§2.1 fork integrity      VIOLATED (A1, observed)
+  └ core.cpp +32 tracked ── 唯一缺口是「规范对账」，
+                              非未受控改动（N3 计划已声明并留痕）
+14 frozen artifacts      INTACT (14/14 hash MATCH)  ← 与上项互不覆盖
+§4 automation            GAP / CONFIRMED WITH OBSERVED CONSEQUENCE (A2)
 context_eid             FIXED / VERIFIED
 CI gate verdict (§4.1)   DEFINED / FROZEN
   zero-check pass       FIXED / VERIFIED
@@ -24,6 +29,18 @@ N3-05B                  NOT AUTHORIZED
 F-N3-1                  NOT AUTHORIZED
 ──────────────────────────────────────────────
 ```
+
+> ⚠️ **2026-09-29 只读审计后的状态修正**：
+> 本冻结点原先笼统记为「RenderDoc fork intact」。审计（`ed59113`）证明该表述
+> **不成立** —— `renderdoc/core/core.cpp` 存在 **+32 行未提交 tracked
+> modification**，违反 §2.1 与 §4 门 5。现修正为 **VIOLATED (A1, observed)**。
+>
+> **两个概念不得互相覆盖**：
+> 「14 冻结物 INTACT」= **文件哈希**事实（已验证 14/14）；
+> 「fork 零 tracked diff」= **源码状态**事实，当前**不成立**。
+>
+> A1 的处置 Contract 与三方案事实矩阵见 `docs/A1-FORK-INTEGRITY-CONTRACT.md`。
+> **未执行任何方案。**
 
 ## Checkpoint 事实（冻结时实测）
 
