@@ -7,9 +7,10 @@
 ```text
 CURRENT EVIDENCE FREEZE
 ──────────────────────────────────────────────
-§2.1 fork integrity      VIOLATED (A1, observed)
-  └ core.cpp +32 tracked ── 唯一缺口是「规范对账」，
-                              非未受控改动（N3 计划已声明并留痕）
+§2.1 fork integrity      COMPLIANT WITH DECLARED EXCEPTION
+  └ core.cpp +32 tracked ── 仍存在，但已声明、在作用域内、
+                              provenance 绑定、且被 F1–F4 机械强制
+  └ git status --porcelain 仍**非空**，本冻结不宣称其为空
 14 frozen artifacts      INTACT (14/14 hash MATCH)  ← 与上项互不覆盖
 §4 automation            GAP / CONFIRMED WITH OBSERVED CONSEQUENCE (A2)
 context_eid             FIXED / VERIFIED

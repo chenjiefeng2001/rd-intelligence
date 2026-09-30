@@ -1,0 +1,55 @@
+{
+  "schema": "rdebug-fork-exception/1",
+  "spec_section": "DESIGN_SPEC.md 2.1.1",
+  "declared_at": "2026-09-29",
+  "exceptions": [
+    {
+      "exception_id": "n3-headless-capture-trigger",
+      "enabled": true,
+      "category": "capture_acquisition_tooling",
+      "purpose": "RDOC_TRIGGER_FRAMES headless frame-number capture trigger, so unmodified third-party applications can be captured without a GUI. Upstream RenderDoc has no equivalent env control.",
+      "mechanism": "RDOC_TRIGGER_FRAMES",
+
+      "granted_by": {
+        "source": "N3 capture acquisition plan step 9",
+        "evidence": "rdebug-validation/docs/N3-05A-ACQUISITION-AUDIT.md:151-152",
+        "note": "That step granted this declared working-tree modification and simultaneously forbade every other tracked file."
+      },
+
+      "files": {
+        "renderdoc/core/core.cpp": {
+          "allowed_symbols": [
+            "RenderDoc::ShouldTriggerCapture"
+          ],
+          "allowed_file_scope": [
+            "include_block"
+          ]
+        }
+      },
+
+      "excluded_surfaces": [
+        "replay",
+        "driver",
+        "serialise",
+        "mcp",
+        "ai",
+        "semantic_graph",
+        "indexing"
+      ],
+
+      "provenance": {
+        "metadata_globs": [
+          "n3-corpus/metadata/N3-05A*.json"
+        ],
+        "root": "../rdebug-validation",
+        "mechanism_path": "capture_mechanism.patch",
+        "recorded_path": "capture_mechanism.patch_recorded",
+        "scope_note": "Narrowed from *.json after the F3 check rejected it: N3-02 and N3-03 were captured without the patch and record no mechanism, so only the N3-05A captures are covered by this exception."
+      },
+
+      "not_a_replay_change": true,
+
+      "scope_note": "This exception authorises exactly the modification described above and nothing else. It does not carry forward to any future patch: a new patch must re-enter the same Contract and evidence flow and be declared separately."
+    }
+  ]
+}

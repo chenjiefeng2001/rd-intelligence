@@ -29,10 +29,77 @@ First Divergence 为核心语义、可通过 MCP / CLI / IDE / CI 消费的调�
 | 规则 | 约束 |
 | --- | --- |
 | MUST | 仅作为 Replay Engine 使用（capture / replay / pixel history / shader debug） |
-| MUST NOT | 任何 tracked modification（fork 永远保持零 diff） |
+| MUST NOT | 任何 tracked modification，**除 §2.1.1 声明的 capture acquisition exception** |
 | MUST NOT | 在其内部加入 AI / 语义图 / MCP / 索引 |
 
-合规验证：`git -C <fork> status --porcelain` 必须为空。
+合规验证：`git -C <fork> status --porcelain --untracked-files=no` 的输出，
+必须与 §2.1.1 的声明**逐项一致**——既不允许未声明的修改，也不允许
+「已声明但不存在」。
+
+> **2026-09-29 修订说明**：本节原为无例外的绝对 MUST NOT
+> （「fork 永远保持零 diff」）。只读审计证明该措辞与一个**已存在且受控的
+> N3 采集例外**不一致：N3 采集计划步骤 9 显式授予并声明了该例外，
+> 冻结 capture metadata 记录了它，且 provenance verifier 对每个 capture
+> 机械校验「patch 存在性 ↔ 记录」。因此本节从「绝对禁止」修订为
+> 「**默认禁止，例外必须严格声明且可机械验证**」。
+> 这**不是**泛化豁免，条件见 §2.1.1。
+
+#### 2.1.1 Capture Acquisition Exception Contract（2026-09-29）
+
+一个 tracked modification 只有在**同时满足全部 7 条**时才被允许存在。
+任一条不满足即 FAIL。
+
+| # | 条件 | 约束 |
+| --- | --- | --- |
+| **1** | **仅限 capture acquisition tooling** | 不得进入 replay semantics、driver behavior、serialise、MCP、AI、semantic graph、indexing 任何路径。声明须给出 `category: capture_acquisition_tooling` |
+| **2** | **用途必须明确声明** | 声明须写明具体机制名与目的，不得使用「工具性改动」等泛化措辞 |
+| **3** | **作用面必须可验证** | 声明须给出**允许的文件清单**与**允许的符号/作用域清单**。验证以 `git diff` 的 hunk 上下文为准，落在清单外即 FAIL。**「代码里有注释」不构成合规依据** |
+| **4** | **provenance 必须绑定** | 采集 metadata 必须记录该 patch；且 metadata 声明的 patch 与工作区**实际存在性**必须机械一致 |
+| **5** | **verifier 必须强制** | 见下方 FAIL 条件表，四种情形一律 FAIL |
+| **6** | **不改变 replay Contract** | acquisition patch **不得**被解释为 replay-engine 的语义修改；它不改变 §2.1 第一条（MUST 仅作 Replay Engine）与 §2.9 的任何 replay 语义 |
+| **7** | **scope 明确、不自动延续** | 当前 exception **不自动授权任何未来 patch**。新 patch 必须重新走同一 Contract/evidence 流程并重新声明 |
+
+##### §2.1.1 强制 FAIL 条件（verifier 必须拒绝的四类）
+
+| # | 情形 | 结果 |
+| --- | --- | --- |
+| F1 | 存在**未声明**的 tracked modification | **FAIL** |
+| F2 | 声明存在但工作区**实际不存在**（幽灵声明） | **FAIL** |
+| F3 | modification 存在但**未声明**其 patch 身份 / provenance 未记录 | **FAIL** |
+| F4 | modification 落在**允许文件/作用域之外**（触及 §2.1.1 条件 1 排除面） | **FAIL** |
+
+##### 当前唯一生效的 exception
+
+| 字段 | 值 |
+| --- | --- |
+| 声明载体 | `rd-intelligence/fork-exception.json`（机器可读） |
+| 验证器 | `rd-intelligence/scripts/audit_fork_integrity.py`（非零退出码 = 违规） |
+| exception_id | `n3-headless-capture-trigger` |
+| 目的 | `RDOC_TRIGGER_FRAMES` headless frame capture trigger，使**未修改的第三方应用**无需 GUI 即可采集 |
+| 授权来源 | N3 采集计划步骤 9（`N3-05A-ACQUISUTION-AUDIT.md:151-152`），该步骤同时禁止其他一切 tracked 文件 |
+| 允许文件 | `renderdoc/core/core.cpp` |
+| 允许作用域 | 符号 `RenderDoc::ShouldTriggerCapture`；文件作用域 `include_block` |
+| 排除面 | replay / driver / serialise / mcp / ai / semantic_graph / indexing |
+| provenance 绑定 | 冻结 `n3-corpus/metadata/*.json` 的 `capture_mechanism.patch` 与 `patch_recorded` |
+
+##### 本节的实现状态（2026-09-29）
+
+| 项 | 状态 |
+| --- | --- |
+| §2.1 措辞与受控例外对账 | ✅ **已完成**（本节修订） |
+| 机器可读声明 | ✅ `fork-exception.json` |
+| 机械验证器（F1–F4） | ✅ `scripts/audit_fork_integrity.py` |
+| 回归对照（合成 fixture 覆盖 F1–F4 + 正对照） | ✅ `tests/unit/test_fork_integrity_audit.py` |
+| 真实 fork 上的机械验证 | ✅ 通过（只读 `git status` / `git diff`） |
+| fork 是否已提交 patch | ❌ **未提交**（exception 模式不需要提交） |
+| fork 是否已删除 patch | ❌ **未删除**（删除会与冻结 provenance 矛盾） |
+
+**当前状态措辞**：
+`§2.1 = COMPLIANT WITH DECLARED EXCEPTION`
+（在上述验证全部通过的前提下）。
+**注意**：14 frozen artifacts 仍为 **INTACT 14/14**；
+N3-05A provenance 仍为 **`PASS_WITH_WAIVERS`**，**不得**简写为 clean PASS；
+A2（§4 automation gap）仍为 **GAP / CONFIRMED WITH OBSERVED CONSEQUENCE**。
 
 ### 2.2 Stable Core（`rdebug` 包，不含 transports）
 
