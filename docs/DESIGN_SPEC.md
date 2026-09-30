@@ -287,7 +287,7 @@ MUST NOT 让**未经观测**的 reflection 字段参与任何**等值比较**，
 
 | 规则 | 实现状态 | 依据 |
 | --- | --- | --- |
-| §2.11.1 三态互不相同 | ❌ **未实现** | `core.py:757-765` 的 `except Exception: pass` 把失败压成 `{"resource": ...}`，无 error flag |
+| §2.11.1 三态互不相同 | ❌ **未实现** | `core.py` reflection 分支的 `except Exception: pass` 把失败压成 `{"resource": ...}`，无 error flag。**已加注释标注为防御性 catch（2026-09-29 O2），行为未改** |
 | §2.11.2 消费边界 | ❌ **未实现** | 无 `shadersError` 类 flag；`pixel_trace.py:155` 的 `entryPoint` 缺省为 `""` |
 | §2.11.2 不参与等值比较 | ✅ **当前成立** | diff 层只比较 `input_bindings` / `shader_input_values` / `resource_provenance`；`entryPoint` / `debuggable` 不在任何比较点 |
 | `debug_pixel` 路径的失败传播 | ✅ **当前成立** | `core.py:642` 无 try，失败即抛；另有 `debuggable` 与 `trace is None` 两处 `QueryError` 检查 |
@@ -320,6 +320,15 @@ MUST NOT 让**未经观测**的 reflection 字段参与任何**等值比较**，
 >
 > 结论：`runtime defect = NOT ESTABLISHED`；
 > **§2.11 仍只有规范、没有实现**；行为变更仍不授权。
+>
+> **2026-09-29 冻结（O2）**：本项已冻结为
+> Contract **DEFINED** / runtime defect **NOT ESTABLISHED** /
+> reflection catch **DEFERRED（defensive path）**。
+> 该 catch 已加注释指向本节，**行为、schema、error propagation 均未改**
+> （剥离注释后代码逐行与冻结前一致）。
+> 冻结记录：`docs/FREEZE-REFLECTION-2026-09-29.md`。
+> 调查方法学记录（第一轮「不可达」为探针缺陷所致，已由真实 capture 证据纠正）
+> 同样记录在该冻结文件中。
 
 **不得**以合成注入的 reflection 失败作为最终证据。
 

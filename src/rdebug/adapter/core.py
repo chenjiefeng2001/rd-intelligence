@@ -762,6 +762,41 @@ class CaptureSession:
                     shader_entry["debuggable"] = bool(di.debuggable)
                     shader_entry["debugStatus"] = str(di.debugStatus)
             except Exception:
+                # Defensive only, and it does NOT currently carry the
+                # semantics DESIGN_SPEC section 2.11 requires. What is
+                # established today, and what is not:
+                #
+                #   established: the reflection path is reachable. On
+                #     w00001_frame11.rdc (D3D11, single draw) trace_pixel at
+                #     (320,240) yields a real shader node with entryPoint
+                #     "main" and debuggable true. See
+                #     docs/S2-REFLECTION-EVIDENCE.md.
+                #   not established: any reflection failure. Nineteen
+                #     captures -- synthetic and real-application, including
+                #     an execute-indirect one -- across every event and all
+                #     six shader stages produced zero failures, zero missing
+                #     fields and zero empty entry points. PipeState.
+                #     GetShaderReflection documents only "None if no shader
+                #     is bound" and a ShaderReflection, with no failure
+                #     return, and that None case is already handled above by
+                #     the sid == null skip.
+                #
+                # So this catch guards a condition the API contract does not
+                # document and that has never been observed. Do NOT read the
+                # entry that results from it as "reflection succeeded and the
+                # shader has no reflected inputs": that would be unavailable
+                # data presented as an observed fact, which is precisely the
+                # unknown-to-same upgrade sections 2.5 and 2.11 forbid.
+                # Unlike the descriptor branch below, no flag is set here, so
+                # a failure and a legitimately empty reflection are
+                # indistinguishable; section 2.11.4 records that as
+                # unimplemented.
+                #
+                # Behaviour, schema and error propagation are deliberately
+                # unchanged. If a genuine reflection failure is ever observed,
+                # reopen the section 2.11 evidence flow: reproduce it on a
+                # real capture, then demonstrate a semantic consumer's
+                # response, before changing anything here.
                 pass
             out["shaders"][stage_name] = shader_entry
         try:
