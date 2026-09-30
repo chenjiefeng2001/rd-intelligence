@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "rdebug-release-gates/2"
+SCHEMA = "rdebug-release-gates/3"
 
 PASS = "PASS"
 REGRESSION = "REGRESSION"
@@ -131,10 +131,56 @@ def check_requires(gate, repo_root, env):
     return missing
 
 
-def run_gate(gate, repo_root, env=None, timeout=None, runner=None):
+def _verdict_path(gate, repo_root, env):
+    """Where a verdict_json gate was told to write its report.
+
+    Declared on the gate, with {capture} substituted from the spec's capture
+    table so the gate command and the report path cannot drift apart.
+    """
+    template = gate.get("verdict_path")
+    if not template:
+        return None
+    return os.path.join(repo_root, template)
+
+
+def _substitute_capture(command, spec_captures, key):
+    path = (spec_captures or {}).get(key)
+    if not path:
+        return None
+    return [path if part == "CAPTURE_PLACEHOLDER" else part for part in command]
+
+
+def _verdict_detail(verdict):
+    """One line, plus the execution accounting a reviewer needs."""
+    outcome = verdict.get("outcome")
+    cases = verdict.get("cases") or {}
+    if not cases:
+        return "{} ({})".format(outcome, (verdict.get("evidence") or {}).get(
+            "abort", "no case detail"))
+    bits = []
+    for cid in sorted(cases):
+        c = cases[cid]
+        bits.append(f"{cid}={c.get('verdict')}"
+                    f"({c.get('available_at', 0)}/{c.get('attempted', 0)})")
+    ev = verdict.get("evidence") or {}
+    workers = ev.get("workers") or {}
+    suffix = ""
+    if workers:
+        suffix = f" workers={sorted(set(workers.values()))}"
+    return "{}: {}{}".format(outcome, ", ".join(bits), suffix)
+
+
+def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
+             spec_captures=None):
     """Run one gate and classify it. Never raises for a gate-level failure."""
     env = dict(os.environ if env is None else env)
     kind = runner or gate.get("runner") or "exit_code"
+    gate = dict(gate)
+    if "CAPTURE_PLACEHOLDER" in (gate.get("command") or []):
+        resolved = _substitute_capture(gate["command"], spec_captures,
+                                       gate["id"])
+        if resolved:
+            gate["command"] = resolved
 
     missing = check_requires(gate, repo_root, env)
     if missing:
@@ -151,6 +197,28 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None):
         timeout=timeout,
     )
     stream = (proc.stdout or "") + (proc.stderr or "")
+
+    if kind == "verdict_json":
+        # A gate that produces its own four-state verdict. exit_code would
+        # collapse that verdict into pass or non-zero, which is the G1 defect,
+        # so the verdict is read from the JSON the gate wrote.
+        report_path = _verdict_path(gate, repo_root, env)
+        if not report_path or not os.path.isfile(report_path):
+            return {"gate": gate["id"], "outcome": INFRA, "executed": None,
+                    "detail": "gate produced no verdict file at %s"
+                              % (report_path or "<unset>")}
+        try:
+            with open(report_path, encoding="utf-8") as fh:
+                verdict = json.load(fh)
+        except Exception as e:  # noqa: BLE001
+            return {"gate": gate["id"], "outcome": INFRA, "executed": None,
+                    "detail": f"unreadable verdict: {e}"}
+        outcome = verdict.get("outcome", INFRA)
+        detail = _verdict_detail(verdict)
+        return {
+            "gate": gate["id"], "outcome": outcome, "executed": None,
+            "detail": detail, "verdict": verdict,
+        }
 
     if kind == "unittest":
         try:
@@ -220,6 +288,7 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None):
 
 
 def run_all(spec, repo_root, env=None, only=None, timeout=None, runner=None):
+    # spec.get("captures") maps a gate id to the capture it must run against.
     results = []
     for gate in spec["gates"]:
         if only and gate["id"] not in only:
@@ -229,7 +298,8 @@ def run_all(spec, repo_root, env=None, only=None, timeout=None, runner=None):
             # stays visible in the report instead of silently disappearing.
             continue
         results.append(run_gate(gate, repo_root, env=env, timeout=timeout,
-                                runner=runner))
+                                runner=runner,
+                                spec_captures=spec.get("captures")))
     return results
 
 

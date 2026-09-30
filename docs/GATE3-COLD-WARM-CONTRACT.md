@@ -235,9 +235,10 @@ $ 在 analysis/ model.py evidence.py query/ ci.py 中检索
 ## 9. 状态
 
 ```
-Gate 3 (§4 门 3)          SPECIFIED / NOT IMPLEMENTED
+Gate 3 (§4 门 3)          IMPLEMENTED / VERIFIED（2026-09-29）
 Gate 3 Phase 1 Contract  COMPLETE（本文件）
-可执行检查                NOT IMPLEMENTED
+可执行检查                scripts/cold_warm_gate.py（29 项对照）
+Gate 4 (§4 门 4)          PROCESS_ONLY（仍无可执行检查，故总体非 PASS）
 CI 接线                   NOT AUTHORIZED
 §2.9 Gate V 可复现载体     缺失（仅布尔值，无测试）—— 记录，未改 §2.9
 ```

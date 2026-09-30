@@ -1,9 +1,10 @@
 {
-  "schema": "rdebug-release-gates/2",
+  "schema": "rdebug-release-gates/3",
   "declared_at": "2026-09-29",
   "schema_history": {
     "rdebug-release-gates/1": "gate set and I1/I2 enforcement",
-    "rdebug-release-gates/2": "adds spec_gate mapping, per-gate state, required_execution, blocking, four-state aggregate exit codes and the JSON report. Gate 3 and gate 4 are declared here as NOT_IMPLEMENTED and PROCESS_ONLY so the aggregate can see that they have nothing to run."
+    "rdebug-release-gates/2": "adds spec_gate mapping, per-gate state, required_execution, blocking, four-state aggregate exit codes and the JSON report. Gate 3 and gate 4 are declared here as NOT_IMPLEMENTED and PROCESS_ONLY so the aggregate can see that they have nothing to run.",
+    "rdebug-release-gates/3": "gate 3 becomes IMPLEMENTED: cold_warm_equivalence now has a command and a verdict. The release runner needs a new runner kind so the gate four-state verdict is consumed rather than collapsed into pass or non-zero, which is what exit_code would do."
   },
   "note": "Gate definitions for DESIGN_SPEC section 4. This file declares what must run before a change can be treated as verified. It is not a pipeline: nothing here schedules, blocks a pull request, or talks to a forge. Running it by hand is still a manual action, and that residual gap is recorded rather than claimed solved.",
   "exit_codes": {
@@ -19,7 +20,14 @@
       "state": "IMPLEMENTED",
       "required_execution": true,
       "blocking": true,
-      "command": ["python", "-m", "unittest", "discover", "-s", "tests/unit"],
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/unit"
+      ],
       "runner": "unittest",
       "min_executed": 100,
       "requires": {},
@@ -31,7 +39,14 @@
       "state": "IMPLEMENTED",
       "required_execution": true,
       "blocking": true,
-      "command": ["python", "-m", "unittest", "discover", "-s", "tests_transport"],
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests_transport"
+      ],
       "runner": "unittest",
       "min_executed": 40,
       "requires": {},
@@ -43,11 +58,23 @@
       "state": "IMPLEMENTED",
       "required_execution": true,
       "blocking": true,
-      "command": ["python", "-m", "unittest", "discover", "-s", "tests/integration", "-t", "."],
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests/integration",
+        "-t",
+        "."
+      ],
       "runner": "unittest",
       "min_executed": 55,
       "requires": {
-        "env": ["RDEBUG_RENDERDOC_PATH", "RDEBUG_INTEGRATION_CAPTURE"],
+        "env": [
+          "RDEBUG_RENDERDOC_PATH",
+          "RDEBUG_INTEGRATION_CAPTURE"
+        ],
         "module": "renderdoc",
         "capture": true
       },
@@ -59,7 +86,10 @@
       "state": "IMPLEMENTED",
       "required_execution": true,
       "blocking": true,
-      "command": ["python", "scripts/audit_boundaries.py"],
+      "command": [
+        "python",
+        "scripts/audit_boundaries.py"
+      ],
       "runner": "exit_code",
       "min_executed": null,
       "requires": {},
@@ -68,13 +98,20 @@
     {
       "id": "cold_warm_equivalence",
       "spec_gate": "4.3",
-      "state": "NOT_IMPLEMENTED",
+      "state": "IMPLEMENTED",
       "required_execution": true,
-      "blocking": false,
-      "command": null,
+      "blocking": true,
+      "command": [
+        "python",
+        "scripts/cold_warm_gate.py",
+        "CAPTURE_PLACEHOLDER",
+        "--json",
+        ".gate3_verdict.json"
+      ],
+      "rationale": "DESIGN_SPEC 4.3 cold-equals-warm equivalence. Compares the complete semantic payload of five mandatory cases across four collection points spanning a real worker recycle, and asserts the worker boundary by pid rather than assuming it. No field allowlist and no volatile-field exclusion: a difference is a REGRESSION to be investigated, not tolerated. CAPTURE_PLACEHOLDER is substituted by the runner from the gate spec capture field.",
+      "runner": "verdict_json",
       "spec_ref": "docs/GATE3-COLD-WARM-CONTRACT.md",
-      "contributes": "UNKNOWN",
-      "rationale": "DESIGN_SPEC 4.3 requires a cold-equals-warm equivalence check for any performance or refactoring change. The semantics are defined and definition-stage evidence was collected, but the check was not written. It is declared here so the aggregate can see that a required gate has nothing to run. It must never be reported as a pass, and no temporary or virtual check may stand in for it."
+      "verdict_path": ".gate3_verdict.json"
     },
     {
       "id": "benchmark_archive",
@@ -92,7 +129,10 @@
       "state": "IMPLEMENTED",
       "required_execution": true,
       "blocking": true,
-      "command": ["python", "scripts/audit_fork_integrity.py"],
+      "command": [
+        "python",
+        "scripts/audit_fork_integrity.py"
+      ],
       "runner": "exit_code",
       "min_executed": null,
       "requires": {
@@ -106,5 +146,8 @@
     "REGRESSION": "checks executed and at least one found a content difference",
     "UNKNOWN": "the gate could not form a content conclusion; not a pass, needs a human",
     "INFRASTRUCTURE_FAILURE": "the gate itself could not execute; blocks, and is never reported as a regression"
+  },
+  "captures": {
+    "cold_warm_equivalence": "tests/workload/corpus/w00001_frame11.rdc"
   }
 }

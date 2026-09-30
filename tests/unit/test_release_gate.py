@@ -428,7 +428,7 @@ class TestG1FourStateAggregate(unittest.TestCase):
 
     def test_schema_and_gates(self):
         spec = RG.load_spec(GATE_SPEC)
-        self.assertEqual(spec["schema"], "rdebug-release-gates/2")
+        self.assertEqual(spec["schema"], "rdebug-release-gates/3")
         self.assertTrue(spec["gates"])
 
     def test_every_gate_declares_a_rationale(self):
@@ -436,7 +436,8 @@ class TestG1FourStateAggregate(unittest.TestCase):
         for g in spec["gates"]:
             self.assertTrue(g.get("rationale"), g["id"])
             if g.get("state", "IMPLEMENTED") == "IMPLEMENTED":
-                self.assertIn(g.get("runner"), ("unittest", "exit_code"))
+                self.assertIn(g.get("runner"),
+                              ("unittest", "exit_code", "verdict_json"))
                 self.assertTrue(g.get("command"), g["id"])
 
     def test_unimplemented_gates_have_no_command(self):
@@ -460,18 +461,38 @@ class TestG1FourStateAggregate(unittest.TestCase):
                 "{} must contribute UNKNOWN so it cannot be counted as a pass".format(g["id"]),
             )
 
-    def test_gate_three_and_four_are_declared_unimplemented(self):
-        """The spec must show DESIGN_SPEC 4.3 and 4.4 as having nothing to run."""
+    def test_gate_three_is_implemented_and_gate_four_is_not(self):
+        """Gate 3 was implemented; gate 4 still has nothing executable.
+
+        This control previously pinned gate 3 as NOT_IMPLEMENTED. Its purpose
+        was to stop a temporary or virtual check standing in for gate 3, and
+        it now serves the same purpose from the other side: gate 3 must be a
+        real command with a real verdict, and gate 4 must stay visible as
+        PROCESS_ONLY so the aggregate cannot reach PASS.
+        """
         spec = RG.load_spec(GATE_SPEC)
         by_spec = {g.get("spec_gate"): g for g in spec["gates"]}
-        self.assertEqual(by_spec["4.3"]["state"], "NOT_IMPLEMENTED")
+        self.assertEqual(by_spec["4.3"]["state"], "IMPLEMENTED")
+        self.assertTrue(by_spec["4.3"].get("command"),
+                        "gate 3 must be a real command, not a placeholder")
+        self.assertEqual(by_spec["4.3"].get("runner"), "verdict_json",
+                         "gate 3 carries its own four-state verdict")
+        self.assertIn("cold_warm_gate.py",
+                      " ".join(by_spec["4.3"]["command"]))
         self.assertEqual(by_spec["4.4"]["state"], "PROCESS_ONLY")
-        for gid in ("4.3", "4.4"):
-            self.assertTrue(
-                by_spec[gid].get("required_execution") or
-                by_spec[gid]["state"] == "PROCESS_ONLY",
-                f"{gid} must remain visible in the report",
-            )
+        self.assertIsNone(by_spec["4.4"].get("command"),
+                          "gate 4 still has no executable check")
+
+    def test_gate_three_capture_is_keyed_by_gate_id(self):
+        """The capture table must use the gate id, or substitution silently
+        leaves the placeholder in the command and the gate cannot open it."""
+        with open(GATE_SPEC, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        caps = spec.get("captures") or {}
+        self.assertIn("cold_warm_equivalence", caps)
+        self.assertTrue(os.path.isfile(
+            os.path.join(REPO_ROOT, caps["cold_warm_equivalence"])
+        ))
 
     def test_every_exit_code_is_distinct(self):
         with open(GATE_SPEC, encoding="utf-8") as fh:
