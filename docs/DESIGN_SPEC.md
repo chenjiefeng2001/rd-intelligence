@@ -436,7 +436,9 @@ reflection 失败可注入或可观测
 1. 核心测试（`tests/`）与 transport 测试（`tests_transport/`）全绿；
    transport 失败不得导致核心失败；
 2. `scripts/audit_boundaries.py` 全部 PASS（机械边界审计）；
-3. 语义等价：任何性能/重构变更必须通过 cold==warm 等价检查；
+3. 语义等价：任何性能/重构变更必须通过 cold==warm 等价检查
+   （可执行检查：`scripts/cold_warm_gate.py`，2026-09-29 实施；
+   语义定义与控制见 `docs/GATE3-COLD-WARM-CONTRACT.md`）；
 4. benchmark 回归：session/latency 数据变更需附 `docs/validation/` 存档；
 5. RenderDoc fork 零 tracked modification。
 
