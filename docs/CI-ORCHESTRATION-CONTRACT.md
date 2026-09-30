@@ -232,12 +232,12 @@ D6 的「measured / NOT A GATE」由此机械化（已有对照
 
 ## 8. 本阶段发现的两个缺口（**均未修**）
 
-| # | 缺口 | 归属 |
-| --- | --- | --- |
-| G1 | 总体裁决为**二值**（exit 恒 1），丢失 regression 与 infra 的区分 | Phase 2（§2.1） |
-| G2 | **discovery 异常被判为 `REGRESSION`** | Phase 2（§4.1 / §4.2） |
+| # | 缺口 | 归属 | 状态 |
+| --- | --- | --- | --- |
+| G1 | 总体裁决为**二值**（exit 恒 1），丢失 regression 与 infra 的区分 | Phase 2 | ✅ **已修**（见 §10） |
+| G2 | **discovery 异常被判为 `REGRESSION`** | Phase 2 | ✅ **已修**（见 §10） |
 
-**两者都不在本次授权内**，仅记录。
+**两者在 Phase 1 均未修，仅记录；Phase 2 已修（见 §10）。**
 
 ---
 
@@ -252,3 +252,87 @@ D6 的「measured / NOT A GATE」由此机械化（已有对照
 **Gate 3 状态保持：`DEFINED / EVIDENCE COLLECTED / NOT IMPLEMENTED`**
 （五项覆盖缺口继续冻结在 `docs/GATE3-COLD-WARM-CONTRACT.md` §8，
 尤其 **cross-worker recycle** 与 **`include_shader_values=True`**）。
+
+
+---
+
+## 10. Phase 2：G1 + G2 已修（编排层，未接线）
+
+### G1 —— 四态总体裁决，退出码一一对应
+
+| 条件 | 总体状态 | exit |
+| --- | --- | --- |
+| 任一 `REGRESSION` | `FAIL_REGRESSION` | **2** |
+| 无 regression，任一 `INFRASTRUCTURE_FAILURE` | `BLOCKED_INFRA` | **3** |
+| 无上二者，任一 `UNKNOWN` / `NOT_IMPLEMENTED` | `NEEDS_REVIEW` | **4** |
+| 全 `PASS` 且 §4 五门全 `IMPLEMENTED` | `PASS` | **0** |
+
+`PASS` 另有两道保险：`required_execution` 且未实现的门不得为 PASS；
+`required_execution` 且 `executed == 0` 的门也不得为 PASS。
+
+### G2 —— discovery 异常不再冒充 regression
+
+判别式**按 test id 全文**，不按输出文本搜索：
+
+```
+ERROR: test_broken (unittest.loader._FailedTest.test_broken)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+```
+
+`RESULT_HEADER` 捕获 `^(ERROR|FAIL): (.+)$` 的**完整 id**；
+含 `unittest.loader._FailedTest` 者 → `INFRASTRUCTURE_FAILURE`；
+否则（`FAIL: test_mod.C.test_a`、`ERROR: test_mod.C.test_a`）
+→ `REGRESSION`。
+
+> Phase 1 探测时用 `(\S+)` 抽取，**在空格处截断**，恰好漏掉这个决定性
+> token。修正为捕获完整 id 后，判别式既精确又**不会误吞真实失败**。
+
+**分类顺序**：`executed==0`（I1）→ 低于下限（I1）→ discovery 异常（G2）
+→ failures/errors（内容侧）。discovery 异常**必须优先于**错误计数，
+因为一个 import 失败会抬高 `errors`，若先看计数就会被判为内容回归。
+
+### 声明文件升版 `/1 → /2`
+
+新增 `spec_gate` / `state` / `required_execution` / `blocking` / `exit_codes`。
+**§4 门 3 声明为 `NOT_IMPLEMENTED`、门 4 声明为 `PROCESS_ONLY`**，
+两者 `command: null`、`contributes: UNKNOWN` —— 编排层因此**看得见**
+它们没有可执行物。
+
+**控制** `test_unimplemented_gates_have_no_command` 断言未实现的门
+**不得携带任何 command**。这把「不得加临时或虚拟 check、
+不得用 D6 替代门 3」从**审查纪律**变成**结构约束**。
+
+### 对照：24 → **43**
+
+| 组 | 项 |
+| --- | --- |
+| G2 | discovery→INFRA、discovery 被记录、**真实 FAIL 仍 REGRESSION**、**真实测试体内 ERROR 仍 REGRESSION**、两者混合→INFRA、判别式窄（普通 module path 不匹配） |
+| G1 | regression 优先、infra 优先于 unknown、unknown→NEEDS_REVIEW、全 PASS 且全实现→PASS、未实现的门阻止 PASS、未实现的门报 UNKNOWN 而非 PASS、已运行但 `executed=0` 阻止 PASS、**退出码一一对应**、**真实 spec 今天=NEEDS_REVIEW 且点名门 3/4**、报告机器可读 |
+| spec | 未实现的门无 command、门 3/4 已声明、退出码互不相同 |
+
+### 回退验证
+
+```
+G1（二值）+ G2（discovery 强制）同时失效   8 FAIL
+恢复                                        43 OK
+```
+
+### 真实状态
+
+```
+unit 195 / transport 58 / integration 63 / boundary_audit / fork_integrity  全 PASS
+cold_warm_equivalence  UNKNOWN (NOT_IMPLEMENTED)
+benchmark_archive      UNKNOWN (PROCESS_ONLY)
+RESULT: NEEDS_REVIEW (exit 4)
+```
+
+> **5 个可执行检查全通过，总体仍非 PASS** —— 因门 3/门 4 没有可执行物。
+> 这满足验收条件：编排层不再把 regression / infrastructure / unknown
+> 压成同一个 exit 1，且门 3/门 4 仍使总体保持非 PASS。
+
+### Phase 2 未做
+
+未写 pipeline、未接线 release blocking、未实现门 3、未实现 benchmark 门、
+未改 `ci.py`、未改 `audit_fork_integrity.py`、未改测试 harness、
+未新增虚拟或最小 fake check、未用 D6 替代门 3、未改门 3 Contract、
+未追 nested-action capture。

@@ -234,19 +234,256 @@ class TestBlockingSemantics(unittest.TestCase):
         self.assertEqual(outcomes["bad"], RG.INFRA)
 
 
-class TestDeclaredSpec(unittest.TestCase):
+class TestG2DiscoveryAnomaly(unittest.TestCase):
+    """G2: a module that cannot be imported is not a content regression."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="gate_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    # The three shapes below are the ones measured against a real unittest
+    # run. The discovery id is what unittest actually prints, including the
+    # parenthesised part; an earlier probe truncated at the space and missed
+    # precisely the token that distinguishes them.
+    DISCOVERY = (
+        "ERROR: test_broken (unittest.loader._FailedTest.test_broken)\n"
+        "----------------------------------------------------------------------\n"
+        "ImportError: Failed to import test module: test_broken\n"
+        "Traceback (most recent call last):\n"
+        '  File "unittest\\loader.py", line 396, in _find_test_path\n'
+        "ModuleNotFoundError: No module named 'nonexistent_module_xyz'\n"
+        "\nRan 2 tests in 0.001s\n\nFAILED (errors=1)\n"
+    )
+    REAL_FAIL = (
+        "FAIL: test_r (test_realfail.R.test_r)\n"
+        "----------------------------------------------------------------------\n"
+        "Traceback (most recent call last):\n"
+        "AssertionError: 1 != 2\n"
+        "\nRan 4 tests in 0.001s\n\nFAILED (failures=1, errors=0)\n"
+    )
+    REAL_ERROR = (
+        "ERROR: test_e (test_realerr.E.test_e)\n"
+        "----------------------------------------------------------------------\n"
+        "Traceback (most recent call last):\n"
+        "ValueError: boom\n"
+        "\nRan 4 tests in 0.001s\n\nFAILED (failures=0, errors=1)\n"
+    )
+
+    def test_discovery_failure_is_infrastructure_not_regression(self):
+        g = _gate(self.tmp, "s", self.DISCOVERY, min_executed=1)
+        r = RG.run_gate(g, self.tmp, env={})
+        self.assertEqual(r["outcome"], RG.INFRA)
+        self.assertIn("G2", r["detail"])
+        self.assertNotEqual(r["outcome"], RG.REGRESSION)
+
+    def test_discovery_anomaly_is_recorded(self):
+        g = _gate(self.tmp, "s", self.DISCOVERY, min_executed=1)
+        r = RG.run_gate(g, self.tmp, env={})
+        self.assertTrue(r["discovery_anomalies"])
+        self.assertIn("_FailedTest", r["discovery_anomalies"][0])
+
+    def test_real_failure_is_still_regression(self):
+        """False-positive control: the rule must not be broad enough to swallow
+        a genuine content failure."""
+        g = _gate(self.tmp, "s", self.REAL_FAIL, min_executed=1)
+        self.assertEqual(RG.run_gate(g, self.tmp, env={})["outcome"],
+                         RG.REGRESSION)
+
+    def test_real_in_test_error_is_still_regression(self):
+        """A traceback that mentions neither loader nor _FailedTest is content."""
+        g = _gate(self.tmp, "s", self.REAL_ERROR, min_executed=1)
+        r = RG.run_gate(g, self.tmp, env={})
+        self.assertEqual(r["outcome"], RG.REGRESSION)
+        self.assertEqual(r["discovery_anomalies"], [])
+
+    def test_discovery_and_real_failure_together_is_infrastructure(self):
+        """The infrastructure problem is reported as such, not hidden."""
+        g = _gate(self.tmp, "s", self.DISCOVERY + self.REAL_FAIL,
+                  min_executed=1)
+        r = RG.run_gate(g, self.tmp, env={})
+        self.assertEqual(r["outcome"], RG.INFRA)
+        self.assertIn("test_broken", r["detail"])
+
+    def test_discriminator_is_narrow(self):
+        """Only the synthetic id matches; ordinary module paths do not."""
+        for ident in ("test_mod.C.test_a", "tests.unit.test_x", "test_a"):
+            self.assertNotIn(RG.DISCOVERY_MARKER, ident)
+        self.assertIn(
+            RG.DISCOVERY_MARKER,
+            "unittest.loader._FailedTest.test_broken",
+        )
+
+
+class TestG1FourStateAggregate(unittest.TestCase):
+    """G1: the overall verdict keeps four states with distinct exit codes."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="gate_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _spec(self, gates):
+        return {"gates": gates}
+
+    def _res(self, gate, outcome, executed=1, state="IMPLEMENTED"):
+        return {"gate": gate, "outcome": outcome, "executed": executed,
+                "state": state, "required_execution": True, "attempted": True,
+                "detail": ""}
+
+    def test_regression_outranks_everything(self):
+        spec = self._spec([])
+        report = RG.overall(spec, [
+            self._res("a", RG.INFRA), self._res("b", RG.UNKNOWN),
+            self._res("c", RG.REGRESSION),
+        ])
+        self.assertEqual(report["status"], RG.FAIL_REGRESSION)
+        self.assertEqual(report["exit_code"], 2)
+
+    def test_infrastructure_outranks_unknown(self):
+        report = RG.overall(self._spec([]), [
+            self._res("a", RG.UNKNOWN), self._res("b", RG.INFRA),
+        ])
+        self.assertEqual(report["status"], RG.BLOCKED_INFRA)
+        self.assertEqual(report["exit_code"], 3)
+
+    def test_unknown_alone_is_needs_review(self):
+        report = RG.overall(self._spec([]), [
+            self._res("a", RG.PASS), self._res("b", RG.UNKNOWN),
+        ])
+        self.assertEqual(report["status"], RG.NEEDS_REVIEW)
+        self.assertEqual(report["exit_code"], 4)
+
+    def test_all_pass_with_everything_implemented_is_pass(self):
+        report = RG.overall(self._spec([]), [
+            self._res("a", RG.PASS, executed=10),
+            self._res("b", RG.PASS, executed=5),
+        ])
+        self.assertEqual(report["status"], RG.PASS_OVERALL)
+        self.assertEqual(report["exit_code"], 0)
+
+    def test_not_implemented_gate_prevents_pass(self):
+        spec = self._spec([{
+            "id": "gate3", "spec_gate": "4.3", "state": "NOT_IMPLEMENTED",
+            "required_execution": True, "blocking": False, "command": None,
+            "contributes": RG.UNKNOWN, "rationale": "not written",
+        }])
+        report = RG.overall(spec, [self._res("a", RG.PASS, executed=10)])
+        self.assertNotEqual(report["status"], RG.PASS_OVERALL)
+        self.assertEqual(report["status"], RG.NEEDS_REVIEW)
+        names = [r["gate"] for r in report["gates"]]
+        self.assertIn("gate3", names, "an unimplemented gate must be visible")
+
+    def test_unimplemented_gate_reports_unknown_not_pass(self):
+        spec = self._spec([{
+            "id": "gate3", "spec_gate": "4.3", "state": "NOT_IMPLEMENTED",
+            "required_execution": True, "blocking": False, "command": None,
+            "contributes": RG.UNKNOWN, "rationale": "not written",
+        }])
+        report = RG.overall(spec, [self._res("a", RG.PASS, executed=10)])
+        row = next(r for r in report["gates"] if r["gate"] == "gate3")
+        self.assertEqual(row["outcome"], RG.UNKNOWN)
+        self.assertEqual(row["executed"], 0)
+        self.assertFalse(row["attempted"])
+
+    def test_required_gate_that_ran_nothing_is_not_pass(self):
+        spec = self._spec([])
+        report = RG.overall(spec, [self._res("a", RG.PASS, executed=0)])
+        self.assertNotEqual(report["status"], RG.PASS_OVERALL)
+
+    def test_exit_codes_are_one_to_one(self):
+        seen = {}
+        for outcomes, expected in [
+            ([RG.REGRESSION], RG.FAIL_REGRESSION),
+            ([RG.INFRA], RG.BLOCKED_INFRA),
+            ([RG.UNKNOWN], RG.NEEDS_REVIEW),
+            ([RG.PASS], RG.PASS_OVERALL),
+        ]:
+            res = [self._res(f"g{i}", o) for i, o in enumerate(outcomes)]
+            report = RG.overall(self._spec([]), res)
+            self.assertEqual(report["status"], expected)
+            seen[report["status"]] = report["exit_code"]
+        self.assertEqual(len(set(seen.values())), len(seen),
+                         "G1: two states share an exit code")
+
+    def test_real_spec_today_is_needs_review(self):
+        """Acceptance: gate 3 and gate 4 must keep the result off PASS."""
+        spec = RG.load_spec(GATE_SPEC)
+        passing = [
+            self._res(g["id"], RG.PASS, executed=max(g.get("min_executed") or 1, 1))
+            for g in spec["gates"] if g.get("state", "IMPLEMENTED") == "IMPLEMENTED"
+        ]
+        report = RG.overall(spec, passing)
+        self.assertEqual(report["status"], RG.NEEDS_REVIEW)
+        self.assertIn("cold_warm_equivalence", report["reasons"][0] + "".join(report["reasons"]))
+        self.assertIn("benchmark_archive", "".join(report["reasons"]))
+
+    def test_report_is_machine_readable(self):
+        report = RG.overall(self._spec([]), [self._res("a", RG.PASS, executed=3)])
+        for key in ("status", "exit_code", "reasons", "gates"):
+            self.assertIn(key, report)
+        for key in ("gate", "outcome", "state", "required_execution",
+                    "attempted", "executed", "detail"):
+            self.assertIn(key, report["gates"][0])
+        json.dumps(report, default=str)
     """The shipped gate spec must itself satisfy the contract it encodes."""
 
     def test_schema_and_gates(self):
         spec = RG.load_spec(GATE_SPEC)
-        self.assertEqual(spec["schema"], "rdebug-release-gates/1")
+        self.assertEqual(spec["schema"], "rdebug-release-gates/2")
         self.assertTrue(spec["gates"])
 
     def test_every_gate_declares_a_rationale(self):
         spec = RG.load_spec(GATE_SPEC)
         for g in spec["gates"]:
             self.assertTrue(g.get("rationale"), g["id"])
-            self.assertIn(g.get("runner"), ("unittest", "exit_code"))
+            if g.get("state", "IMPLEMENTED") == "IMPLEMENTED":
+                self.assertIn(g.get("runner"), ("unittest", "exit_code"))
+                self.assertTrue(g.get("command"), g["id"])
+
+    def test_unimplemented_gates_have_no_command(self):
+        """Nothing may be smuggled in as a stand-in for gate 3 or gate 4.
+
+        A temporary check, a virtual check or the D6 benchmark would all show
+        up here as a command on a gate that is declared unimplemented. The
+        authorisation explicitly forbids any of the three, so the shape
+        itself has to rule them out rather than a reviewer's diligence.
+        """
+        spec = RG.load_spec(GATE_SPEC)
+        for g in spec["gates"]:
+            if g.get("state", "IMPLEMENTED") == "IMPLEMENTED":
+                continue
+            self.assertIsNone(
+                g.get("command"),
+                "{} is declared {} and must carry no command".format(g["id"], g["state"]),
+            )
+            self.assertEqual(
+                g.get("contributes"), RG.UNKNOWN,
+                "{} must contribute UNKNOWN so it cannot be counted as a pass".format(g["id"]),
+            )
+
+    def test_gate_three_and_four_are_declared_unimplemented(self):
+        """The spec must show DESIGN_SPEC 4.3 and 4.4 as having nothing to run."""
+        spec = RG.load_spec(GATE_SPEC)
+        by_spec = {g.get("spec_gate"): g for g in spec["gates"]}
+        self.assertEqual(by_spec["4.3"]["state"], "NOT_IMPLEMENTED")
+        self.assertEqual(by_spec["4.4"]["state"], "PROCESS_ONLY")
+        for gid in ("4.3", "4.4"):
+            self.assertTrue(
+                by_spec[gid].get("required_execution") or
+                by_spec[gid]["state"] == "PROCESS_ONLY",
+                f"{gid} must remain visible in the report",
+            )
+
+    def test_every_exit_code_is_distinct(self):
+        with open(GATE_SPEC, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        codes = spec["exit_codes"]
+        self.assertEqual(len(set(codes.values())), len(codes),
+                         "G1: a shared exit code would collapse the states")
+        self.assertEqual(codes["PASS"], 0)
+        self.assertNotEqual(codes["FAIL_REGRESSION"], 0)
+        self.assertNotEqual(codes["BLOCKED_INFRA"], codes["FAIL_REGRESSION"])
+        self.assertNotEqual(codes["NEEDS_REVIEW"], codes["FAIL_REGRESSION"])
+        self.assertNotEqual(codes["NEEDS_REVIEW"], codes["PASS"])
 
     def test_capture_gates_declare_their_environment(self):
         spec = RG.load_spec(GATE_SPEC)
@@ -262,6 +499,8 @@ class TestDeclaredSpec(unittest.TestCase):
         spec = RG.load_spec(GATE_SPEC)
         banned = ("bench", "smoke", "workload", "d4", "probe", "reasoning")
         for g in spec["gates"]:
+            if not g.get("command"):
+                continue
             joined = " ".join(g["command"]).lower()
             for word in banned:
                 self.assertNotIn(

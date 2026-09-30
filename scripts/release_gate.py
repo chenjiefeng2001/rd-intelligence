@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "rdebug-release-gates/1"
+SCHEMA = "rdebug-release-gates/2"
 
 PASS = "PASS"
 REGRESSION = "REGRESSION"
@@ -53,9 +53,28 @@ FAILED = re.compile(r"^(?:FAILED|OK)\b.*", re.M)
 FAILURES = re.compile(r"failures=(\d+)")
 ERRORS = re.compile(r"errors=(\d+)")
 
+# G2. A discovery failure is reported by unittest with a synthetic test id of
+# the form "unittest.loader._FailedTest.<module>". A real test id looks like
+# "test_mod.Class.test_name" and never carries that prefix. Matching the full
+# id, rather than searching the output text, is what keeps this narrow: a real
+# failure cannot be swallowed, and a traceback that merely mentions the loader
+# is not what is being matched.
+RESULT_HEADER = re.compile(r"^(ERROR|FAIL): (.+)$", re.M)
+DISCOVERY_MARKER = "unittest.loader._FailedTest"
+
 
 class GateError(Exception):
     pass
+
+
+def _result_identities(stream):
+    """Test ids of every reported ERROR and FAIL, as unittest printed them."""
+    return [m.group(2).strip() for m in RESULT_HEADER.finditer(stream)]
+
+
+def _discovery_anomalies(stream):
+    """Ids that are discovery failures rather than test outcomes."""
+    return [i for i in _result_identities(stream) if DISCOVERY_MARKER in i]
 
 
 def _parse_unittest(stream):
@@ -64,7 +83,7 @@ def _parse_unittest(stream):
     if not ran:
         raise GateError("could not parse test counts from unittest output")
     total = int(ran.group(1))
-    skipped = int((SKIPPED.search(stream) or [0, "0"])[1]) if SKIPPED.search(stream) else 0
+    skipped = int(SKIPPED.search(stream).group(1)) if SKIPPED.search(stream) else 0
     failures = int(FAILURES.search(stream).group(1)) if FAILURES.search(stream) else 0
     errors = int(ERRORS.search(stream).group(1)) if ERRORS.search(stream) else 0
     summary = FAILED.search(stream)
@@ -76,6 +95,8 @@ def _parse_unittest(stream):
         "errors": errors,
         "verdict": verdict,
         "executed": total - skipped,
+        "discovery_anomalies": _discovery_anomalies(stream),
+        "result_identities": _result_identities(stream),
     }
 
 
@@ -152,6 +173,16 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None):
                           f"declared floor is {floor}",
                 "executed": counts["executed"], **counts,
             }
+        if counts["discovery_anomalies"]:
+            return {
+                "gate": gate["id"], "outcome": INFRA,
+                "detail": "G2: test discovery failed for "
+                          + ", ".join(counts["discovery_anomalies"])
+                          + "; a module that cannot be imported is a "
+                            "test-infrastructure problem, not a content "
+                            "regression",
+                "executed": counts["executed"], **counts,
+            }
         if counts["failures"] or counts["errors"]:
             return {
                 "gate": gate["id"], "outcome": REGRESSION,
@@ -193,9 +224,112 @@ def run_all(spec, repo_root, env=None, only=None, timeout=None, runner=None):
     for gate in spec["gates"]:
         if only and gate["id"] not in only:
             continue
+        if gate.get("state", "IMPLEMENTED") != "IMPLEMENTED":
+            # Nothing to run. Reported by declare_unimplemented so the gate
+            # stays visible in the report instead of silently disappearing.
+            continue
         results.append(run_gate(gate, repo_root, env=env, timeout=timeout,
                                 runner=runner))
     return results
+
+
+# Overall states. Each maps to its own exit code so an outer layer can branch
+# without parsing text, which was the defect G1 described: a binary exit 1
+# could not tell a regression from an infrastructure failure.
+PASS_OVERALL = "PASS"
+FAIL_REGRESSION = "FAIL_REGRESSION"
+BLOCKED_INFRA = "BLOCKED_INFRA"
+NEEDS_REVIEW = "NEEDS_REVIEW"
+
+DEFAULT_EXIT_CODES = {
+    PASS_OVERALL: 0,
+    FAIL_REGRESSION: 2,
+    BLOCKED_INFRA: 3,
+    NEEDS_REVIEW: 4,
+}
+
+
+def declare_unimplemented(spec):
+    """Gates with nothing to run, reported rather than omitted.
+
+    A declared gate in state NOT_IMPLEMENTED or PROCESS_ONLY has no command,
+    so it never reaches run_gate. It still has to appear in the report and it
+    still has to hold the aggregate off PASS, because a required gate that
+    never ran is exactly what I1 forbids treating as a pass.
+    """
+    out = []
+    for gate in spec["gates"]:
+        state = gate.get("state", "IMPLEMENTED")
+        if state == "IMPLEMENTED":
+            continue
+        out.append({
+            "gate": gate["id"],
+            "spec_gate": gate.get("spec_gate"),
+            "outcome": gate.get("contributes", UNKNOWN),
+            "state": state,
+            "required_execution": bool(gate.get("required_execution")),
+            "blocking": bool(gate.get("blocking")),
+            "attempted": False,
+            "executed": 0,
+            "skipped": None,
+            "failures": None,
+            "errors": None,
+            "discovery_anomalies": [],
+            "exit_code": None,
+            "duration_s": None,
+            "detail": gate.get("rationale", ""),
+            "spec_ref": gate.get("spec_ref"),
+        })
+    return out
+
+
+def overall(spec, results, exit_codes=None):
+    """Reduce per-gate outcomes to one overall state, in the ruled order.
+
+    REGRESSION outranks infrastructure failure, which outranks unknown, and
+    PASS is reachable only when every required gate both ran and passed and
+    every declared section 4 gate is implemented.
+    """
+    codes = dict(DEFAULT_EXIT_CODES)
+    codes.update(exit_codes or {})
+
+    records = list(results) + declare_unimplemented(spec)
+    reasons = []
+    for r in records:
+        state = r.get("state", "IMPLEMENTED")
+        reason = f"{r['gate']}={r['outcome']}"
+        if state != "IMPLEMENTED":
+            reason += f" ({state})"
+        reasons.append(reason)
+
+    outcomes = [r["outcome"] for r in records]
+    if REGRESSION in outcomes:
+        status = FAIL_REGRESSION
+    elif INFRA in outcomes:
+        status = BLOCKED_INFRA
+    elif UNKNOWN in outcomes:
+        status = NEEDS_REVIEW
+    else:
+        required_unimplemented = [
+            r for r in records
+            if r.get("required_execution") and r.get("state") != "IMPLEMENTED"
+        ]
+        not_run = [
+            r for r in records
+            if r.get("required_execution") and r.get("state", "IMPLEMENTED") == "IMPLEMENTED"
+            and not r.get("executed")
+        ]
+        if required_unimplemented or not_run:
+            status = NEEDS_REVIEW
+        else:
+            status = PASS_OVERALL
+
+    return {
+        "status": status,
+        "exit_code": codes[status],
+        "reasons": reasons,
+        "gates": records,
+    }
 
 
 def load_spec(path):
@@ -216,32 +350,37 @@ def main(argv=None):
     ap.add_argument("--timeout", type=int, default=None)
     ap.add_argument("--list", action="store_true",
                     help="list declared gates and exit")
+    ap.add_argument("--json", metavar="PATH", default=None,
+                    help="also write the machine-readable report to PATH")
     args = ap.parse_args(argv)
 
     spec = load_spec(args.spec)
     if args.list:
         for g in spec["gates"]:
-            print(f"  {g['id']:<18} {g['rationale']}")
+            print(f"  {g['id']:<24} {g.get('spec_gate', '-'):<5} "
+                  f"{g.get('state', 'IMPLEMENTED')}")
         return 0
 
-    print("release gates (DESIGN_SPEC 4; I1/I2 enforcement)")
+    print("release gates (DESIGN_SPEC 4; I1/I2 enforcement, G1/G2 verdicts)")
     results = run_all(spec, repo_root, only=set(args.only) if args.only else None,
                       timeout=args.timeout)
-    for r in results:
-        print(f"  {r['gate']:<22} {r['outcome']:<24} {r['detail']}")
-    blocking = [r for r in results if r["outcome"] in BLOCKING]
-    if not blocking:
-        print(f"  RESULT: PASS ({len(results)} gate(s), all executed and passing)")
-        return 0
-    kinds = sorted({r["outcome"] for r in blocking})
-    print(f"  RESULT: BLOCKED by {len(blocking)} gate(s): {', '.join(kinds)}")
-    if INFRA in kinds:
+    report = overall(spec, results, spec.get("exit_codes"))
+    for r in report["gates"]:
+        print(f"  {r['gate']:<24} {r['outcome']:<24} {r['detail'][:72]}")
+    print(f"  RESULT: {report['status']} (exit {report['exit_code']})")
+    for reason in report["reasons"]:
+        print(f"    - {reason}")
+    if report["status"] == NEEDS_REVIEW:
+        print("  note: unknown is not a pass; per the Q3 ruling it needs a "
+              "human and must not be auto-promoted")
+    if report["status"] == BLOCKED_INFRA:
         print("  note: an infrastructure failure is not a regression and is "
               "not a content conclusion; fix the environment or the gate")
-    if UNKNOWN in kinds:
-        print("  note: unknown is not a pass; per the Q3 ruling it needs a "
-              "human, it must not be auto-promoted")
-    return 1
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as fh:
+            json.dump(report, fh, indent=1, default=str)
+        print(f"  report: {args.json}")
+    return report["exit_code"]
 
 
 if __name__ == "__main__":

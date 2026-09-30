@@ -1,10 +1,24 @@
 {
-  "schema": "rdebug-release-gates/1",
+  "schema": "rdebug-release-gates/2",
   "declared_at": "2026-09-29",
+  "schema_history": {
+    "rdebug-release-gates/1": "gate set and I1/I2 enforcement",
+    "rdebug-release-gates/2": "adds spec_gate mapping, per-gate state, required_execution, blocking, four-state aggregate exit codes and the JSON report. Gate 3 and gate 4 are declared here as NOT_IMPLEMENTED and PROCESS_ONLY so the aggregate can see that they have nothing to run."
+  },
   "note": "Gate definitions for DESIGN_SPEC section 4. This file declares what must run before a change can be treated as verified. It is not a pipeline: nothing here schedules, blocks a pull request, or talks to a forge. Running it by hand is still a manual action, and that residual gap is recorded rather than claimed solved.",
+  "exit_codes": {
+    "PASS": 0,
+    "FAIL_REGRESSION": 2,
+    "BLOCKED_INFRA": 3,
+    "NEEDS_REVIEW": 4
+  },
   "gates": [
     {
       "id": "unit",
+      "spec_gate": "4.1",
+      "state": "IMPLEMENTED",
+      "required_execution": true,
+      "blocking": true,
       "command": ["python", "-m", "unittest", "discover", "-s", "tests/unit"],
       "runner": "unittest",
       "min_executed": 100,
@@ -13,6 +27,10 @@
     },
     {
       "id": "transport",
+      "spec_gate": "4.1",
+      "state": "IMPLEMENTED",
+      "required_execution": true,
+      "blocking": true,
       "command": ["python", "-m", "unittest", "discover", "-s", "tests_transport"],
       "runner": "unittest",
       "min_executed": 40,
@@ -21,6 +39,10 @@
     },
     {
       "id": "integration",
+      "spec_gate": "4.1",
+      "state": "IMPLEMENTED",
+      "required_execution": true,
+      "blocking": true,
       "command": ["python", "-m", "unittest", "discover", "-s", "tests/integration", "-t", "."],
       "runner": "unittest",
       "min_executed": 55,
@@ -33,6 +55,10 @@
     },
     {
       "id": "boundary_audit",
+      "spec_gate": "4.2",
+      "state": "IMPLEMENTED",
+      "required_execution": true,
+      "blocking": true,
       "command": ["python", "scripts/audit_boundaries.py"],
       "runner": "exit_code",
       "min_executed": null,
@@ -40,14 +66,39 @@
       "rationale": "DESIGN_SPEC 2.1 to 2.9 mechanical boundary audit. The script's own exit code and N/N output are the evidence."
     },
     {
+      "id": "cold_warm_equivalence",
+      "spec_gate": "4.3",
+      "state": "NOT_IMPLEMENTED",
+      "required_execution": true,
+      "blocking": false,
+      "command": null,
+      "spec_ref": "docs/GATE3-COLD-WARM-CONTRACT.md",
+      "contributes": "UNKNOWN",
+      "rationale": "DESIGN_SPEC 4.3 requires a cold-equals-warm equivalence check for any performance or refactoring change. The semantics are defined and definition-stage evidence was collected, but the check was not written. It is declared here so the aggregate can see that a required gate has nothing to run. It must never be reported as a pass, and no temporary or virtual check may stand in for it."
+    },
+    {
+      "id": "benchmark_archive",
+      "spec_gate": "4.4",
+      "state": "PROCESS_ONLY",
+      "required_execution": false,
+      "blocking": false,
+      "command": null,
+      "contributes": "UNKNOWN",
+      "rationale": "DESIGN_SPEC 4.4 requires session and latency data changes to be archived under docs/validation. That is a process requirement with no automatic decision path, which is why it is PROCESS_ONLY rather than NOT_IMPLEMENTED. It is not blocking because there is nothing executable to block on, but it still keeps the aggregate off PASS. The D6 benchmark is explicitly not this gate: D6 is performance evidence and is not a release gate."
+    },
+    {
       "id": "fork_integrity",
+      "spec_gate": "4.5",
+      "state": "IMPLEMENTED",
+      "required_execution": true,
+      "blocking": true,
       "command": ["python", "scripts/audit_fork_integrity.py"],
       "runner": "exit_code",
       "min_executed": null,
       "requires": {
         "sibling_fork": true
       },
-      "rationale": "DESIGN_SPEC 2.1.1. Read-only git inspection of the RenderDoc fork."
+      "rationale": "DESIGN_SPEC 2.1.1. Read-only git inspection of the RenderDoc fork. Consumed as a subprocess exit code; the F1 to F4 logic is never duplicated here."
     }
   ],
   "classification": {
