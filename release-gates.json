@@ -1,0 +1,59 @@
+{
+  "schema": "rdebug-release-gates/1",
+  "declared_at": "2026-09-29",
+  "note": "Gate definitions for DESIGN_SPEC section 4. This file declares what must run before a change can be treated as verified. It is not a pipeline: nothing here schedules, blocks a pull request, or talks to a forge. Running it by hand is still a manual action, and that residual gap is recorded rather than claimed solved.",
+  "gates": [
+    {
+      "id": "unit",
+      "command": ["python", "-m", "unittest", "discover", "-s", "tests/unit"],
+      "runner": "unittest",
+      "min_executed": 100,
+      "requires": {},
+      "rationale": "Stable Core pure logic. No RenderDoc, so it cannot silently skip wholesale; the floor exists to catch a discovery failure that runs nothing."
+    },
+    {
+      "id": "transport",
+      "command": ["python", "-m", "unittest", "discover", "-s", "tests_transport"],
+      "runner": "unittest",
+      "min_executed": 40,
+      "requires": {},
+      "rationale": "Transport purity. Floor only."
+    },
+    {
+      "id": "integration",
+      "command": ["python", "-m", "unittest", "discover", "-s", "tests/integration", "-t", "."],
+      "runner": "unittest",
+      "min_executed": 55,
+      "requires": {
+        "env": ["RDEBUG_RENDERDOC_PATH", "RDEBUG_INTEGRATION_CAPTURE"],
+        "module": "renderdoc",
+        "capture": true
+      },
+      "rationale": "Real replay behaviour. This is the gate that A2-1 applies to: without its environment it skips about 60 of 63 tests, and a bare exit code is not evidence that anything was verified. A missing environment is an infrastructure failure, never a pass."
+    },
+    {
+      "id": "boundary_audit",
+      "command": ["python", "scripts/audit_boundaries.py"],
+      "runner": "exit_code",
+      "min_executed": null,
+      "requires": {},
+      "rationale": "DESIGN_SPEC 2.1 to 2.9 mechanical boundary audit. The script's own exit code and N/N output are the evidence."
+    },
+    {
+      "id": "fork_integrity",
+      "command": ["python", "scripts/audit_fork_integrity.py"],
+      "runner": "exit_code",
+      "min_executed": null,
+      "requires": {
+        "sibling_fork": true
+      },
+      "rationale": "DESIGN_SPEC 2.1.1. Read-only git inspection of the RenderDoc fork."
+    }
+  ],
+  "classification": {
+    "PASS": "checks executed and all of them passed",
+    "REGRESSION": "checks executed and at least one found a content difference",
+    "UNKNOWN": "the gate could not form a content conclusion; not a pass, needs a human",
+    "INFRASTRUCTURE_FAILURE": "the gate itself could not execute; blocks, and is never reported as a regression"
+  }
+}

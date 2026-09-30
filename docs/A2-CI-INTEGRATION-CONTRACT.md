@@ -108,18 +108,27 @@ core.py:231  if not cap.LocalReplaySupport(): raise ReplayUnsupportedError
 
 ### Q3 —— `unknown` 在 CI 中的最终处理规则？
 
-**⚠️ 这一问必须由你裁决，我不代选。** 三个选项的真实后果：
+**✅ 已裁决（2026-09-29）：语义三态与门禁裁决分层。**
 
-| 选项 | 后果 |
-| --- | --- |
-| **阻断**（`unknown` = 不放行） | 最安全；但 §4.1 刚冻结的 `unknown` 语义是「**未验证**」而非「失败」，把它当失败会与 §2.5/§2.11 的三态纪律冲突 |
-| **人工复核** | 语义最贴合（未验证 ≠ 失败），但引入人工环节，**失去「全自动」** |
-| **允许继续** | ⚠️ **直接违反 §4.1 精神** —— 正是我们刚修掉的「零验证被当成通过」 |
+| 语义状态 | 含义 | CI 门禁含义 |
+| --- | --- | --- |
+| `pass` | 已执行内容验证，且全部通过 | **可通过** |
+| `regression` | 已执行内容验证，发现回归 | **阻断** |
+| `unknown` | 没有足够证据形成内容结论 | **不通过 / 需人工处理** |
+| `infrastructure failure` | 门禁本身无法正常执行 | **阻断，且与 regression 分开报告** |
 
-> 我的观察（供裁决参考，非建议）：选项 1 与刚冻结的三态语义**存在张力**；
-> 选项 3 是**明确不可接受**的。**张力本身是本阶段发现的问题**，
-> 需要在接线前解决，否则会出现「§4.1 说 unknown 不是 pass，
-> 而 CI 说 unknown 阻断」的自相矛盾。
+**因此无矛盾**：
+
+> **§2.5 / §4.1 定义「语义结论是什么」；
+> CI integration 定义「这个结论能否作为自动放行依据」。**
+
+- `unknown` 仍是「无法证明」，**绝不升级为 `regression`**；
+- 但**无法证明也不能自动放行**。
+- `infrastructure failure` 既不是 `regression`，也不是 `unknown` 的伪装，
+  而是**执行层失败**，默认 **fail-closed**。
+- **绝不**把 infrastructure failure 转成 regression（授权边界明确禁止）。
+
+> ⚠️ 该张力已解除。**实现见 §7（I1/I2 已交付），接线仍 NOT AUTHORIZED。**
 
 ### Q4 —— §4 的 5 个质量门各自需要什么最小执行证据？
 
@@ -200,3 +209,105 @@ I3 进一步要求「未验证」与「内容失败」**可区分**，
 | 2 | 是否授权进入 **Phase 2：harness 侧 I1/I2 实现**（最小执行数断言 + 环境缺失即失败） | 与 CI 接线**分离**，可独立授权 |
 | 3 | Q1 的门禁/开发者检查划分是否认可 | 划分提案 |
 | 4 | §4 门 3（cold==warm）缺可执行检查 —— 是否立项 | 新暴露缺口 |
+
+---
+
+## 6. 授权与执行状态（2026-09-29 更新）
+
+| 项 | 状态 |
+| --- | --- |
+| A2 Phase 1 | **COMPLETE** |
+| A2-1 harness zero-validation | **CONFIRMED** |
+| Q1 门禁/开发者检查划分 | **认可** |
+| Q3 `unknown` 处理 | **已裁决**（四态分层，见 §2） |
+| I1 / I2 | **AUTHORIZED → 已实现并验证**（见 §7） |
+| I3 | **AUTHORIZED AS INTEGRATION CONTRACT**（本次未实现，属接线层） |
+| I4 / I5 / I6 | **ACCEPTED AS CONTRACT CANDIDATES**（未写入规范） |
+| Gate 3 executable check | **NOT IMPLEMENTED / PHASE 1 已授权**（未开工） |
+| CI pipeline | **NOT AUTHORIZED** |
+| CI release wiring | **NOT AUTHORIZED** |
+
+## 7. Phase 2 交付：harness 侧 I1/I2
+
+### 设计判断：修在门禁层，不动测试
+
+`skipUnless` 守卫**本身不是缺陷** —— 本地无 GPU 时 skip 是合法的开发体验。
+缺陷在于**门禁**把 skip 当 pass。因此新增**独立门禁产物**，与测试分离：
+测试保留 skip，门禁要求环境齐备且最小执行数达标。
+
+| 组件 | 位置 |
+| --- | --- |
+| 门禁声明 | `release-gates.json`（5 个 gate + 分类词表 + 每门 rationale） |
+| 门禁执行器 | `scripts/release_gate.py`（I1/I2 强制） |
+| 对照 | `tests/unit/test_release_gate.py`（**24 项**） |
+
+### I1 —— 实际执行项为 0 或低于声明下限 → 不得 `pass`
+
+- 全部 skip → `INFRASTRUCTURE_FAILURE`
+- 低于声明下限 → `INFRASTRUCTURE_FAILURE`
+- 输出不可解析 → `INFRASTRUCTURE_FAILURE`（**不猜**）
+
+### I2 —— 缺环境/依赖/capture → 不得 skip+pass
+
+- 前置检查**在运行之前**完成，缺环境时**根本不产生 skip 风暴**
+- `env` / `module` / `capture` / `sibling_fork` 四类前置均可声明
+
+### 核心对照：A2-1 那个场景
+
+用 fake gate 精确复现 unittest 的输出形状：
+
+```
+Ran 63 tests in 3.8s
+
+OK (skipped=60)
+```
+
+→ **exit 0、unittest 说 OK、63 项中 60 项从未执行**
+→ 门禁裁决：**`INFRASTRUCTURE_FAILURE`**，非 `PASS`
+
+### 四态分类（Q3 落地）
+
+| 形状 | 裁决 |
+| --- | --- |
+| 全部执行且全过 | `PASS` |
+| 有 failures/errors 且已执行 | `REGRESSION` |
+| 部分 skip（已超下限） | `UNKNOWN`（不通过，需人工） |
+| 前置缺失 / 零执行 / 不可解析 | `INFRASTRUCTURE_FAILURE`（阻断，**不与 regression 混报**） |
+
+### I4 已有对照
+
+`test_no_benchmark_is_a_release_gate`：断言门禁命令中不含
+`bench` / `smoke` / `workload` / `d4` / `probe` / `reasoning`。
+D6 的「measured / NOT A GATE」由此**机械化**，而非仅靠约定。
+
+### 回退验证
+
+```
+I1/I2 强制失效（门禁只读 exit code）   8 FAIL
+恢复                                    24 OK
+```
+
+仍选「强制力失效」而非「文件缺失」作为回退点，
+以排除对照只是对文件存在性反应。
+
+### 真实状态下的两侧裁决
+
+```
+环境齐备：  5 gate 全 PASS, exit 0
+              unit 152 / transport 58 / integration 63 / 两个 audit
+环境缺失：  integration → INFRASTRUCTURE_FAILURE
+              missing: RDEBUG_RENDERDOC_PATH, RDEBUG_INTEGRATION_CAPTURE,
+                       module:renderdoc, capture:RDEBUG_INTEGRATION_CAPTURE
+              RESULT: BLOCKED, exit 1
+```
+
+## 8. 本阶段仍未做（残留风险，明确保留）
+
+- **未接线**：`release_gate.py` **不被任何自动机制调用**。
+  手动运行为主 —— 这与 A2 的原始缺口是**同一件事的缩小版，不是解决**。
+- **I3 未实现**：三态 + infrastructure 的**报告分离**已在分类器中体现，
+  但「CI 如何据此阻断或转人工」的接线策略属 I3，未做。
+- **I5 / I6 未写入规范**，仅为候选。
+- **Gate 3 未开工**。
+- **未改** `ci.py`（§4.1 Contract 保持冻结不变）、Semantic API、§2.5 三态定义、
+  测试的 `skipUnless` 守卫、fork、冻结产物。
