@@ -373,6 +373,94 @@ reflection 失败可注入或可观测
 4. benchmark 回归：session/latency 数据变更需附 `docs/validation/` 存档；
 5. RenderDoc fork 零 tracked modification。
 
+### 4.1 CI gate 裁决 Contract（2026-09-29）
+
+§4 定义门，但**未定义门自身的裁决意味着什么**。
+`rdebug.ci.check` 返回一个供放行决策消费的裁决，
+因此其语义必须成文。本节补齐该缺口。
+
+#### 4.1.1 裁决规则
+
+| 规则 | 约束 |
+| --- | --- |
+| MUST | `pass` 必须蕴含**至少执行了一项内容验证 check**，且**全部已执行 check 均通过** |
+| MUST NOT | **0 项已执行检查不得是 `pass`** |
+| MUST | 0 项已执行检查时，裁决为 `unknown`（复用 §2.5 既有词汇，**不新增状态**） |
+| MUST | `passedChecks` 必须反映**实际执行并通过的数量**，不得由预期检查项推导 |
+| MUST | `ignore_capture_hash=True` 只改变 **hash check 是否执行**，**不得**使整个 gate 变成「无需验证即可 pass」 |
+| MUST NOT | 通过修改 happy-path 测试期待值来满足本节 |
+
+#### 4.1.2 「已执行检查」的定义
+
+**内容验证 check** 指对渲染结果的核对：pixel `finalValue.float`、
+pixel `fragmentEventId`、pair 聚合比较（`comparison` / `firstDivergence` /
+各 `layerStatuses`）。
+
+**capture hash check 是完整性前置条件，不是内容验证。**
+仅核对 capture 文件身份**不构成**对本 gate 的验证 ——
+它不核对任何渲染结果。理由：hash 相同只说明「是同一个文件」，
+不说明「渲染结果符合预期」。
+
+> 该区分是必要的。若把 hash check 计入「已执行检查」，
+> 则「hash 正确但无任何 pixel/pair」这一退化 baseline 仍会得到
+> `pass` —— 即 Phase 1 实测的缺陷（`docs/CI-PHASE1-INVESTIGATION.md` §2.1）。
+
+#### 4.1.3 为什么复用 `unknown`
+
+仓库既有 status vocabulary 为 `pass` / `regression`（`ci.py`）
+与 `same` / `different` / `unknown`（§2.5）。
+其中 `unknown` 已定义为「当前分析深度无法证明；≠ same，≠ different」，
+且「任何层不得把 unknown 升级为确定结论」。
+
+「未执行任何验证」与「无法证明」语义完全一致，
+因此**复用 `unknown`，不为本节扩张状态模型**。
+
+#### 4.1.4 实现状态（2026-09-29：**已实现并验证**）
+
+| 规则 | 状态 |
+| --- | --- |
+| 4.1.1 `0 checks → not pass`（`unknown`） | ✅ **已实现** |
+| 4.1.1 `passedChecks` 反映实际数量 | ✅ **成立**（逐项自增，未由预期项推导） |
+| 4.1.2 hash check 不计入内容验证 | ✅ **已实现**（`executed` 只统计内容 check） |
+| 4.1.1 `ignore_capture_hash` 不得使 gate 无需验证 | ✅ **已实现**（禁用 hash 不改变 `executed`） |
+| 4.1.1 不得改 happy-path 期待值 | ✅ **未改动**（既有 `test_ci_gate` 5 tests 全绿） |
+
+**机械验证闭环**（16 项对照，`tests/unit/test_ci_verdict_contract.py`）：
+
+```
+缺陷版本                 6 FAIL（全部集中于零检查对照）
+修复后                   16 OK
+仅回退 src/rdebug/ci.py  6 FAIL 复现
+恢复                     16 OK
+```
+
+真实 capture（`w00001_frame11.rdc`）上的裁决矩阵：
+
+| 输入 | 修复前 | 修复后 |
+| --- | --- | --- |
+| well-formed baseline | `pass`(4) | `pass`(4) 不变 |
+| truncated（无 pixels/pairs） | `pass`(0) ❌ | **`unknown`(0)** |
+| 仅 capture hash | `pass`(0) ❌ | **`unknown`(0)** |
+| 空 baseline + `ignore_capture_hash` | `pass`(0) ❌ | **`unknown`(0)** |
+| well-formed + `ignore_capture_hash` | `pass`(4) | `pass`(4) 不变 |
+
+**正对照（防止过度声称）**：有检查执行时 gate 仍有效 ——
+value 漂移 / eventId 漂移 / pair 漂移均返回 `regression`；
+且**仅剩 pairs** 时仍为 `pass`（pairs 本身是真实内容 check，
+若此时报 `unknown` 则属过度严格而非正确）。
+
+**已确认的正对照**（防止过度声称）：有检查执行时 gate **确实有效** ——
+篡改 `fragmentEventId` 的真实 baseline 实测返回 `regression` / 2 failures。
+故缺陷范围精确为：**零验证的 pass 是可表示的**，
+而非「gate 失效」。
+
+**接线的前置条件**：§4 尚未有任何 CI 配置消费 `ci.check`。
+**CI 接线仍 NOT AUTHORIZED** —— 4.1.1 / 4.1.2 现已实现并验证，
+但放行路径的接线需单独裁决。
+
+调查与证据：`docs/CI-PHASE1-INVESTIGATION.md`；
+对照：`tests/unit/test_ci_verdict_contract.py`。
+
 ---
 
 ## 5. Real-world Validation（v1 后阶段）

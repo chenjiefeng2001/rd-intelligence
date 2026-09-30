@@ -107,6 +107,12 @@ def _floats_match(a, b, tolerance):
 def check(session, baseline, tolerance=1e-6, ignore_capture_hash=False):
     failures = []
     passed = 0
+    # Content checks actually performed. The capture hash is an integrity
+    # precondition, not a content check: a matching hash says only that this
+    # is the same file, never that any rendering result was verified
+    # (DESIGN_SPEC 4.1.2). So it is deliberately not counted here, and
+    # `status` may not be "pass" while this is zero (4.1.1).
+    executed = 0
 
     target = baseline.get("target")
     if target is None:
@@ -132,6 +138,7 @@ def check(session, baseline, tolerance=1e-6, ignore_capture_hash=False):
 
         fv_exp = (expected.get("finalValue") or {}).get("float")
         fv_act = (actual.get("finalValue") or {}).get("float")
+        executed += 1
         if _floats_match(fv_exp, fv_act, tolerance):
             passed += 1
         else:
@@ -147,6 +154,7 @@ def check(session, baseline, tolerance=1e-6, ignore_capture_hash=False):
             )
 
         fe_exp, fe_act = expected.get("fragmentEventId"), actual.get("fragmentEventId")
+        executed += 1
         if fe_exp == fe_act:
             passed += 1
         else:
@@ -190,13 +198,25 @@ def check(session, baseline, tolerance=1e-6, ignore_capture_hash=False):
                         "evidenceIds": actual["evidenceIds"],
                     }
                 )
+        executed += 1
         if diffs:
             failures.extend(diffs)
         else:
             passed += 1
 
+    if executed == 0:
+        # DESIGN_SPEC 4.1.1: a verdict of "pass" must mean verification ran.
+        # With nothing to compare the gate has verified nothing, and saying
+        # "pass" would present absence as success. "unknown" is reused from
+        # section 2.5 rather than adding a status to the vocabulary.
+        status = "unknown"
+    elif failures:
+        status = "regression"
+    else:
+        status = "pass"
+
     return {
-        "status": "pass" if not failures else "regression",
+        "status": status,
         "captureHashMatch": hash_ok,
         "passedChecks": passed,
         "failures": failures,
