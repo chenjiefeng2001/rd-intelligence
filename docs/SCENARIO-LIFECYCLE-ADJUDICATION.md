@@ -139,3 +139,112 @@ would have to be answered are recorded so the rejection is auditable:
 classification not modified. Workload not admitted to any gate. No test deleted
 to create a green result. M15 and transport contracts not modified. Frozen
 `afbd3fa` evidence not touched. No production code changed in this round.
+
+---
+
+## 9. Implementation record — RETIRED landed
+
+Authorized as: lifecycle governance for `tests/workload` `mcp_contract` only,
+plus non-silent-recovery controls. Production code, gate contracts, CI verdicts
+and MCP behaviour untouched.
+
+### What changed
+
+| file | change |
+| --- | --- |
+| `tests/workload/retired_scenarios.json` | new. Machine-readable record: owner, dated adjudication + commit, `reason=covered_by_existing_blocking_gates`, `not_a_regression` with its reason, six `replacement_coverage` entries with resolvable test ids, the reproduction command, and the preserved `last_failure` (exception, site, `exit_code: 1`, determinism) |
+| `tests/workload/test_workload_reliability.py` | `test_mcp_contract` → `_retired_test_mcp_contract`, off the `test` prefix so default discovery skips it. Body kept and documented |
+| `tests/unit/test_retired_scenarios.py` | new. 18 controls, in the unit gate deliberately |
+
+`scenario_mcp_contract` stays in `scenarios.SCENARIOS`, so the original failure
+remains reproducible on demand. Retirement means unreachable by default, not
+gone.
+
+### Controls
+
+18, all passing, all in `tests/unit` — governance that nothing checks is a
+comment. They enforce three properties:
+
+- **Records are complete and honest.** Every field present and non-empty;
+  `owner`, ISO date, hex commit, adjudication doc exists on disk; `reason` must
+  name coverage rather than difficulty; and the record may not contain "fixed",
+  "passing", "passed", "resolved", "obsolete", "not a bug" — a retired scenario
+  did not start working.
+- **Retirement cannot be undone silently.** The retired method is not collected
+  by discovery, keeps a non-`test` name, its body still exists, and the scenario
+  is still in `SCENARIOS`.
+- **The coverage that justified it still exists** — the load-bearing one. Every
+  named replacement is imported and resolved. If `test_m15_acceptance` were
+  renamed or deleted, the retirement would silently stop being justified, and
+  nothing inside `tests/workload` would notice, because the workload suite does
+  not import the gates.
+
+Plus two guards on the prohibitions: the M1.3-removed symbols are asserted still
+absent from `rdebug_mcp.server`, and no gate command references `tests/workload`.
+
+### Mutation verification — 10 injected defects, all caught
+
+| Mutation | Caught |
+| --- | --- |
+| delete the retirement record outright | yes |
+| drop `owner` | yes |
+| rewrite `reason` to `fixed` | yes |
+| claim `not_a_regression: false` | yes |
+| empty the `replacement_coverage` | yes |
+| point coverage at a test that does not exist | yes |
+| erase the failure evidence (`exit_code: 0`) | yes |
+| restore the `test` prefix, re-entering the active set | yes |
+| delete the retired method body | yes |
+| remove the scenario from `SCENARIOS` | yes |
+
+### Verified end state
+
+```
+python -m unittest tests.workload.test_workload_reliability
+Ran 3 tests    OK                      (was: Ran 4, FAILED failures=1)
+
+python -m tests.workload.isolated_runner mcp_contract
+exit 1, AttributeError ... _session_factory     (evidence still reproducible)
+
+ci pipeline: BLOCKED_INFRA (exit 3, conclusion failure)
+  unit                    PASS   executed=343   (325 + 18 controls)
+  transport               PASS   executed=58
+  integration   INFRASTRUCTURE_FAILURE executed=63
+  boundary_audit          PASS
+  cold_warm_equivalence   PASS
+  fork_integrity          PASS
+  benchmark_archive       UNKNOWN
+```
+
+Gate 1/2/3/5 PASS, Gate 4 UNKNOWN, overall `BLOCKED_INFRA` / exit 3 — **exactly
+the pre-implementation state. No release verdict changed**, and nothing was
+excluded to reduce red, since `tests/workload` is not in the pipeline.
+
+### Errors made in this round
+
+Five, all in the control or mutation layer rather than the change itself. The
+pattern is unchanged from earlier phases, which is itself the finding.
+
+- **`TestSuite` has no `.id()`.** `loadTestsFromModule` returns a suite; I
+  iterated it as if it were flat.
+- **An over-broad substring check.** `assertNotIn("tests/workload", json.dumps(spec))`
+  failed, because `captures.cold_warm_equivalence` legitimately points at
+  `tests/workload/corpus/*.rdc` — a corpus directory, not the test suite. The
+  check is now scoped to gate `command` fields, and asserts the corpus path is
+  *present* so the false positive cannot silently return.
+- **`partition(".")` splits on the first dot.** Resolving
+  `tests.integration.test_m15_acceptance.TestM15Matrix.…` produced the module
+  name `tests`, after which the walk looked for a submodule that was never
+  imported. Now resolves the longest importable prefix.
+- **A mutation harness that deleted its own backups on the first iteration**,
+  which left the manifest mutated and aborted the sweep mid-run. Rebuilt and
+  re-run with backups created once.
+- **A mutation aimed at the wrong file.** `SCENARIOS` lives in `scenarios.py`, not
+  `test_workload_reliability.py`, so that mutation was a no-op and initially
+  read as a missed control. Re-aimed and confirmed caught.
+
+Two of these would have produced a *false PASS* — a control that cannot fail is
+worse than no control, because it is trusted. The `tests_transport` import also
+needed its directory on `sys.path`, since those modules do a top-level
+`from test_transport import ...` and are only importable the way their own gate
+runs them.

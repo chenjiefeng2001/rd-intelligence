@@ -1,0 +1,65 @@
+{
+ "schema": "rdebug-retired-scenarios/1",
+ "note": "Retired workload scenarios. An entry here is not deleted: the scenario function stays callable so its original failure remains reproducible on demand, and the test method is renamed so unittest does not collect it. 'RETIRED' means the assertion is covered elsewhere; it never means fixed, passed or obsolete.",
+ "retired": [
+  {
+   "scenario": "mcp_contract",
+   "state": "RETIRED",
+   "retired_on": "2026-10-01",
+   "owner": "rdebug-intelligence governance",
+   "adjudication": "docs/SCENARIO-LIFECYCLE-ADJUDICATION.md",
+   "adjudication_commit": "daff145",
+   "reason": "covered_by_existing_blocking_gates",
+   "reason_detail": "Both assertions are held by release-blocking gates, the integration gate at real-replay fidelity. The only candidate unique axis, 200x repeated MCP calls, is not exercised: the effective policy is max_queries=250 and the scenario performs exactly 200 calls on one capture, so the query-count recycle trigger cannot fire; and the scenario never reads _WORKERS.recycle_events or compares worker PIDs, so a recycle would be invisible to it.",
+   "not_a_regression": true,
+   "not_a_regression_reason": "The failure occurred in the scenario's own setup, before any capture was opened, before any worker was spawned and before any MCP tool was called. RenderDoc was not involved. Cause is a fixture reference to a symbol M1.3 deliberately removed and that test_m15_acceptance:124-129 now actively asserts must be absent.",
+   "replacement_coverage": [
+    {
+     "gate": "integration",
+     "test_id": "tests.integration.test_m15_acceptance.TestM15Matrix.test_row_failure_semantics_mcp_json_body_and_query_error",
+     "asserts": "a valid MCP call against a real capture returns JSON containing 'summary' and not 'error', after worker dispose and recovery"
+    },
+    {
+     "gate": "integration",
+     "test_id": "tests.integration.test_m15_acceptance.TestM15Matrix.test_row_failure_semantics_query_error_is_observable",
+     "asserts": "an invalid resource against a real capture returns JSON containing 'error'"
+    },
+    {
+     "gate": "transport",
+     "test_id": "tests_transport.test_transport.ToolCallTests.test_operational_error_returned_as_json",
+     "asserts": "an operational error is returned as a JSON body at the stub layer"
+    },
+    {
+     "gate": "transport",
+     "test_id": "tests_transport.test_transport.ToolCallTests.test_mcp_arguments_reach_the_worker_unrenamed",
+     "asserts": "MCP to worker argument mapping is unrenamed"
+    },
+    {
+     "gate": "transport",
+     "test_id": "tests_transport.test_error_boundary.TestMcpChain.test_worker_error_becomes_a_json_error_payload",
+     "asserts": "a worker failure becomes a JSON error payload"
+    },
+    {
+     "gate": "transport",
+     "test_id": "tests_transport.test_observability.TestResultShape.test_mcp_wrapper_records_result_shape",
+     "asserts": "the MCP wrapper records the result shape"
+    }
+   ],
+   "reproduce_original_failure": "python -m tests.workload.isolated_runner mcp_contract",
+   "last_failure": {
+    "type": "stale_fixture_reference",
+    "exception": "AttributeError: module 'rdebug_mcp.server' has no attribute '_session_factory'",
+    "site": "tests/workload/scenarios.py:122",
+    "exit_code": 1,
+    "elapsed_s": 2.2,
+    "determinism": "3/3 identical"
+   },
+   "test_method": {
+    "class": "tests.workload.test_workload_reliability.TestReliabilityScenarios",
+    "original_name": "test_mcp_contract",
+    "retired_name": "_retired_test_mcp_contract",
+    "collected_by_default": false
+   }
+  }
+ ]
+}
