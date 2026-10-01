@@ -30,12 +30,17 @@ python -m unittest tests.integration.test_ide_ci_workflow \
 
 Each module alone exits `0x00000000`. All three two-module pairs exit `0`.
 
-This is a **reproducing set, not a proven-minimal one.** See the correction in
-`CI-EXIT-ACCOUNTING-INVESTIGATION.md` §2: the earlier discovery bisect used the
-pattern `test_[ir]*.py`, whose fnmatch character class matches `i` *or* `r`, so
-it silently pulled in `test_reflection_reachability.py` and
-`test_runtime_isolation.py` as well. Those rows were mislabelled. The explicit
-pair/triple data above was collected with separate argv entries and stands.
+> **Correction, 2026-10-01 (round 2).** The section above is superseded on
+> minimality. Measured across all 7 modules: every single (7/7) and every pair
+> (21/21) exits `0x00000000`, so the minimum **arity** is 3 — but the
+> membership is not unique. `test_real_replay` is **replaceable**: `{B,C,F}` and
+> `{B,C,G}` crash 3/3 each. So `{B, C, E}` is a reproducing set of minimal
+> arity, not a minimal set uniquely. See §7.
+>
+> The earlier discovery-pattern error recorded in
+> `CI-EXIT-ACCOUNTING-INVESTIGATION.md` §2 remains, and is the reason this round
+> used per-module argv with a self-check instead of patterns.
+
 
 ---
 
@@ -182,3 +187,129 @@ Still untouched and unauthorized: `tests/workload`'s `test_mcp_contract`
 (independent record), nested-action capture and `context_eid` (independent),
 provisioning, workflow wiring, release blocking, Gate 4, Gate 3 coverage, D7 and
 F-N3-1.
+
+---
+
+## 7. Round 2 — faithful minimisation
+
+Method: per-module argv, one list entry per module, no pattern. Before any run
+the harness spawns a child that echoes `sys.argv` and asserts it received
+exactly the intended entries; a collapse aborts the whole batch. This is the
+methodology control the two operational errors earned, and it is the reason the
+argv layer is now treated as an observation layer that must be proven rather than
+assumed. Every row below records exact argv, discovered, executed, skipped,
+unittest state, exit code, and whether `0xC0000005` appeared.
+
+Legend: `A` context_eid_contract, `B` ide_ci_workflow, `C` ide_ownership,
+`D` m15_acceptance, `E` real_replay, `F` reflection_reachability,
+`G` runtime_isolation.
+
+### 7.1 Singles — all clean (7/7)
+
+| set | disc | exec | state | exit |
+| --- | ---: | ---: | --- | --- |
+| A | 16 | 16 | OK | `0x00000000` |
+| B | 4 | 4 | OK | `0x00000000` |
+| C | 6 | 6 | OK | `0x00000000` |
+| D | 19 | 19 | OK | `0x00000000` |
+| E | 9 | 9 | OK | `0x00000000` |
+| F | 2 | 2 | OK | `0x00000000` |
+| G | 7 | 7 | OK | `0x00000000` |
+
+### 7.2 Pairs — all clean (21/21)
+
+A+B, A+C, A+D, A+E, A+F, A+G, B+C, B+D, B+E, B+F, B+G, C+D, C+E, C+F, C+G,
+D+E, D+F, D+G, E+F, E+G — every one `OK`, `0x00000000`.
+
+**Minimum arity is therefore 3.**
+
+### 7.3 Triples — the discriminator
+
+| set | disc | exec | state | exit | crash |
+| --- | ---: | ---: | --- | --- | --- |
+| B+C+A | 26 | 26 | OK | `0xC0000005` | yes |
+| B+C+E | 19 | 19 | OK | `0xC0000005` | yes |
+| B+C+F | 12 | 12 | OK | `0xC0000005` | yes (3/3) |
+| B+C+G | 17 | 17 | OK | `0xC0000005` | yes (3/3) |
+| B+C+D | 29 | 29 | OK | `0x00000000` | **no** |
+| B+E+F | 15 | 15 | OK | `0x00000000` | no |
+| B+E+G | 20 | 20 | OK | `0x00000000` | no |
+| C+E+F | — | — | — | — | not run; B+E+F clean implies C required |
+| E+F | 11 | 11 | OK | `0x00000000` | no |
+| E+G | 16 | 16 | OK | `0x00000000` | no |
+
+### 7.4 Answers to the two authorized questions
+
+**Q1 — is `{test_ide_ci_workflow, test_ide_ownership, test_real_replay}` truly
+minimal?** No, and specifically in two different ways:
+
+- Its **arity is minimal** (3), since nothing of size 1 or 2 crashes.
+- Its **membership is not unique**. `test_real_replay` is interchangeable with
+  `test_context_eid_contract`, `test_reflection_reachability` or
+  `test_runtime_isolation`. The minimal sets are `{B, C, X}` for
+  `X in {A, E, F, G}`.
+
+Both `B` and `C` are **necessary**: with a replay-active third module present,
+removing `B` gives `{C,F}` and `{C,G}`, clean; removing `C` gives `{B,F}` and
+`{B,G}`, clean.
+
+So the corrected claim is: *`{B, C, E}` is a reproducing set of minimal arity,
+not a minimal set, and not the only one.*
+
+**Q2 — do `test_reflection_*` / `test_runtime_*` participate?** **Yes.** They are
+not bystanders. `{B,C,F}` crashes 3/3 with 12 tests and `{B,C,G}` crashes 3/3
+with 17 tests, each substituting for `E`. Their earlier status of "unknown" came
+entirely from the mislabelled discovery runs and is now resolved.
+
+### 7.5 The one genuinely new structural fact
+
+`{B, C, D}` — `test_m15_acceptance` — does **not** trigger, despite being the
+largest triple at 29 tests. `A`, `E`, `F` and `G` all trigger at 12 to 26 tests.
+Test count is therefore irrelevant, and the third member is not interchangeable
+with `D`.
+
+This is the first discriminator that separates triggering from non-triggering
+third modules, and it points at what the third member has to *do* rather than how
+many tests it contributes: `A`, `E`, `F` and `G` each exercise replay, while `D`
+apparently does not. That is a lead for fault capture, not yet a mechanism.
+
+---
+
+## 8. Fault capture — attempted, and it produced a negative result
+
+Ordered after minimisation, as required. Three channels tried, none of which
+recorded the fault:
+
+| channel | result |
+| --- | --- |
+| `-X faulthandler` / `PYTHONFAULTHANDLER=1` | no traceback (round 1) |
+| Windows Application event log, last 3 days | **no** python or renderdoc events |
+| `%LOCALAPPDATA%\CrashDumps` | 10 dumps, none from python; all 9/20–9/26 from unrelated apps |
+
+The third row is the informative one: **the fault never reaches Windows Error
+Reporting.** A genuine unhandled access violation in an ordinary process leaves a
+WER report or a local dump. This one leaves neither, across many runs.
+
+That does not mean there is no fault; `0xC0000005` is still
+`STATUS_ACCESS_VIOLATION` and it is still deterministic. It means the fault is
+not occurring where an external observer can see it — consistent with it landing
+so late in finalisation that no reporting path is live, or with a code path that
+terminates the process in a way that bypasses WER entirely. Both readings remain
+open, and neither is established.
+
+Consistent with this, `faulthandler`'s silence should **not** be read as "no
+Python object is involved". It only shows the fault lands where the Python-level
+handler is already gone.
+
+### 8.1 What fault capture still needs
+
+Nothing available so far: no debugger was used, and no local dump is being
+produced. The cheapest next step is configuration, not code — enable WER
+LocalDumps for `python.exe`, which would make the next run leave a dump and give
+the faulting module, thread and instruction address. That is a machine setting
+and touches no production code.
+
+Everything in §4 remains open: which object faults, why only after the body
+completes, worker/PID-side state, and the unload ordering. `epoch == 2` stays
+excluded, `_ctrl=None` stays an unproven suspicion, and the accounting Contract
+is untouched.
