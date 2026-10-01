@@ -38,6 +38,19 @@ carries `outcome: PASS`, `executed: 63`, `exit_code: 3221225477`.
 
 ## 2. Localization
 
+> **Correction, 2026-10-01.** The discovery bisect table below is mislabelled.
+> `-p "test_[ir]*.py"` matches `test_ide_*`, `test_real_replay`,
+> `test_reflection_reachability` **and** `test_runtime_isolation`, because fnmatch
+> `[ir]` matches *either* `i` or `r` — every `test_r*` file matches. So the rows
+> described 7 and 4 modules, not 5 and 3, and the "+reflection" row was already
+> adding two modules rather than one. The pattern was too loose to support the
+> step-by-step attribution it was used for.
+>
+> What survives is the **explicit-argument** data, which was collected with
+> separate argv entries: all three pairs clean 6/6, the triple crashing 5/5.
+> That is a **reproducing set**, not a proven-minimal one. Minimality is not
+> established. Carried into `docs/TEARDOWN-CRASH-INVESTIGATION.md`.
+
 | Run | Tests | Exit |
 |---|---|---|
 | `unit` discover | 298 | `0x00000000` |
