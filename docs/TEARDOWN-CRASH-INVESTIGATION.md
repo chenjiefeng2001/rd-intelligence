@@ -313,3 +313,117 @@ Everything in §4 remains open: which object faults, why only after the body
 completes, worker/PID-side state, and the unload ordering. `epoch == 2` stays
 excluded, `_ctrl=None` stays an unproven suspicion, and the accounting Contract
 is untouched.
+
+---
+
+## 9. Round 3 — WER LocalDumps, and a pivot to an attached debugger
+
+Authorized as machine-level evidence instrumentation, not a production fix.
+Goal: faulting module, thread and instruction/exception address from a faithful
+run. Matrix held to the two required controls.
+
+### 9.1 Instrumentation configured
+
+`HKCU\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps` plus a
+`python.exe` subkey, `DumpType = 2` (full), `DumpFolder` pointed at an empty
+directory. No production code touched. Both registry keys verified after write.
+
+### 9.2 Controls behaved; the instrumentation did not
+
+| control | set | result |
+| --- | --- | --- |
+| positive | `{B, C, E}` | `OK`, 19 executed, `0xC0000005` **CRASH** |
+| negative | `{B, C, D}` | `OK`, 29 executed, `0x00000000` clean |
+
+Both behaved exactly as required, through the argv self-check harness. **No dump
+was produced.** Not for the crashing run, and the dump directory was still empty
+after both.
+
+That is a clean negative for this channel: with a per-executable full-dump policy
+actively configured for `python.exe`, a run that reliably exits `0xC0000005` left
+no local dump. The "WER absence" recorded in round 2 therefore reproduces under
+explicit instrumentation, and is not explained by missing configuration.
+
+### 9.3 Pivot to an attached debugger
+
+`cdb.exe` from the installed Windows Kits was already present. Attaching it is
+strictly more direct for the same goal and touches nothing in the repository, so
+the positive and negative controls were re-run under it.
+
+**Positive `{B, C, E}` — fault captured:**
+
+```
+ExceptionAddress: 00007ffb9c240a4e
+ExceptionCode:     c0000005 (Access violation)
+Parameter[1]:      0000000000000000
+Attempt to read from address 0000000000000000
+```
+
+```
+renderdoc_7ffb9bda0000!…+0x2a6eee      <- faulting frame, read of NULL
+renderdoc_7ffb9bda0000!…+0x2df47
+ucrtbase!<lambda_f03950…>::operator()   <- C++ static destructor
+ucrtbase!__crt_seh_guarded_call<…>
+ucrtbase!execute_onexit_table+0x3d      <- CRT atexit table
+renderdoc_7ffb9bda0000!…+0x23c9c5
+renderdoc_7ffb9bda0000!…+0x23cae5
+```
+
+**Negative `{B, C, D}` — no access violation reported by the debugger at all.**
+The discrimination is therefore observed under the debugger, not inferred from
+exit codes alone.
+
+### 9.4 What is established
+
+- **Faulting module**: `renderdoc`, the module carrying RenderDoc's replay and
+  layer code. Offset `0x4A0A4E` from base `0x00007ffb9bda0000` in that run.
+- **Faulting thread**: the only thread in the process. This is the main thread,
+  and no worker process or worker thread is involved at the fault.
+- **Phase**: the CRT **onexit table**, driving C++ **static destructors**, inside
+  an SEH-guarded call. `unittest` had already finished and printed `OK`; the
+  fault is inside native module finalisation. This confirms round 2's §2.1 with
+  a stack rather than an inference.
+- **Fault shape**: a read of `NULL`, deterministically, at an identical
+  instruction address across two separate runs.
+- The nearest exported symbols on those frames — `RENDERDOC_EndProfileRegion`,
+  `RENDERDOC_CheckAndroidPackage`,
+  `VK_LAYER_RENDERDOC_CaptureNegotiateLoaderInterfaceVersion` — are **nearest
+  export approximations, not real symbol names.** The region has no public
+  symbols, and those three names describe things an image-teardown path would
+  never plausibly be doing. They must not be read as evidence of anything.
+
+### 9.5 What is *not* established, and must not be inferred from the above
+
+- **Why a RenderDoc static destructor dereferences NULL.** Unknown. This needs
+  symbols or source; it is not derivable from an address.
+- **That the faulting destructor is the replay path.** The stack shows
+  *module-level static destruction*. Which static is running, and whether it
+  belongs to the replay subsystem specifically, is not established. Calling this
+  "the replay teardown" would be more specific than the evidence allows.
+- **`epoch == 2`** stays excluded as a cause. It remains a co-occurring condition
+  whose relevance is unknown; the disproof from round 1 is unaffected.
+- **`_ctrl = None`** stays an unproven suspicion. It is not shown to be a leak and
+  is not shown to be connected to this destructor.
+- **Why WER does not engage.** An AV inside an SEH-guarded static destructor
+  driven from the onexit table is a *candidate* reason, but round 2's discipline
+  applies: no dump is an observation; the mechanism behind it is still open.
+
+### 9.6 Machine state left behind
+
+The two `LocalDumps` registry keys remain in place, as authorized. They produced
+nothing, so they are currently inert. Remove with:
+
+```
+Remove-Item -Recurse 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps'
+```
+
+Symbol and dump scratch directories are under the temp directory, outside the
+repository.
+
+### 9.7 Position unchanged
+
+`{B,C,X}` trigger family proven for tested `X in {A,E,F,G}`; `D` negative
+control proven; minimum arity 3 proven; unique minimal set disproven. The
+pipeline remains `BLOCKED_INFRA` / exit 3, correctly. No production fix, no
+change to the accounting Contract, no exit masking, `epoch` not reinstated,
+`_ctrl=None` not promoted.
