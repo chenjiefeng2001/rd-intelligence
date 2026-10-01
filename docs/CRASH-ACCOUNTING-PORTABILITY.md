@@ -129,12 +129,23 @@ This is the occurrence signal, and it is already in use.
 
 **Tier 2 — heuristic: label the kind from the exit status.**
 
-- POSIX: `rc < 0` → killed by signal `-rc` (`WTERMSIG`).
+- POSIX: `rc < 0` → killed by signal `-rc`.
 - Windows: `status = rc & 0xFFFFFFFF`; treat as abnormal termination when
   `status & 0xFFFF0000 == 0xC0000000` — the NTSTATUS severity/customer shape
   that covers `0xC0000005` access violation, `0xC0000409` abort, `0xC0000374`
   heap corruption, `0xC000001D` illegal instruction. This deliberately excludes
   ordinary small exit codes and `0x8000xxxx` warning statuses.
+
+> **Correction, 2026-10-01 — this subsection's POSIX mechanism was wrong.**
+> An earlier version of this document recommended `os.WIFSIGNALED` and
+> `os.WTERMSIG`. Measured on WSL Ubuntu with real subprocesses,
+> `os.WIFSIGNALED(7)` is **True** after an ordinary `sys.exit(7)`, and
+> `os.WTERMSIG(-9)` returns **119**, not 9. Both misreport, and using them would
+> classify a normal non-zero exit as a signal death — the mirror image of the
+> Windows defect. The only safe POSIX test is `rc < 0`, with the signal number
+> taken as `-rc`. Full matrix and corrected design in
+> `docs/CRASH-ACCOUNTING-DESIGN.md`. The rest of this document stands.
+
 
 Tier 2 should be described as a **heuristic for labelling**, never as proof of a
 crash, because §3's deliberate-`sys.exit` case is indistinguishable from a real
