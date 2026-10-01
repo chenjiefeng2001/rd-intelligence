@@ -195,6 +195,16 @@ def build_report(spec, exit_code, gate_report, unmet, stdout_tail="",
             "required_execution": g.get("required_execution"),
             "attempted": g.get("attempted"),
             "executed": g.get("executed"),
+            # Carried through because the pipeline report is what a reader
+            # actually sees. An INFRASTRUCTURE_FAILURE row that dropped the test
+            # result would be indistinguishable from a run whose tests failed,
+            # which is the misreading the release_gate change exists to prevent.
+            "tests_executed": g.get("tests_executed"),
+            "tests_failed": g.get("tests_failed"),
+            "tests_errors": g.get("tests_errors"),
+            "test_result": g.get("test_result"),
+            "process_exit_code": g.get("process_exit_code"),
+            "execution_clean": g.get("execution_clean"),
             "command": g.get("command"),
             "exit_code": g.get("exit_code"),
             "blocking": g.get("blocking"),

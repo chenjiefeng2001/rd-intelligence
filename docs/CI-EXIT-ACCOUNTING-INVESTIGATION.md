@@ -210,41 +210,75 @@ path is permitted.
 
 ---
 
-## 4. Contract (proposed)
+## 4. Contract
+
+**Status: IMPLEMENTED / VERIFIED / FROZEN — 2026-10-01.** See
+`docs/FREEZE-EXIT-ACCOUNTING-2026-10-01.md`. The precedence table below is the
+authorized ruling and is pinned by `tests/unit/test_exit_accounting.py`.
 
 ### 4.1 Two facts, one verdict field
 
 A gate row carries a **test-result verdict** and a **process-execution fact**,
 and the row must never be readable as though only the first existed.
 
-New required fields on every runner-kind row:
+New required fields on every row:
 
 | field | meaning |
 |---|---|
-| `execution_clean` | `proc.returncode == 0` |
-| `test_result_verdict` | `OK` / `FAILED`, from `_parse_unittest` |
+| `execution_clean` | derived: `process_exit_code == 0` |
+| `test_result` | the runner's own word, `OK` / `FAILED`, as `_parse_unittest` read it |
 | `process_exit_code` | the process's own exit code |
+| `tests_executed` | checks that ran, `total - skipped` |
+| `tests_failed` / `tests_errors` | counted failures and errors |
 
-`exit_code` is retained for backward compatibility with existing consumers, and
-`execution_clean` MUST agree with it. Two names for one number is a drift
-waiting to happen, so `execution_clean` is **derived** from `exit_code`, never
-set independently.
+`exit_code` is retained for existing consumers. `execution_clean` is **derived**
+from `process_exit_code`, never set independently: two names for one number
+drift the moment one is edited alone. A control asserts the derivation for
+`0`, `1` and `3221225477`, and a mutation that hardcoded `execution_clean: True`
+was caught.
 
-### 4.2 The rule
+### 4.1.1 One deliberate deviation
 
-```
-test-result verdict, from counts and identities, decides content.
-execution_clean == false AND content is not REGRESSION
-    → INFRASTRUCTURE_FAILURE, reason naming both facts, row keeps both.
-```
+The authorized example shows `test_result: PASS`. This implementation emits
+`OK`.
+
+`PASS` is a member of the frozen four-state verdict vocabulary. Writing
+`test_result: PASS` beside `outcome: INFRASTRUCTURE_FAILURE` puts the same word
+in two roles in one row, reads as self-contradictory at a glance, and invites a
+consumer to treat the test result as the gate verdict. `OK` is what
+`_parse_unittest` matched out of the child's stderr, so nothing is translated
+and the field cannot be mistaken for `outcome`. Two controls pin this,
+including one asserting `test_result` is never one of the four states.
+
+### 4.2 The pinned rule
+
+| tests failed or errored | process exit | outcome |
+| --- | --- | --- |
+| yes | 0 or non-zero | **`REGRESSION`** |
+| no | 0 | **`PASS`** |
+| no | non-zero | **`INFRASTRUCTURE_FAILURE`** |
+| unparseable or unexecuted | — | **`INFRASTRUCTURE_FAILURE`** |
+
+Implemented as a single new branch placed **after** the counted-failure branch
+and **before** the skipped branch, so content always outranks the process exit.
+
+One precedence point the ruling did not specify: `skipped > 0` *and* a non-zero
+exit. INFRA was chosen over UNKNOWN, because UNKNOWN means "no content
+conclusion for the skipped part", which presumes a clean run, and an unclean run
+has not earned that presumption. No gate currently reaches this case — the
+integration gate reports `skipped=0` — so the choice has no behavioural effect
+today and is recorded for future gates rather than left implicit.
 
 ### 4.3 MUST
 
 - A non-zero process exit MUST be able to withhold `PASS`.
-- The reason for an execution-clean failure MUST state the test results *and* the
-  exit code, so a reader never has to choose which of the two to believe.
-- `REQUIREMENT`: the row of a crashed-but-clean run MUST still report
-  `executed`, `failures`, `errors`, `test_result_verdict`.
+- The reason for an unclean execution MUST state the test results *and* the exit
+  code, so a reader never has to choose which of the two to believe.
+- The row of a crashed-but-clean run MUST still report `tests_executed`,
+  `tests_failed`, `tests_errors` and `test_result`.
+- The pipeline report MUST carry all of them. Dropping them at the reader would
+  make `INFRASTRUCTURE_FAILURE` indistinguishable from a run whose tests failed,
+  which is the misreading this change exists to prevent.
 - Any classification that infers content from the exit code alone is FORBIDDEN.
 
 ### 4.4 MUST NOT
@@ -252,22 +286,18 @@ execution_clean == false AND content is not REGRESSION
 - MUST NOT reclassify a counted failure or error as anything but `REGRESSION`.
 - MUST NOT introduce a fifth verdict state; the four states of §4.1 are frozen.
 - MUST NOT add a compatibility path that returns `PASS` on a non-zero exit.
-- MUST NOT modify the frozen Readiness Contract to accommodate this. Readiness
-  reports `INFRASTRUCTURE_FAILURE` as an accounted state, so its
+- MUST NOT modify the frozen Readiness Contract. Readiness reports
+  `INFRASTRUCTURE_FAILURE` as an accounted state, so its
   `accounting_inconsistencies` correctly stops naming this row once the outcome
-  is honest — no readiness change is required, and that must be verified rather
-  than assumed.
+  is honest. Verified on the real run, not assumed.
 
-### 4.5 Expected consequence, stated up front
+### 4.5 Expected consequence
 
 The integration gate moves `PASS` → `INFRASTRUCTURE_FAILURE`. Overall moves
-`NEEDS_REVIEW / exit 4` → `BLOCKED_INFRA / exit 3`, because `INFRASTRUCTURE_FAILURE`
-outranks `UNKNOWN` in the §2.1 precedence.
+`NEEDS_REVIEW / exit 4` → `BLOCKED_INFRA / exit 3`. Confirmed on the real run.
+This is the correct direction, and it is not a request to make the pipeline
+green: the non-zero OS exit has entered the frozen four-state model.
 
-This is the correct direction: the run is not clean, and today the pipeline
-asserts a state it has not earned. But it is a visible conclusion change, not a
-cosmetic one, and it is recorded here before the fix rather than discovered
-after it.
 
 ---
 

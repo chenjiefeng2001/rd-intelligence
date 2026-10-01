@@ -182,12 +182,22 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         if resolved:
             gate["command"] = resolved
 
-    def record(outcome, detail, executed=None, **extra):
+    def record(outcome, detail, executed=None, exit_code=None, **extra):
         """Every gate record carries the same accounting fields.
 
         A report that omits state or required_execution cannot answer whether
         a gate was expected to run, which is the question that distinguishes
         verified from merely reported.
+
+        The test result and the process exit are two independent facts about one
+        run, so both are recorded side by side rather than one replacing the
+        other. A gate whose 63 tests passed and which then died on the way out
+        is not "63 failed" and is not "passed"; INFRASTRUCTURE_FAILURE is only
+        honest if the row still says the tests passed.
+
+        execution_clean is derived from the process exit code and never set
+        independently. Two names for one number drift the moment one of them is
+        edited alone.
         """
         out = {
             "gate": gate["id"],
@@ -199,9 +209,18 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
             "attempted": True,
             "executed": executed,
             "command": gate.get("command"),
-            "exit_code": None,
+            "exit_code": exit_code,
+            "process_exit_code": exit_code,
+            "execution_clean": exit_code == 0,
             "detail": detail,
         }
+        if "failures" in extra or "errors" in extra:
+            out.update({
+                "tests_executed": extra.get("executed", executed),
+                "tests_failed": extra.get("failures"),
+                "tests_errors": extra.get("errors"),
+                "test_result": extra.get("verdict"),
+            })
         out.update(extra)
         return out
 
@@ -265,10 +284,29 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
                             "regression",
                           exit_code=proc.returncode, **counts)
         if counts["failures"] or counts["errors"]:
+            # Content outranks the process exit, deliberately and first. A real
+            # failure also exits non-zero, so a rule of the form "non-zero exit
+            # implies infrastructure" would relabel every genuine regression as
+            # a broken runner and hide it.
             return record(REGRESSION,
                           f"{counts['failures']} failure(s), "
                           f"{counts['errors']} error(s) with "
                           f"{counts['executed']} executed",
+                          exit_code=proc.returncode, **counts)
+        if proc.returncode != 0:
+            # Only reachable once failures and errors are both zero, which is
+            # what makes INFRASTRUCTURE_FAILURE honest here rather than a
+            # cover for a red test. The tests reported a result and the
+            # process then failed to exit cleanly; neither fact is allowed to
+            # overwrite the other.
+            #
+            # This is the only new verdict path, and it can withhold PASS. No
+            # compatibility branch returns PASS on a non-zero exit.
+            return record(INFRA,
+                          f"{counts['executed']} checks reported "
+                          f"{counts['verdict']}, but the process did not exit "
+                          f"cleanly (exit {proc.returncode}); the test result "
+                          f"and the exit status are separate facts",
                           exit_code=proc.returncode, **counts)
         if counts["skipped"]:
             return record(UNKNOWN,
