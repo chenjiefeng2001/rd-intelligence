@@ -493,3 +493,99 @@ Not in scope: changing the destructor, altering the exit path to avoid
 destruction, treating `_ctrl = None` as the faulting pointer, upgrading "belongs
 to RenderDoc" into "RenderDoc replay subsystem defect", or touching CI
 accounting or exit semantics.
+
+---
+
+## 11. Attribution outcome and closing freeze language
+
+Added after the attribution phase (`ddec0a1`). Workstream status:
+
+```
+CLOSED FOR NOW
+
+location:
+    ESTABLISHED
+    module:  renderdoc.dll        (NOT renderdoc.pyd)
+    address: renderdoc.dll image offset 0x4A0A4E
+    fault:   NULL-read access violation, c0000005
+    phase:   CRT onexit / C++ static destruction, after test completion
+    thread:  main
+
+attribution:
+    NOT_ESTABLISHED
+
+root cause:
+    OPEN
+```
+
+### 11.1 Frozen statements
+
+> This round confirms the fault image is **`renderdoc.dll`**, not the Python
+> extension `renderdoc.pyd`. The fault address is established to instruction
+> level as a NULL-read, but because the current symbol file does not provide a
+> private function mapping for that address, the function, the source
+> statement, and lifecycle ownership are **all unestablished**. Attribution
+> must not be inferred from a nearby export name or from an address offset.
+
+> **`0x4A0A4E` is a fact about an address relative to the `renderdoc.dll`
+> image. It is not a function identity.**
+
+### 11.2 Module identity — why this correction matters
+
+Two modules named alike are loaded in the crashing process:
+
+```
+00007ffb`0aab0000 00007ffb`0c32d000  renderdoc_7ffb0aab0000   renderdoc.dll
+00007ffb`a47c0000 00007ffb`a4df6000  renderdoc               renderdoc.pyd
+```
+
+The faulting frame lies in the first range. An unqualified
+`renderdoc+0x4A0A4E` bound to the wrong image and disassembled to ASCII string
+data, which would have produced an attribution built on a string table. The
+offset is stable and correct; only the module identity had to be pinned before
+it could mean anything. **This distinction changes the direction of any future
+attribution and is therefore part of the frozen record.**
+
+### 11.3 The instruction sequence is not a function conclusion
+
+Established:
+
+```asm
+mov  rbx, qword ptr [rax]      ; rax == 0
+test rbx,rbx
+je   ...
+```
+
+The null check follows the dereference, so this path allows a NULL to reach the
+read. That is a measured property of the instruction sequence.
+
+**Not established, and not to be inferred:** which object `rax` should have
+held, which static this is, which lifecycle, replay ownership, or upstream
+responsibility. The instruction sequence carries no attribution.
+
+### 11.4 The correct reading of the PDB result
+
+Neither "the PDB is invalid" nor "RenderDoc has no symbols". Precisely:
+
+> A relationship between the current PDB and the module is a fact — the
+> CODEVIEW directory names GUID `{50E88A80-9646-42CB-AD98-05A8D01C46CE}`,
+> age 1, and the file is present at 4.03 MB beside the 24.29 MB dll — but the
+> debugger obtained **no private symbol resolution for that address**.
+
+`Symbols loaded` from `ld` is therefore **not** equivalent to
+"function attribution available". `lm` shows the module as `(export symbols)`,
+not `(pdb)`.
+
+### 11.5 Closing position
+
+Further progress requires changing an input condition — a full non-reduced PDB
+for this exact build (`Time Stamp 6a8b9bfe`, 2026-08-24), a symbolizable
+RenderDoc build, or a source-level build correspondence. All are outside this
+repository and outside an evidence-only authorization.
+
+Continuing to drive cdb will not increase attribution confidence, and it
+re-opens a known failure mode: nearest export name read as function identity.
+
+Teardown fix remains **UNAUTHORIZED and NOT STARTED**. Exit-code masking,
+`os._exit`, and exit-path workarounds remain forbidden. The accounting Contract
+is untouched and the pipeline correctly reports `BLOCKED_INFRA / exit 3`.
