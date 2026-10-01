@@ -19,6 +19,16 @@ CI gate verdict (§4.1)   DEFINED / FROZEN
   regression detection  VERIFIED
   ignore_capture_hash   VERIFIED
   passedChecks          VERIFIED
+CI gate verdict (§4.1)   DEFINED / FROZEN
+  zero-check pass       FIXED / VERIFIED
+G1 / G2 verdicts         COMPLETE / VERIFIED
+Gate 3 (§4.3)            IMPLEMENTED / VERIFIED / bounded coverage
+Pipeline Phase 1         COMPLETE / FROZEN
+  overall               NEEDS_REVIEW / exit 4 / neutral
+Gate 4 (§4.4)            PROCESS_ONLY / UNKNOWN
+release blocking         NOT AUTHORIZED
+runner environment       NOT ESTABLISHED
+capture distribution     NOT ESTABLISHED (0 tracked .rdc)
 CI configuration        NOT AUTHORIZED
 shader reflection       CONTRACT DEFINED
 reflection runtime      NOT ESTABLISHED
