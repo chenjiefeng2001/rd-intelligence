@@ -1,7 +1,7 @@
 # Scope Decision — Upstream RenderDoc Ownership
 
 Date: 2026-10-01
-State: **RECOMMENDATION PRODUCED / DECISION RESERVED TO THE OWNER**
+State: **RULED / FROZEN**
 Scope: governance only. **No symbols fetched, no code changed, no pipeline
 verdict changed, no workaround proposed.**
 
@@ -111,15 +111,83 @@ construction.
 
 ## 6. Decision record
 
-| option | owner decision |
-| --- | --- |
-| Report upstream | *pending* |
-| Modify the fork | *pending* |
-| Amend the `replay` exclusion | *pending, and not recommended* |
+Ruled by the owner, 2026-10-01.
 
-The recommendation above is evidence-based and is offered as such. The decision
-itself is the owner's, and nothing in this repository should be changed on the
-strength of the recommendation alone.
+| question | ruling |
+| --- | --- |
+| Upstream reporting | **ACCEPTED as a future path** — evidence report only, attribution not claimed |
+| Modifying the fork | **NOT AUTHORIZED** |
+| Amending the `replay` exclusion | **NOT AUTHORIZED** |
+
+### 6.1 Upstream reporting — what it may and may not contain
+
+Accepted because it is the only route that changes no governance boundary here
+and does not presume responsibility.
+
+**May contain.** The reproducible crash; faulting module `renderdoc.dll`; phase
+as CRT `onexit` / static destruction; the instruction-level NULL read; minimal
+trigger conditions; the negative controls; and an explicit statement that
+attribution is not established.
+
+**Must avoid.** A title or description asserting a RenderDoc replay teardown
+defect. No evidence supports that. The accurate framing is of the shape:
+
+> Deterministic NULL-read access violation in renderdoc.dll during process
+> finalization after successful test execution
+
+**Must not claim.** That a RenderDoc subsystem caused it; a replay ownership
+defect; a specific static destructor bug; or that it is or is not a driver
+issue. `ddec0a1` froze RenderDoc, driver and usage-lifecycle as all
+unexcluded.
+
+The report's role is therefore a **request for symbolisation / locating
+assistance**, not the submission of an already-attributed defect.
+
+### 6.2 Why modifying the fork is refused — constraint conflict, not preference
+
+If attribution later shows `fault ∈ replay surface`, the correct action is not a
+quiet patch but:
+
+```
+reopen the scope decision -> submit a governance change -> amend the
+exception contract -> re-prove blast radius
+```
+
+Until that sequence is followed, `audit_fork_integrity` failing is the
+governance behaving as designed, not an obstacle.
+
+### 6.3 Why amending the exclusion is not started
+
+Amending the exclusion list requires answering why a new replay modification
+surface is worth changing an already-frozen safety boundary. That cannot be
+answered now, because the only chain available would be
+
+```
+crash -> suspect replay -> widen the replay exception
+```
+
+which is not permitted. The admissible chain is
+
+```
+attribution established -> confirmed that a fix must live in the replay
+surface -> alternatives evaluated -> scope revision proposed
+```
+
+which has not been reached.
+
+### 6.4 Trigger for reopening
+
+- Attribution established outside the current assumptions.
+- Upstream provides a fix or a replacement build.
+- An explicit governance proposal, taken as its own act rather than inferred
+  from a crash.
+
+### 6.5 Isolation note
+
+The two pre-existing N3 patch entries in the sibling RenderDoc checkout are
+outside this decision. They are not part of this round's diff, audit or
+CI-visible state, and are not used to support or refute anything above.
+
 
 ## 7. Non-goals observed
 
