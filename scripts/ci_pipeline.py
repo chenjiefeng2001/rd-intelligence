@@ -38,7 +38,7 @@ import os
 import subprocess
 import sys
 
-SCHEMA = "rdebug-ci-pipeline/1"
+SCHEMA = "rdebug-ci-pipeline/2"
 
 PASS_EXIT = 0
 REGRESSION_EXIT = 2
@@ -148,7 +148,41 @@ def run_orchestrator(spec, repo_root, timeout=None, extra_env=None):
     return proc.returncode, report, proc
 
 
-def build_report(spec, exit_code, gate_report, unmet, stdout_tail=""):
+def accounting_inconsistencies(gates):
+    """Rows whose own numbers contradict their own verdict.
+
+    This reports, it does not reclassify. A gate row that says PASS while its
+    process exit was non-zero is exactly the shape that must not reach a
+    reader as a pass, and it has been observed for real here: the integration
+    suite prints OK for every test and then dies during interpreter shutdown
+    with 0xC0000005. The gate classifier has always looked at test counts and
+    never at the exit code, so the row reads PASS.
+
+    Changing that is a gate semantics change and is out of scope for this
+    contract. Making it visible is not, so the contradiction is named here and
+    surfaced at the top of the report.
+    """
+    out = []
+    for g in gates or []:
+        exit_code = g.get("exit_code")
+        outcome = g.get("outcome")
+        if exit_code in (None, 0):
+            continue
+        if outcome == "PASS":
+            out.append({"gate": g.get("gate"), "kind": "pass_with_nonzero_exit",
+                        "outcome": outcome, "exit_code": exit_code,
+                        "meaning": "reported as passing but the process did "
+                                   "not exit cleanly"})
+        elif outcome not in ("INFRASTRUCTURE_FAILURE", "BLOCKED", "UNKNOWN"):
+            out.append({"gate": g.get("gate"), "kind": "nonzero_exit",
+                        "outcome": outcome, "exit_code": exit_code,
+                        "meaning": "non-zero exit with a verdict that does "
+                                   "not acknowledge it"})
+    return out
+
+
+def build_report(spec, exit_code, gate_report, unmet, stdout_tail="",
+                 readiness=None):
     """Per-gate accounting plus the overall state, in machine-readable form."""
     mapping = spec.get("conclusion_mapping") or {}
     entry = mapping.get(str(exit_code)) or {}
@@ -167,8 +201,9 @@ def build_report(spec, exit_code, gate_report, unmet, stdout_tail=""):
             "detail": g.get("detail"),
             "spec_ref": g.get("spec_ref"),
         })
+    inconsistencies = accounting_inconsistencies(gates)
     return {
-        "schema": "rdebug-ci-pipeline-report/1",
+        "schema": "rdebug-ci-pipeline-report/2",
         "overall": {
             "exit_code": exit_code,
             "status": (gate_report or {}).get("status"),
@@ -179,10 +214,44 @@ def build_report(spec, exit_code, gate_report, unmet, stdout_tail=""):
             (spec.get("release_blocking") or {}).get("enabled")
         ),
         "unmet_environment_requirements": unmet,
+        "accounting_inconsistencies": inconsistencies,
+        "accounting_consistent": not inconsistencies,
+        "readiness": readiness,
         "gates": gates,
         "gate_count": len(gates),
         "stdout_tail": stdout_tail,
     }
+
+
+def collect_readiness(repo_root, spec, report_path=None):
+    """Capability declaration for this machine, from the readiness module.
+
+    Purely additive. It runs no gate and changes no verdict; it states what the
+    runner has and what each gate would therefore need. A failure to probe is
+    reported as a failure to probe, not swallowed into a pass.
+    """
+    try:
+        import pipeline_readiness as readiness_mod
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "meaning": "readiness could not be observed; this is not a "
+                           "statement about any gate"}
+    try:
+        environment = readiness_mod.probe_environment(repo_root, os.environ)
+        gates = []
+        for gate in (spec or {}).get("gates") or []:
+            missing = readiness_mod.missing_requirements(gate, environment)
+            gates.append({"gate": gate.get("id"),
+                          "missing_requirements": missing,
+                          "runnable": not missing})
+        return {"available": True, "scope": "capability",
+                "executes_anything": False,
+                "environment": environment, "gates": gates}
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                "meaning": "readiness probe failed; no gate verdict is implied"}
 
 
 def run(spec_path, repo_root, timeout=None, extra_env=None, report_path=None):
@@ -190,16 +259,20 @@ def run(spec_path, repo_root, timeout=None, extra_env=None, report_path=None):
         spec = load_pipeline_spec(spec_path)
         check_preconditions(spec, repo_root)
         unmet = check_environment(spec, repo_root)
+        readiness = collect_readiness(repo_root, spec)
         code, gate_report, proc = run_orchestrator(spec, repo_root, timeout,
                                                    extra_env)
     except PipelineAbort as e:
         report = {
-            "schema": "rdebug-ci-pipeline-report/1",
+            "schema": "rdebug-ci-pipeline-report/2",
             "overall": {"exit_code": INFRA_EXIT, "status": "INFRASTRUCTURE",
                         "conclusion": "failure",
                         "meaning": "the pipeline layer could not run"},
             "release_blocking_enabled": False,
             "unmet_environment_requirements": [],
+            "accounting_inconsistencies": [],
+            "accounting_consistent": True,
+            "readiness": None,
             "gates": [],
             "gate_count": 0,
             "pipeline_abort": e.detail,
@@ -212,7 +285,7 @@ def run(spec_path, repo_root, timeout=None, extra_env=None, report_path=None):
         # An exit the frozen mapping does not define is the orchestrator
         # misbehaving. That is infrastructure, not a verdict.
         report = {
-            "schema": "rdebug-ci-pipeline-report/1",
+            "schema": "rdebug-ci-pipeline-report/2",
             "overall": {"exit_code": INFRA_EXIT, "status": "INFRASTRUCTURE",
                         "conclusion": "failure",
                         "meaning": "orchestrator returned an undefined exit"},
@@ -226,7 +299,7 @@ def run(spec_path, repo_root, timeout=None, extra_env=None, report_path=None):
         return INFRA_EXIT, report
 
     tail = (proc.stdout or "")[-400:]
-    report = build_report(spec, code, gate_report, unmet, tail)
+    report = build_report(spec, code, gate_report, unmet, tail, readiness)
     _write(report_path, report)
     return code, report
 
@@ -272,6 +345,20 @@ def main(argv=None):
               f"executed={g['executed']} required={g['required_execution']}")
     for u in report.get("unmet_environment_requirements") or []:
         print("  unmet: {} needs {}".format(u["gate"], u["requirement"]))
+    for bad in report.get("accounting_inconsistencies") or []:
+        print("  accounting: {} {} (exit {!r}) {}".format(
+            bad["gate"], bad["kind"], bad["exit_code"], bad["meaning"]))
+    readiness = report.get("readiness") or {}
+    if readiness.get("available"):
+        print("  readiness: capability only, nothing executed; "
+              "not a gate verdict")
+        for row in readiness.get("gates") or []:
+            if not row["runnable"]:
+                print("    not runnable: {} missing {}".format(
+                    row["gate"], ", ".join(row["missing_requirements"])))
+    elif readiness:
+        print("  readiness: unavailable ({})".format(
+            readiness.get("error")))
     if report.get("pipeline_abort"):
         print("  pipeline abort: {}".format(report["pipeline_abort"]))
     print("  release blocking enabled: {}".format(report.get("release_blocking_enabled")))

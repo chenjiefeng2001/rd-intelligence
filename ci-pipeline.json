@@ -1,5 +1,5 @@
 {
-  "schema": "rdebug-ci-pipeline/1",
+  "schema": "rdebug-ci-pipeline/2",
   "declared_at": "2026-09-29",
   "note": "Forge-neutral description of how a CI system should run the DESIGN_SPEC section 4 gates. It declares what the environment must provide, because a pipeline cannot provision something the gate spec does not ask for. It does not schedule anything and blocks no pull request; scripts/ci_pipeline.py is what a pipeline would invoke.",
   "forge_target": {
@@ -117,5 +117,49 @@
   "release_blocking": {
     "enabled": false,
     "note": "Release blocking is not authorized. Until it is, an exit 4 is a legitimate resting state and the overall result stays NEEDS_REVIEW because section 4 gate 4 has no executable check."
+  },
+  "schema_history": {
+    "rdebug-ci-pipeline/2": "declares the four runner capability classes explicitly (DESIGN_SPEC 4.2.1) and links to scripts/pipeline_readiness.py, which observes them and provisions nothing."
+  },
+  "capability_declaration": {
+    "note": "DESIGN_SPEC 4.2.1. These are execution prerequisites, not semantic checks. Resolved by scripts/pipeline_readiness.py, which observes and reports; it never installs, downloads or clones.",
+    "classes": [
+      "renderdoc",
+      "gpu",
+      "corpus",
+      "runtime"
+    ],
+    "renderdoc": {
+      "declares": [
+        "fork_present",
+        "module_importable",
+        "version",
+        "commit"
+      ]
+    },
+    "gpu": {
+      "declares": [
+        "present",
+        "driver",
+        "replay_supported"
+      ]
+    },
+    "corpus": {
+      "declares": [
+        "captures_present",
+        "manifest_match",
+        "tracked_captures"
+      ]
+    },
+    "runtime": {
+      "declares": [
+        "python_version",
+        "python_ok",
+        "dependencies_ok",
+        "missing_dependencies"
+      ]
+    },
+    "readiness_module": "scripts/pipeline_readiness.py",
+    "provisions_anything": false
   }
 }

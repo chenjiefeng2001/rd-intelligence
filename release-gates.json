@@ -1,11 +1,12 @@
 {
-  "schema": "rdebug-release-gates/4",
+  "schema": "rdebug-release-gates/5",
   "declared_at": "2026-09-29",
   "schema_history": {
     "rdebug-release-gates/1": "gate set and I1/I2 enforcement",
     "rdebug-release-gates/2": "adds spec_gate mapping, per-gate state, required_execution, blocking, four-state aggregate exit codes and the JSON report. Gate 3 and gate 4 are declared here as NOT_IMPLEMENTED and PROCESS_ONLY so the aggregate can see that they have nothing to run.",
     "rdebug-release-gates/3": "gate 3 becomes IMPLEMENTED: cold_warm_equivalence now has a command and a verdict. The release runner needs a new runner kind so the gate four-state verdict is consumed rather than collapsed into pass or non-zero, which is what exit_code would do.",
-    "rdebug-release-gates/4": "gate 3 declares the environment it actually needs. It was listed as pure python, which is wrong: it spawns workers that replay, so without the renderdoc module and a capture it aborts as INFRASTRUCTURE_FAILURE. A pipeline cannot provision what the spec does not declare."
+    "rdebug-release-gates/4": "gate 3 declares the environment it actually needs. It was listed as pure python, which is wrong: it spawns workers that replay, so without the renderdoc module and a capture it aborts as INFRASTRUCTURE_FAILURE. A pipeline cannot provision what the spec does not declare.",
+    "rdebug-release-gates/5": "gates declare required capabilities as dotted names so the readiness layer can resolve them against a probed environment. This is a declaration only; nothing is provisioned."
   },
   "note": "Gate definitions for DESIGN_SPEC section 4. This file declares what must run before a change can be treated as verified. It is not a pipeline: nothing here schedules, blocks a pull request, or talks to a forge. Running it by hand is still a manual action, and that residual gap is recorded rather than claimed solved.",
   "exit_codes": {
@@ -31,7 +32,9 @@
       ],
       "runner": "unittest",
       "min_executed": 100,
-      "requires": {},
+      "requires": {
+        "capabilities": []
+      },
       "rationale": "Stable Core pure logic. No RenderDoc, so it cannot silently skip wholesale; the floor exists to catch a discovery failure that runs nothing."
     },
     {
@@ -50,7 +53,9 @@
       ],
       "runner": "unittest",
       "min_executed": 40,
-      "requires": {},
+      "requires": {
+        "capabilities": []
+      },
       "rationale": "Transport purity. Floor only."
     },
     {
@@ -77,7 +82,16 @@
           "RDEBUG_INTEGRATION_CAPTURE"
         ],
         "module": "renderdoc",
-        "capture": true
+        "capture": true,
+        "capabilities": [
+          "renderdoc.module_importable",
+          "renderdoc.fork_present",
+          "gpu.present",
+          "gpu.replay_supported",
+          "corpus.captures_present",
+          "runtime.python_ok",
+          "runtime.dependencies_ok"
+        ]
       },
       "rationale": "Real replay behaviour. This is the gate that A2-1 applies to: without its environment it skips about 60 of 63 tests, and a bare exit code is not evidence that anything was verified. A missing environment is an infrastructure failure, never a pass."
     },
@@ -93,7 +107,9 @@
       ],
       "runner": "exit_code",
       "min_executed": null,
-      "requires": {},
+      "requires": {
+        "capabilities": []
+      },
       "rationale": "DESIGN_SPEC 2.1 to 2.9 mechanical boundary audit. The script's own exit code and N/N output are the evidence."
     },
     {
@@ -118,7 +134,15 @@
           "RDEBUG_RENDERDOC_PATH"
         ],
         "module": "renderdoc",
-        "capture": true
+        "capture": true,
+        "capabilities": [
+          "renderdoc.module_importable",
+          "renderdoc.fork_present",
+          "gpu.replay_supported",
+          "corpus.captures_present",
+          "runtime.python_ok",
+          "runtime.dependencies_ok"
+        ]
       },
       "capture_env": "RDEBUG_GATE3_CAPTURE"
     },
@@ -130,7 +154,10 @@
       "blocking": false,
       "command": null,
       "contributes": "UNKNOWN",
-      "rationale": "DESIGN_SPEC 4.4 requires session and latency data changes to be archived under docs/validation. That is a process requirement with no automatic decision path, which is why it is PROCESS_ONLY rather than NOT_IMPLEMENTED. It is not blocking because there is nothing executable to block on, but it still keeps the aggregate off PASS. The D6 benchmark is explicitly not this gate: D6 is performance evidence and is not a release gate."
+      "rationale": "DESIGN_SPEC 4.4 requires session and latency data changes to be archived under docs/validation. That is a process requirement with no automatic decision path, which is why it is PROCESS_ONLY rather than NOT_IMPLEMENTED. It is not blocking because there is nothing executable to block on, but it still keeps the aggregate off PASS. The D6 benchmark is explicitly not this gate: D6 is performance evidence and is not a release gate.",
+      "requires": {
+        "capabilities": []
+      }
     },
     {
       "id": "fork_integrity",
@@ -145,7 +172,10 @@
       "runner": "exit_code",
       "min_executed": null,
       "requires": {
-        "sibling_fork": true
+        "sibling_fork": true,
+        "capabilities": [
+          "renderdoc.fork_present"
+        ]
       },
       "rationale": "DESIGN_SPEC 2.1.1. Read-only git inspection of the RenderDoc fork. Consumed as a subprocess exit code; the F1 to F4 logic is never duplicated here."
     }
@@ -158,5 +188,14 @@
   },
   "captures": {
     "cold_warm_equivalence": "tests/workload/corpus/w00001_frame11.rdc"
-  }
+  },
+  "capability_names": [
+    "corpus.captures_present",
+    "gpu.present",
+    "gpu.replay_supported",
+    "renderdoc.fork_present",
+    "renderdoc.module_importable",
+    "runtime.dependencies_ok",
+    "runtime.python_ok"
+  ]
 }

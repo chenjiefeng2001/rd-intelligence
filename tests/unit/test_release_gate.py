@@ -428,7 +428,7 @@ class TestG1FourStateAggregate(unittest.TestCase):
 
     def test_schema_and_gates(self):
         spec = RG.load_spec(GATE_SPEC)
-        self.assertEqual(spec["schema"], "rdebug-release-gates/4")
+        self.assertEqual(spec["schema"], "rdebug-release-gates/5")
         self.assertTrue(spec["gates"])
 
     def test_every_gate_declares_a_rationale(self):

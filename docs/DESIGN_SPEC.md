@@ -530,6 +530,132 @@ value 漂移 / eventId 漂移 / pair 漂移均返回 `regression`；
 调查与证据：`docs/CI-PHASE1-INVESTIGATION.md`；
 对照：`tests/unit/test_ci_verdict_contract.py`。
 
+### 4.2 Pipeline Readiness Contract（2026-09-29，裁决 A）
+
+§4.1 定义「裁决正确」。本节定义**更前置**的一件事：
+
+> **CI 在什么环境下有资格执行，以及缺环境时如何诚实失败。**
+
+本节**不重新讨论** §4.1、G1/G2 或 Gate 3 —— 那些已冻结。
+本节**不改变任何 gate 的语义**，只补齐「pipeline 能否被可靠运行」。
+
+#### 4.2.1 Runner capability declaration
+
+以下四类为 **execution prerequisites**，**不是 semantic checks**：
+
+| 能力 | MUST 声明 |
+| --- | --- |
+| `renderdoc` | fork 路径；module 是否可加载；**版本 / commit identity** |
+| `gpu` | GPU 是否存在；driver / runtime 是否满足要求 |
+| `corpus` | required capture 是否存在；**provenance / manifest 是否匹配** |
+| `runtime` | Python 与依赖是否满足 |
+
+> **MUST NOT** 把 execution prerequisite 写成 semantic check。
+> 「这台机器没有 GPU」不是一个关于渲染结果的观察，
+> 它是关于**这台机器能否回答问题**的观察。
+
+#### 4.2.2 缺失时的四态归类（固定）
+
+| 情况 | 状态 |
+| --- | --- |
+| 代码 / 语义结果不符合预期 | `REGRESSION` |
+| 测试或 runner 自身异常（含环境缺失） | `INFRASTRUCTURE_FAILURE` |
+| 无法证明结果（例如门未实现） | `UNKNOWN` |
+| 全部验证且通过 | `PASS` |
+
+**以下映射被明确禁止**：
+
+| 禁止 | 原因 |
+| --- | --- |
+| capture 不存在 → `REGRESSION` ❌ | 没找到文件不是关于渲染结果的观察 |
+| GPU 不存在 → `UNKNOWN` ❌（当该门 `required_execution`） | required 的门没跑成，是执行失败，不是「无法证明」 |
+| runner 未配置 → `PASS` ❌ | 未配置与通过无关 |
+
+#### 4.2.3 Required execution Contract
+
+每个 gate **MUST** 声明 `required_execution: true | false`。
+
+| 组合 | 裁决 |
+| --- | --- |
+| `required` + 未执行 | `INFRASTRUCTURE_FAILURE` |
+| `optional` + 未执行 | `UNKNOWN` |
+| 已执行 + 失败 | 按 §4.2.2 的 failure type 分类 |
+
+**MUST NOT** 用以下任一项判定是否执行：
+
+- skipped 数量
+- test count
+- 「没有失败记录」
+
+> 「没有失败记录」不等于「执行过」。一个根本没运行的 gate
+> 天然没有失败记录 —— 这正是 §4.1 修掉的那类缺陷。
+
+#### 4.2.4 Report schema（最小集）
+
+```
+environment:
+  renderdoc:
+  gpu:
+  corpus:
+  runtime:
+
+gates:
+  gate_id:
+    required_execution:
+    attempted:
+    executed:
+    state:
+    reason:
+    missing_requirements:
+
+overall:
+  state:
+  exit_code:
+```
+
+**目标不是好看的报告，而是让后来者无法把「没跑」误读成「通过」。**
+
+由此产生三条**结构性不变式**（`validate_report` 必须拒绝违反者）：
+
+| # | 不变式 |
+| --- | --- |
+| V1 | `environment`、`gates`、`overall` 三者**缺一即拒绝** |
+| V2 | `attempted == false` ⇒ `executed == 0`（不得「命令没跑却称已执行」） |
+| V3 | pipeline 退出码与 `overall.state` **一一对应**（`0/2/3/4`） |
+
+#### 4.2.5 环境事实与 Contract 的分离（重要）
+
+以下两条是**当前环境状态（evidence）**，**不是 Contract 假设**：
+
+- 本仓库**没有** tracked `.rdc`（`tests/workload/corpus/` 被 gitignore，0 个 tracked）
+- 当前**没有** GPU runner
+
+> 本节描述的是「**若缺少 required resource，系统如何报告**」，
+> **不是**「永远没有 resource」。
+>
+> 若把上述现状写成 Contract 前提，就等于把一次环境观测
+> 固化成架构断言 —— 那正是 §4.1 / §2.11 反复拒绝的错误。
+> 当前事实记录在 `docs/FREEZE-PIPELINE-PHASE1-2026-09-29.md`。
+
+#### 4.2.6 实现状态（2026-10-01）
+
+| 项 | 状态 | 依据 |
+| --- | --- | --- |
+| §4.2.1 capability declaration | ✅ IMPLEMENTED | `probe_environment` / `capability_satisfied`；`release-gates.json` `/5` 的 `requires.capabilities`；`ci-pipeline.json` `/2` 的 `capability_declaration` |
+| §4.2.2 四态禁止映射 | ✅ IMPLEMENTED | `build_gate_row` / `overall_from_rows` |
+| §4.2.3 required execution | ✅ IMPLEMENTED | `build_gate_row`（`scope="capability"` 时只报可运行性，不声称执行过） |
+| §4.2.4 report schema + V1–V3 | ✅ IMPLEMENTED | `validate_report` / `cross_check_exit`；`ci-pipeline-report/2` |
+| §4.2.5 环境事实分离 | ✅ | 本节 + 冻结文件 |
+| 声明但绝不 provision | ✅ 对照强制 | 47 项对照；按 AST 检查 import 与 spawn，只允许只读 git |
+| 记账式不一致检出 | ✅ IMPLEMENTED | `accounting_inconsistencies`；`integration pass_with_nonzero_exit` 已被指名 |
+| runner provisioning | ❌ **NOT AUTHORIZED** | 本节只声明，不 provision |
+| workflow / blocking 接线 | ❌ **NOT AUTHORIZED** | Phase 1 已冻结 |
+| `release_gate.py` 的 false PASS 修正 | ❌ **NOT AUTHORIZED** | 属 gate 语义变更；本 Contract 只暴露不修正 |
+
+对照：`tests/unit/test_pipeline_readiness.py`
+（47 项，含 15 项变异注入全部被捕获）。
+冻结：`docs/FREEZE-PIPELINE-READINESS-2026-10-01.md`
+
 ---
 
 ## 5. Real-world Validation（v1 后阶段）

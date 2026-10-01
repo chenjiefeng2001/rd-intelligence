@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "rdebug-release-gates/4"
+SCHEMA = "rdebug-release-gates/5"
 
 PASS = "PASS"
 REGRESSION = "REGRESSION"
