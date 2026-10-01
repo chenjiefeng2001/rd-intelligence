@@ -1,132 +1,154 @@
 # CURRENT EVIDENCE FREEZE
 
-冻结日期：2026-09-29
-冻结点 commit：`ed59113`（57 commits）
-覆盖仓库：`rd-intelligence`（`rdebug-validation` 冻结物只读未触碰）
+冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113` / 57 commits）
+冻结点 commit：`a81600e`（86 commits）
+覆盖仓库：`rd-intelligence`（`rdebug-validation` 冻结物**本轮只读未复验**，见下）
+
+> **本版与上一版的差异来源**：审计（`docs/AUDIT-2026-10-02.md`）发现本文件与
+> `STATUS.md` 均停留在 `ed59113`，落后本轮全部工作。刷新时**只写本轮实测事实**；
+> 凡本轮未复验者一律显式标注，不沿用旧值充当新证据。
 
 ```text
 CURRENT EVIDENCE FREEZE
 ──────────────────────────────────────────────
 §2.1 fork integrity      COMPLIANT WITH DECLARED EXCEPTION
-  └ core.cpp +32 tracked ── 仍存在，但已声明、在作用域内、
-                              provenance 绑定、且被 F1–F4 机械强制
-  └ git status --porcelain 仍**非空**，本冻结不宣称其为空
-14 frozen artifacts      INTACT (14/14 hash MATCH)  ← 与上项互不覆盖
-§4 automation            GAP / CONFIRMED WITH OBSERVED CONSEQUENCE (A2)
-context_eid             FIXED / VERIFIED
+  └ core.cpp +32 tracked ── 仍存在，1 tracked / 1 declared，
+                              provenance 绑定、被 F1–F4 强制
+  └ audit_fork_integrity exit 0（本轮实测）
+  └ git status --porcelain 仍**非空**（2 行），本冻结不宣称其为空
+14 frozen artifacts      ⚠️ 本轮**未复验**（无复验脚本可用；旧值 14/14 不作为本轮证据）
+§4 automation            RESOLVED WITH OBSERVED CONSEQUENCE (A2) → 门禁已接线并可运行
+context_eid             FIXED / VERIFIED（real capture confirmation 仍 pending）
 CI gate verdict (§4.1)   DEFINED / FROZEN
-  zero-check pass       FIXED / VERIFIED
-  regression detection  VERIFIED
-  ignore_capture_hash   VERIFIED
-  passedChecks          VERIFIED
-CI gate verdict (§4.1)   DEFINED / FROZEN
-  zero-check pass       FIXED / VERIFIED
 G1 / G2 verdicts         COMPLETE / VERIFIED
 Gate 3 (§4.3)            IMPLEMENTED / VERIFIED / bounded coverage
 Pipeline Phase 1         COMPLETE / FROZEN
-  overall               NEEDS_REVIEW / exit 4 / neutral
+  overall               BLOCKED_INFRA / exit 3 / failure   ← 本轮由 exit 4 变更
+Pipeline readiness      COMPLETE / VERIFIED / FROZEN
+Execution accounting    COMPLETE / VERIFIED / FROZEN
+Teardown crash          REPRODUCED / LOCATION ESTABLISHED / ROOT CAUSE OPEN
+  module                renderdoc.dll（非 renderdoc.pyd）
+  fault                 mov rbx,[rax]; rax==0; c0000005
+  function attribution  NOT_ESTABLISHED（PDB 未提供该地址私有符号）
+Termination evidence    COMPLETE / VERIFIED / FROZEN
+  classification        跨平台实测（Windows + WSL Ubuntu）
+  crash claim           恒不成立（is_crash 恒 False）
+workload mcp_contract   RETIRED（covered_by_existing_blocking_gates）
 Gate 4 (§4.4)            PROCESS_ONLY / UNKNOWN
 release blocking         NOT AUTHORIZED
-runner environment       NOT ESTABLISHED
-capture distribution     NOT ESTABLISHED (0 tracked .rdc)
-CI configuration        NOT AUTHORIZED
+CI configuration wiring  NOT AUTHORIZED（.github/workflows/ci.yml 仅为声明）
+runner environment       已建立可探测模型；**从未在真缺能力机器上执行**
+capture distribution     NOT ESTABLISHED（0 tracked .rdc）
 shader reflection       CONTRACT DEFINED
-reflection runtime      NOT ESTABLISHED
 reflection catch        DEFERRED / defensive
 D6                      MEASURED / NO REGRESSION
 D4                      DEFER
 D7                      OPEN
 N3-05B                  NOT AUTHORIZED
 F-N3-1                  NOT AUTHORIZED
+RenderDoc 归属 scope     RULED / FROZEN
+  upstream report       ACCEPTED as future path（仅证据包，不声称归因）
+  fork modification     NOT AUTHORIZED
+  replay exclusion      NOT AUTHORIZED to amend
 ──────────────────────────────────────────────
 ```
 
-> ⚠️ **2026-09-29 只读审计后的状态修正**：
-> 本冻结点原先笼统记为「RenderDoc fork intact」。审计（`ed59113`）证明该表述
-> **不成立** —— `renderdoc/core/core.cpp` 存在 **+32 行未提交 tracked
-> modification**，违反 §2.1 与 §4 门 5。现修正为 **VIOLATED (A1, observed)**。
->
-> **两个概念不得互相覆盖**：
-> 「14 冻结物 INTACT」= **文件哈希**事实（已验证 14/14）；
-> 「fork 零 tracked diff」= **源码状态**事实，当前**不成立**。
->
-> A1 的处置 Contract 与三方案事实矩阵见 `docs/A1-FORK-INTEGRITY-CONTRACT.md`。
-> **未执行任何方案。**
-
-## Checkpoint 事实（冻结时实测）
+## Checkpoint 事实（2026-10-02 实测）
 
 | 项 | 值 |
 | --- | --- |
-| commits | 57（冻结点） |
+| commits | 86（`a81600e`） |
 | 工作树 | clean |
-| 冻结物 | `rdebug-validation` **14/14 MATCH（INTACT）** |
-| unit | 130 OK |
+| unit | **370 OK**（上版 130；本轮新增 119 项控制） |
 | transport | 58 OK |
-| integration | 63 OK |
+| integration | 63 tests OK，**但 process exit 3221225477 → INFRASTRUCTURE_FAILURE** |
 | audit | 18/18 + 1 recorded deviation |
+| workload 全量 | **16 tests OK / exit 0**（上版为 10 tests 含 1 失败） |
 | ruff | clean |
+| fork | 1 tracked / 1 declared；`audit_fork_integrity` exit 0 |
+| 14 冻结物 | ⚠️ **本轮未复验** |
 
-## 三条已闭环的项
+## 本轮两处必须点明的状态变化
 
-**`context_eid`** —— 完整 correctness 闭环：
+**1. `overall` 由 `NEEDS_REVIEW / exit 4 / neutral` 变为
+`BLOCKED_INFRA / exit 3 / failure`。**
 
-```
-CONFIRMED → Contract undefined → Contract defined (§2.10) → FIXED / VERIFIED
-```
+这不是回归，而是 execution accounting 修复后的**正确结果**：integration
+完成全部 63 项测试后无法干净退出，accounting 同行并列保留
+`tests_executed 63 / tests_failed 0 / test_result OK / process_exit_code
+3221225477`，并据此判为基础设施失败而非通过。修复前该行被记为 `PASS`。
 
-含机械验证闭环（缺陷存在 8 FAIL → 修复后 16 OK → 仅回退 `core.py` 再现 8 FAIL）。
-⚠️ 保留 OPEN 注记：**false-positive control verified by synthetic action tree;
-real capture confirmation pending** —— 不得升级措辞。
+**2. `integration` 由「63 OK」变为「63 OK 且 INFRASTRUCTURE_FAILURE」。**
 
-**CI gate 裁决（§4.1）** —— Contract + implementation 闭环：
-机械验证闭环（6 FAIL → 16 OK → 仅回退 `ci.py` 6 FAIL → 16 OK），
-真实 capture 矩阵、假阳性对照、边界对照全部成立。
-⚠️ 边界：**证明的是裁决逻辑满足 Contract，不是证明 CI 已成为放行门禁。**
-详见 `docs/FREEZE-CI-2026-09-29.md`。
+旧表述只记录了测试结果，未记录进程退出事实。两者都成立，缺一不可。
 
-**shader reflection** —— Contract 已定义，边界已调查，
-**未被证实为 runtime defect**。O2 经 **code-only identical** 机械验证
-（剥离注释后 685 行逐行比对 IDENTICAL，diff 35 行纯新增 0 删除），
-避免了「注释落错位置却以为完成」。
+## 本轮已闭环的新增项
+
+| workstream | 冻结文档 | 控制 |
+| --- | --- | ---: |
+| Pipeline readiness | `FREEZE-PIPELINE-READINESS-2026-10-01.md` | 47 |
+| Execution accounting | `FREEZE-EXIT-ACCOUNTING-2026-10-01.md` | 27 |
+| Scenario 生命周期（RETIRED） | `SCENARIO-LIFECYCLE-ADJUDICATION.md` | 18 |
+| Termination evidence | `FREEZE-TERMINATION-EVIDENCE-2026-10-01.md` | 34 |
+| RenderDoc 归属 scope | `SCOPE-DECISION-RENDERDOC-OWNERSHIP.md` | — |
+
+前三项与 termination 的控制均位于 **unit gate 内受强制**；termination 的
+真实子进程层（7 项）不在任何门禁内，故另有 3 项控制断言其仍存在。
+
+## 保持生效的 scope decision（为何现在不开启）
+
+| 项 | 不开启的理由 |
+| --- | --- |
+| **Release blocking** | teardown 缺陷未解；启用后 required gate 每次通过测试却无法干净退出，将**永久阻断**。这是前置条件，不是改进项。 |
+| **CI configuration 接线** | `.github/workflows/ci.yml` 仅为声明，**无 git remote，从未执行**。全部门禁证据来自单机。 |
+| **修改 RenderDoc fork** | `replay` 是 blocking 门禁 `fork_integrity` 的**排除面**，且现有 exception 明文「不向后延续」。若归因落在 replay，正确序列是重开 scope decision → 提交治理变更 → 修改 exception contract → 重新证明 blast radius。 |
+| **修订 replay 排除列表** | 唯一可得链条是 `crash → suspect replay → 扩大 exception`，不被允许。可接受链条尚未到达。 |
+| **F-N3-1** | ExecuteIndirect 已被正式降为 extra coverage sample 并移出 frozen acceptance scope。重开将直接突破现有 scope decision。 |
+| **N3-05B** | N3-05A 已完成 frozen acceptance；05B 属 renderer/generalization 扩展，**不是当前 correctness blocker**。 |
+| **D7 / D5** | 属「增加证据能力」，当前**没有新的 correctness defect 在等待**。D7 另受实际硬件矩阵限制，单机无法推导 cross-machine claim。 |
 
 ## 🔁 Reopen trigger（保留）
 
 > **未来一旦获得真实 reflection failure，立即重开 §2.11；
 > 不需要因为「catch 看起来可疑」提前修改。**
 
-`DESIGN_SPEC.md` §2.11.4 已载明三项重开条件：
+`DESIGN_SPEC.md` §2.11.4 的三项重开条件不变：真实 capture 使路径可达（已满足
+S2.1）、在该 capture 上复现失败、证明 consumer 响应。
 
-```
-1. 真实 capture 使路径可达        —— 已满足（S2.1）
-2. 在该 capture 上复现失败         —— 届时为触发点
-3. 证明 consumer 响应              —— 届时为触发点
-```
+Teardown 归因的重开条件（`PDB-ATTRIBUTION-RESULT.md` §6.4）：该构建的完整非裁剪
+PDB、可符号化的 RenderDoc build、或源码级对应关系。
 
-## 保持生效的 scope decision（为何现在不开启）
+## 尚未解决、且本轮**新发现**的缺口
 
-| 项 | 不开启的理由 |
-| --- | --- |
-| **CI configuration** | §4.1 裁决 Contract 已闭环，但**接线是新的工程边界**，须先答 6 个问题（放行/开发者检查之分、是否具备真实 replay runtime、`unknown` 的最终处理、5 个门的最小执行证据、baseline 进入方式、**能否区分 regression / unknown / infrastructure failure**）。**详见 `docs/FREEZE-CI-2026-09-29.md`** |
-| **F-N3-1** | 虽为 `REPRODUCED / NOT_EXPLAINED`，但 ExecuteIndirect 已被正式降为 extra coverage sample 并移出 frozen acceptance scope。**重开将直接突破现有 scope decision。** |
-| **N3-05B** | N3-05A 已完成 frozen acceptance；05B 属 renderer/generalization 扩展，**不是当前 correctness blocker**。 |
-| **D7 / D5** | 均属「增加证据能力」，当前**没有新的 correctness defect 在等待**。D7 另受实际硬件矩阵限制，单机无法推导 cross-machine claim。 |
+| # | 缺口 | 性质 |
+| --- | --- | --- |
+| G3 | workload 全量 discover 已于本轮复验并关闭（16 OK） | ✅ 已关闭 |
+| G4 | 0 tracked `.rdc` → `integration` / `cold_warm` / workload **无法仅凭仓库复现** | 结构性证据缺口 |
+| G5 | 无 remote，`ci.yml` 从未执行；全部门禁证据为单机 | 结构性证据缺口 |
+| G6 | `overall` 当前永不可能 PASS（Gate 4 `PROCESS_ONLY` + integration INFRA，两个独立的 by-design 原因） | 结构性 |
+| G7 | teardown 缺陷使 release blocking 今日不可用 | 依赖 |
+
+G4 尚待裁决：语料应纳入版本控制，还是被正式声明为外部前置条件。目前可复现性
+**无处被断言**，且静默依赖本机状态。
 
 ## 下一次开启工作时
 
 **单独选择一个 workstream，并从它自己的 Contract / evidence question 开始**，
 而不是自动从 OPEN 状态表中挑一个继续。
 
-若选择 CI，则起点是 `docs/FREEZE-CI-2026-09-29.md` 中预先识别的
-**6 个 CI integration Contract 问题**，而不是直接写 pipeline 配置。
-
 ## 本冻结**不**授权
 
 ```
-CI 接线 / 放行门禁配置                     NOT AUTHORIZED
-修改 reflection catch 行为 / 新增 error flag   NOT AUTHORIZED
-修改 semantic schema / diff logic / error contract  NOT AUTHORIZED
-新增语料                                       NOT AUTHORIZED
-O3（构造失败条件以证明该 catch）               NOT AUTHORIZED
-重开 F-N3-1                                    NOT AUTHORIZED（突破 scope decision）
-N3-05B / D5 / D7                              NOT AUTHORIZED
+Release blocking 接线 / 放行门禁配置              NOT AUTHORIZED
+CI workflow 实际执行（需 remote）                NOT AUTHORIZED
+修改 RenderDoc fork / 修订 replay 排除面          NOT AUTHORIZED
+teardown 修复（exit masking / os._exit / wrapper） NOT AUTHORIZED
+修改 reflection catch 行为 / 新增 error flag      NOT AUTHORIZED
+修改 semantic schema / diff logic / error contract NOT AUTHORIZED
+新增语料 / 语料入版本控制                        NOT DECIDED
+O3（构造失败条件以证明该 catch）                  NOT AUTHORIZED
+重开 F-N3-1                                       NOT AUTHORIZED（突破 scope decision）
+N3-05B / D5 / D7                                 NOT AUTHORIZED
+把 workload 纳入 gate                             RULED AGAINST
+把 diagnostic 结论升级为 crash 断言               RULED AGAINST（is_crash 恒 False）
 ```
