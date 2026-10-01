@@ -427,3 +427,69 @@ control proven; minimum arity 3 proven; unique minimal set disproven. The
 pipeline remains `BLOCKED_INFRA` / exit 3, correctly. No production fix, no
 change to the accounting Contract, no exit masking, `epoch` not reinstated,
 `_ctrl=None` not promoted.
+
+---
+
+## 10. Freeze status at `f579b6d`
+
+Workstream **COMPLETE / VERIFIED**. Root cause **OPEN / NOT_EXPLAINED**.
+
+The defect can now be stated exactly this far:
+
+> A deterministic NULL-read access violation occurs in a **C++ static
+> destruction phase inside the RenderDoc module**, driven from the CRT onexit
+> table, after the test body completed and `OK` was printed.
+
+And **not** any further:
+
+> ~~a known object in RenderDoc's replay teardown failed to destruct~~ — the
+> stack shows *module-level static destruction*. Which static it is, and whether
+> it belongs to the replay subsystem, is unknown.
+
+| evidence | status |
+| --- | --- |
+| arity = 3 | **PROVEN** |
+| `{B,C,X}` trigger family | **PROVEN** for tested `X in {A,E,F,G}` |
+| `{B,C,D}` negative control | **PROVEN** |
+| faulting module = RenderDoc | **PROVEN** |
+| fault = NULL-read AV (`0xC0000005`) | **PROVEN** |
+| faulting address `renderdoc+0x4A0A4E` | **PROVEN, reproduced** |
+| faulting thread = main, no worker | **PROVEN** |
+| phase = CRT onexit / static destruction | **PROVEN** |
+| specific static destructor | **UNKNOWN** |
+| specific source object / pointer | **UNKNOWN** |
+| NULL dereference mechanism | **UNKNOWN** |
+| replay subsystem attribution | **UNKNOWN** |
+| `epoch == 2` as cause | **EXCLUDED** |
+| `_ctrl = None` as cause | **UNPROVEN** |
+| "not simply a missing LocalDumps config" | **PROVEN** (round 3) |
+| why WER never engages | **OPEN** |
+| accounting workaround | **NONE** |
+| production code modification | **NONE** |
+
+### 10.1 Stop boundary
+
+Frozen here. **No mechanism may be inferred from `0x4A0A4E` or from the nearest
+export names.** An address plus a nearest-export approximation is not a
+function identity, and the three nearest exports on those frames describe work an
+image-teardown path would not plausibly be doing.
+
+### 10.2 Feasibility note for a future symbol/source attribution workstream
+
+Recorded as a scoping fact only; no attribution was performed.
+
+A matching `renderdoc.pdb` (4.03 MB) sits beside the loaded module at
+`renderdoc\x64\Release\pymodules\renderdoc.pdb`, timestamped
+`2026-08-24 09:18:55`, identical to `renderdoc.pyd`. Round 3 resolved frames to
+nearest exports only, because the cdb symbol path pointed at the Microsoft
+symbol server and not at this local PDB. Attribution therefore looks feasible
+without obtaining a symbol package, but whether the PDB actually covers the
+faulting offset is **untested** and must not be assumed.
+
+The boundary that would apply, if authorized: attribute the address to a function
+and source statement, identify the static and the NULL pointer, trace its
+lifetime, and check the attribution against the `{B,C,D}` negative control.
+Not in scope: changing the destructor, altering the exit path to avoid
+destruction, treating `_ctrl = None` as the faulting pointer, upgrading "belongs
+to RenderDoc" into "RenderDoc replay subsystem defect", or touching CI
+accounting or exit semantics.
