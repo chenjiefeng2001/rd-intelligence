@@ -5,28 +5,47 @@ the whole workload run."""
 
 import unittest
 
-from . import harness
+from . import harness, termination
 from .harness import record_failure, require_corpus, run_isolated
 
 
 @require_corpus()
 class TestReliabilityScenarios(unittest.TestCase):
     def _run(self, scenario):
-        code, out, err = run_isolated(scenario)
-        ok = code == 0 and "SCENARIO_OK" in out
+        result = run_isolated(scenario)
+        code = result["returncode"]
+        out = result["stdout"]
+        err = result["stderr"] or ""
+        observation = result["observation"]
+        ok = code == 0 and harness.SCENARIO_SENTINEL in out
+
         if not ok:
-            if code < 0:
-                record_failure("crashes", f"{scenario}: exit {code}")
-            elif "error" in (err or "").lower() and "Traceback" in (err or ""):
-                record_failure("unhandledExceptions", f"{scenario}: {err[-500:]}")
+            # Classify by measured evidence, not by guessing from the sign of
+            # the return code. code < 0 could never fire on Windows, where a
+            # real access violation measures as 0xC0000005.
+            klass = observation["termination_observation"]["class"]
+            if klass in (termination.NATIVE_TERMINATION_SUSPECTED,
+                         termination.SIGNAL_TERMINATION):
+                record_failure(
+                    "crashes",
+                    f"{scenario}: {klass}; {termination.summarise(observation)}")
+            elif klass == termination.PYTHON_FAILURE:
+                record_failure("unhandledExceptions",
+                               f"{scenario}: {err[-500:]}")
+            harness.record_termination(observation)
+
+        # Unchanged and load-bearing: this detects execution failure, which is
+        # a different question from how the process ended. A timeout has no
+        # returncode at all, so it fails here too, which is correct.
         self.assertEqual(
             code, 0,
-            f"scenario {scenario} failed (exit {code})\nstdout tail:\n{out[-800:]}"
-            f"\nstderr tail:\n{err[-800:]}",
+            f"scenario {scenario} failed: "
+            f"{termination.summarise(observation)}\n"
+            f"stdout tail:\n{out[-800:]}\nstderr tail:\n{err[-800:]}",
         )
-        self.assertIn("SCENARIO_OK", out)
+        self.assertIn(harness.SCENARIO_SENTINEL, out)
         harness.record_correctness(f"reliability[{scenario}]", ok,
-                                   f"isolated subprocess exit={code}")
+                                   termination.summarise(observation))
 
     def test_error_injection(self):
         self._run("error_injection")

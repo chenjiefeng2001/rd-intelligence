@@ -21,6 +21,13 @@ from rdebug.analysis.resource_flow import trace_resource
 from rdebug.analysis.shader_trace import debug_pixel
 from rdebug.session_cache import SessionManager
 
+from . import termination
+
+#: Printed by every scenario on success. Duplicated as a literal in
+#: scenarios.py, which is left untouched because it is also the retired
+#: scenario's evidence.
+SCENARIO_SENTINEL = "SCENARIO_OK"
+
 WORKLOAD_DIR = Path(__file__).parent
 CORPUS_DIR = WORKLOAD_DIR / "corpus"
 REPORTS_DIR = WORKLOAD_DIR / "reports"
@@ -209,6 +216,11 @@ REPORT = {
                     "failedRecoveries": 0, "corruptedResponses": 0,
                     "crossCaptureContamination": 0},
     "violations": [],
+    # Per-class termination breakdown. Kept OUT of "reliability" on purpose:
+    # scripts/workload_run.py does all(v == 0 for v in REPORT["reliability"]),
+    # so a nested dict there would silently turn the workload gate False.
+    "terminations": {},
+    "terminationEvidence": [],
 }
 
 
@@ -249,6 +261,20 @@ def record_failure(kind, detail):
     REPORT["violations"].append({"kind": kind, "detail": detail})
 
 
+def record_termination(observation):
+    """Record how a child ended, by evidence class.
+
+    This is evidence classification, not fault attribution. The class
+    native_termination_suspected says the status looked like an unhandled
+    native exception; it does not say a crash happened, and
+    tests.workload.termination.is_crash exists to keep that honest.
+    """
+    klass = observation["termination_observation"]["class"]
+    REPORT["terminations"][klass] = REPORT["terminations"].get(klass, 0) + 1
+    if len(REPORT["terminationEvidence"]) < 100:
+        REPORT["terminationEvidence"].append(observation)
+
+
 def latency_summary():
     return {
         tool: {
@@ -282,6 +308,8 @@ def write_report(gate_pass):
         "sessions": REPORT["sessions"][:50],
         "correctness": REPORT["correctness"],
         "reliability": REPORT["reliability"],
+        "terminations": REPORT["terminations"],
+        "terminationEvidence": REPORT["terminationEvidence"][:100],
         "violations": REPORT["violations"][:100],
     }
     with open(out, "w", encoding="utf-8") as f:
@@ -301,6 +329,8 @@ def print_summary(payload):
     for name, r in REPORT["correctness"].items():
         print(f"  {name:24s} {'PASS' if r['pass'] else 'FAIL'} {r['detail']}")
     print("Reliability:", {k: v for k, v in REPORT["reliability"].items()})
+    print("Terminations (evidence classes, not fault attribution):",
+          {k: v for k, v in REPORT["terminations"].items()})
     print("Unknown layers:", dict(REPORT["unknownLayers"]))
     print("GATE:", payload["gate"])
 
@@ -321,10 +351,17 @@ class WorkloadTest(unittest.TestCase):
 
 
 def run_isolated(scenario, timeout=600):
-    """Run a reliability scenario in a fresh subprocess. Native crashes
-    (access violations) are contained: the parent survives and the crash
-    becomes a recorded reliability data point."""
+    """Run a reliability scenario in a fresh subprocess and observe how it ended.
 
+    A timeout is recorded rather than re-raised. subprocess.TimeoutExpired
+    carries no .returncode at all, and this used to let it escape: the child was
+    killed and REPORT["reliability"] received no entry, so the one failure mode
+    that certainly occurred was invisible to the report.
+
+    The returncode is handed back exactly as the OS gave it, including None for
+    a timeout. Nothing is normalised here; classification lives in
+    tests.workload.termination.
+    """
 
     root = Path(__file__).parent.parent.parent
     env = dict(os.environ)
@@ -332,10 +369,35 @@ def run_isolated(scenario, timeout=600):
         str(root / "src") + os.pathsep + str(root / "tests")
         + os.pathsep + env.get("PYTHONPATH", "")
     )
-    proc = subprocess.run(
-        [sys.executable, "-m", "tests.workload.isolated_runner", scenario],
-        env=env, capture_output=True, text=True, timeout=timeout,
-        cwd=str(root),
-    )
-    tail = (proc.stderr or "")[-2000:]
-    return proc.returncode, proc.stdout, tail
+    cmd = [sys.executable, "-m", "tests.workload.isolated_runner", scenario]
+    try:
+        proc = subprocess.run(
+            cmd, env=env, capture_output=True, text=True, timeout=timeout,
+            cwd=str(root),
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", "replace")
+        stderr = exc.stderr or b""
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", "replace")
+        return {
+            "returncode": None,
+            "stdout": stdout,
+            "stderr": stderr,
+            "observation": termination.observe_from_timeout(exc),
+            "timed_out": True,
+        }
+    stderr = proc.stderr or ""
+    observation = termination.observe(returncode=proc.returncode,
+                                      stdout=proc.stdout or "",
+                                      stderr=stderr,
+                                      sentinel=SCENARIO_SENTINEL)
+    return {
+        "returncode": proc.returncode,
+        "stdout": proc.stdout or "",
+        "stderr": stderr,
+        "observation": observation,
+        "timed_out": False,
+    }
