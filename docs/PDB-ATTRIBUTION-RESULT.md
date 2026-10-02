@@ -133,3 +133,52 @@ exit-code masking. Teardown root cause remains **OPEN / NOT_EXPLAINED**. The
 accounting Contract and the frozen `f579b6d` accounting are untouched; this
 document corrects the module identity recorded there without altering its
 conclusions. No mechanism inferred from the nearest export name.
+
+## 4. 指令记录与磁盘字节不符（2026-10 由只读反汇编发现）
+
+对 `renderdoc.dll` 直接读取并解码故障偏移附近的机器码，结果与本文件此前
+记录的故障指令**不一致**：
+
+```
+0x4A0A42: 48 8b 03        mov rax, qword ptr [rbx]
+0x4A0A45: 48 8b cb        mov rcx, rbx
+0x4A0A48: 83 fa 01        cmp edx, 1
+0x4A0A4B: 75 20           jne 0x4A0A6D
+0x4A0A4D: ff 50           call qword ptr [rax+0x0]
+```
+
+### 4.1 两处不符
+
+1. **记录的指令在该偏移不存在。** `mov rbx, qword ptr [rax]` 的编码是
+   `48 8b 18`；该三字节在故障地址 ±96 字节范围内出现 **0 次**
+   （全 DLL 内共 522 次，故不是编码理解错误）。
+2. **记录的地址落在一条指令的第二个字节上。** 指令首字节是 `0x4A0A4D`，
+   而记录写的是 `0x4A0A4E`。x86 访问违例的 faulting IP 指向指令首字节，
+   故若确为此指令，地址应为 `0x4A0A4D`。
+
+`renderdoc.dll` 的 mtime 为 **2026-08-24**，早于全部崩溃记录（2026-09/10），
+期间未被替换，因此磁盘字节即崩溃当时的字节。
+
+### 4.2 故障形状因此改变
+
+实际序列是**经 vtable 的虚调用**：
+
+```
+mov rax, [rbx]     ; 从对象取 vtable 指针
+mov rcx, rbx       ; this
+call [rax]         ; 虚调用
+```
+
+`rax == 0` 意味着 `[rbx] == 0`，即 `rbx` 指向对象的**首 qword 为空** ——
+对象已被清零、已释放，或未完成构造。
+
+这与此前记录的「从空指针**读取** `rbx`」是**不同的故障形状**，指向不同的根因假设：
+读取型要求某个指针变量本身为空；虚调用型要求对象存在但其 vtable 槽为空。
+
+### 4.3 这不改变什么
+
+function attribution 仍为 **NOT_ESTABLISHED**。本次分析不需要符号即可确定
+故障形状与地址，但把 `0x4A0A4D` 映射到具体函数仍需符号表。
+
+按 scope decision，**未修改 RenderDoc、未启用 WER、未采集 dump**。本节为
+只读分析结果。
