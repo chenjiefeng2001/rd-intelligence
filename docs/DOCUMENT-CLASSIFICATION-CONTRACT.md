@@ -1,3 +1,21 @@
+---
+document_role: contract
+freshness_policy: mixed
+document_living_preamble: true
+document_default_policy: historical
+document_living_sections:
+  - "1. 要解决的问题"
+  - "2. 维度一：`document_role`"
+  - "3. 维度二：`freshness_policy`"
+  - "4. v1.1：`mixed` 的全覆盖"
+  - "5. 已标记的样本文档"
+  - "6. 控制范围"
+  - "8. 与已冻结决策的关系"
+document_mixed_note: >-
+  §1-§6、§8 为 living；§7（实施过程中暴露的两个缺陷）为
+  发现记录，按 document_default_policy 为 historical。preamble 含
+  schema_version 与 migrated_documents 等当前状态字段，故为 living。
+---
 # DOCUMENT CLASSIFICATION CONTRACT
 
 status: proposed
@@ -114,7 +132,7 @@ living 之外。
 
 没有关键词测试能区分二者，因此不做此类测试。
 
-## 5. 第一批四个样本文档
+## 5. 已标记的样本文档
 
 | 文档 | role | freshness_policy | 验证目标 |
 | --- | --- | --- | --- |
@@ -122,6 +140,17 @@ living 之外。
 | `docs/CURRENT-EVIDENCE-FREEZE.md` | `evidence_record` | `point_in_time` | 冻结数字不被误判为 stale |
 | `docs/AUDIT-2026-10-02-B.md` | `audit_record` | `point_in_time` | 审计记录不被要求匹配 HEAD |
 | `docs/CAPTURE-CORPUS-CONTRACT.md` | `contract` | `living` | 默认行为（living） |
+| `docs/DOCUMENT-CLASSIFICATION-CONTRACT.md`（本文件） | `contract` | `mixed` | schema 自身被同一套规则约束 |
+
+本文件标记自身，是为了让 schema **不能只约束别人**：若本文件日后出现
+living 区域的失效断言，它同样会被 living correction 的流程覆盖。
+
+`AUDIT-*` 与 `validation/phase*` 属于点时历史证据，**不新标记**。
+已标记的 `AUDIT-2026-10-02-B.md` 声明为 `point_in_time`，因此**不会**被要求
+匹配 HEAD —— 它不模拟 living 文档，这正是「不要让历史证据伪装成当前规范」
+的实现方式；取消标记只会把它退回「无声明」的模糊状态。
+
+**不把「未标记」当作错误。** 未标记文档不受本 schema 约束。
 
 `CI-ORCHESTRATION-CONTRACT.md` 的解析结果：26 个 section 中 16 个 living，
 preamble living，`### 真实状态` 从历史父节提升，**未分类 section 为 0**。

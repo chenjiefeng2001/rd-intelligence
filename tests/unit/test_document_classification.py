@@ -45,13 +45,17 @@ REPO_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 
-#: Documents marked in the first batch. A control asserts each is still
-#: classified, so none can be quietly unmarked.
+#: Documents marked in the first batch, plus the S1 expansion. A control
+#: asserts each is still classified, so none can be quietly unmarked.
+#: AUDIT-* and validation/phase* are deliberately absent: they are point-in-time
+#: evidence and are not being asked to look like current contracts. Absence is
+#: not an error -- an unmarked document is simply outside this schema.
 SAMPLES = {
     "docs/CI-ORCHESTRATION-CONTRACT.md": ("contract", "mixed"),
     "docs/CURRENT-EVIDENCE-FREEZE.md": ("evidence_record", "point_in_time"),
     "docs/AUDIT-2026-10-02-B.md": ("audit_record", "point_in_time"),
     "docs/CAPTURE-CORPUS-CONTRACT.md": ("contract", "living"),
+    "docs/DOCUMENT-CLASSIFICATION-CONTRACT.md": ("contract", "mixed"),
 }
 
 ROLES = ("contract", "evidence_record", "audit_record", "historical_note")
@@ -359,11 +363,11 @@ class TestDocumentClassificationSchema(unittest.TestCase):
                 "would be reintroduced here.")
 
     # 6 -- the samples are still classified
-    def test_the_four_samples_are_still_classified(self):
+    def test_the_classified_samples_are_still_classified(self):
         for rel in SAMPLES:
             self.assertIn(
                 rel, self.docs,
-                f"{rel} was part of the first batch but is no longer "
+                f"{rel} is a marked sample but is no longer "
                 "classified; either re-mark it or record the withdrawal "
                 "rather than letting coverage shrink unnoticed")
 
