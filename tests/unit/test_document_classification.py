@@ -59,6 +59,7 @@ SAMPLES = {
     "docs/AUDIT-2026-10-02-C.md": ("audit_record", "point_in_time"),
     "docs/REPORT-SCHEMA-OWNERSHIP.md": ("contract", "living"),
     "docs/CONTROL-ADMISSION-CONTRACT.md": ("contract", "living"),
+    "docs/OPEN-DECISIONS.md": ("contract", "living"),
 }
 
 ROLES = ("contract", "evidence_record", "audit_record", "historical_note")

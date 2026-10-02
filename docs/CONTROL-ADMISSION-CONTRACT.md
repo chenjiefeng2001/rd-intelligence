@@ -55,13 +55,26 @@ grandfathers: every control that existed before it
 
 ## 4. 已知不满足项（记录，不假装已修）
 
-现有控制中有若干仍只断言存在性。本规则**不追溯**要求它们全部重写 ——
-那是一次大规模改动，需单独授权。但逐条记录，避免「已符合新规」被误读：
+* **分类控制未核对值与语义。** schema 字段的存在被检查了，但 `status:` 与
+  `freshness_policy` 是否自洽从未被检查 —— 这正是审计 **F3**，其修复前提是共存
+  规则本身尚未定义（`OPEN / CLASSIFICATION-CONSISTENCY GAP`）。
+* **~~四态映射只断言源码文本存在~~ —— 已修复。**
+  `test_four_states_and_exit_mapping_are_unchanged` 曾以正则断言映射字符串存在，
+  属 EXISTENCE 而非 AGREEMENT。现补两项 FLOW 控制：
+  `test_exit_codes_agree_with_what_overall_actually_returns` 驱动 `overall()`
+  比对 `DEFAULT_EXIT_CODES`；`test_a_process_only_gate_holds_the_aggregate_off_pass`
+  用真实 `release-gates.json` 断言 §1.1 的不变式。
 
-* 分类控制断言 schema 字段存在，未断言其**值**与文档正文
-  `status:` 是否自洽（即审计 F3）。
-* `test_the_four_states_and_exit_mapping_are_unchanged` 以正则断言源码中存在
-  映射字符串，断言的是**文本存在**而非**运行结果一致**。
+  **revert-only 3/3 捕获**，而旧控制在同样三种漂移下**全部漏检**：
+
+  | 漂移 | 旧控制 | 新控制 |
+  | --- | --- | --- |
+  | 改 `BLOCKED_INFRA` 的 exit 码（文本仍在） | 漏检 | 捕获 |
+  | `overall()` 在 `REGRESSION` 时返回 `INFRA` | 漏检 | 捕获 |
+  | `PROCESS_ONLY` 门不再贡献 `UNKNOWN` | 漏检 | 捕获 |
+
+  这正是本 contract 存在的理由：旧控制问的是「字符串在不在」，
+  而三种漂移都没有删掉任何字符串。
 
 ## 5. 未纳入
 

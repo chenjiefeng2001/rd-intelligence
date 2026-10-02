@@ -105,6 +105,83 @@ class TestLintIsAUnitGatePrecondition(unittest.TestCase):
                          "mapping and a new readiness combination.")
 
     # 3 -- no fifth state, no changed exits
+    def test_exit_codes_agree_with_what_overall_actually_returns(self):
+        """FLOW, not EXISTENCE.
+
+        The sibling control asserts the mapping strings are present in the
+        source. That is existence: a later edit could leave every string intact
+        while overall() started returning something else, and the control would
+        stay green. Recorded as a deviation against
+        docs/CONTROL-ADMISSION-CONTRACT.md section 4, which says exactly this
+        about this control.
+
+        So this drives overall() and compares what it returns against
+        DEFAULT_EXIT_CODES. A synthetic spec with every gate IMPLEMENTED is used
+        because the real one keeps benchmark_archive PROCESS_ONLY, which holds
+        the aggregate off PASS by design -- asserted separately below.
+        """
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "rg", os.path.join(REPO_ROOT, "scripts", "release_gate.py"))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        everything = {"gates": [{"id": "g1", "state": "IMPLEMENTED",
+                                 "required_execution": True,
+                                 "blocking": True}]}
+
+        def row(outcome):
+            return {"gate": "g1", "outcome": outcome, "state": "IMPLEMENTED",
+                    "required_execution": True, "attempted": True,
+                    "executed": 1}
+
+        # Compared against the module's constants, not their names. PASS_OVERALL
+        # has the value "PASS", so asserting the string "PASS_OVERALL" failed
+        # against a mapping that was already correct -- this control's first
+        # version mistook a constant for its own name, which is the same
+        # near-miss the section 6.1 mapping work ran into.
+        for outcome, state in (("PASS", module.PASS_OVERALL),
+                               ("REGRESSION", module.FAIL_REGRESSION),
+                               ("INFRASTRUCTURE_FAILURE", module.BLOCKED_INFRA),
+                               ("UNKNOWN", module.NEEDS_REVIEW)):
+            got = module.overall(everything, [row(outcome)])
+            self.assertEqual(
+                got["status"], state,
+                f"one {outcome} gate produced {got['status']!r}, not {state!r}")
+            self.assertEqual(
+                got["exit_code"], module.DEFAULT_EXIT_CODES[state],
+                f"{state} returned exit {got['exit_code']}, but "
+                f"DEFAULT_EXIT_CODES says {module.DEFAULT_EXIT_CODES[state]}. "
+                "The strings in the source are not the mapping the pipeline "
+                "actually uses.")
+
+    def test_a_process_only_gate_holds_the_aggregate_off_pass(self):
+        """The invariant from contract 1.1, checked against the real spec.
+
+        Declaring a gate PROCESS_ONLY must make it impossible to report PASS.
+        If this ever passes, a gate with nothing to run has stopped holding
+        the aggregate off PASS -- which is the failure the whole four-state
+        ordering exists to prevent.
+        """
+        import importlib.util
+        loader = importlib.util.spec_from_file_location(
+            "rg", os.path.join(REPO_ROOT, "scripts", "release_gate.py"))
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+        with open(os.path.join(REPO_ROOT, "release-gates.json"),
+                  encoding="utf-8") as fh:
+            spec = json.load(fh)
+        rows = [{"gate": g["id"], "outcome": "PASS", "state": "IMPLEMENTED",
+                 "required_execution": bool(g.get("required_execution", True)),
+                 "attempted": True, "executed": 1}
+                for g in spec["gates"]]
+        got = module.overall(spec, rows)
+        self.assertNotEqual(
+            got["status"], "PASS",
+            "every implemented gate passed and the aggregate still reached "
+            "PASS, so a declared PROCESS_ONLY gate stopped holding it off")
+        self.assertEqual(got["status"], "NEEDS_REVIEW")
+
     def test_four_states_and_exit_mapping_are_unchanged(self):
         path = os.path.join(REPO_ROOT, "scripts", "release_gate.py")
         with open(path, encoding="utf-8") as fh:

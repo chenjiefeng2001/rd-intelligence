@@ -10,9 +10,9 @@ document_point_in_time_note: >-
 
 冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
 前一刷新基线为 `a81600e`）
-baseline_commit: bbd011d
+baseline_commit: 07305d2
 baseline_drift: 1
-冻结点 commit：`a898381`（107 commits）
+冻结点 commit：`a898381`（108 commits）
 
 `baseline_drift` 是本文档自陈的陈旧度，容许上界 5。它**不做等值断言**：写入
 本文档的那个提交本身就是下一个提交，任何要求「声明值 == 实际值」的规则在提交
