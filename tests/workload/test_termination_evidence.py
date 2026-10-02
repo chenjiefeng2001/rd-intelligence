@@ -27,7 +27,7 @@ REPO_ROOT = os.path.dirname(
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from tests.workload import termination as T  # noqa: E402
+from tests.workload import termination as T  # noqa: E402 - needs path above
 
 GCC = shutil.which("gcc") or shutil.which("cc") or shutil.which("clang")
 

@@ -1,5 +1,5 @@
 {
-  "schema": "rdebug-release-gates/5",
+  "schema": "rdebug-release-gates/6",
   "declared_at": "2026-09-29",
   "schema_history": {
     "rdebug-release-gates/1": "gate set and I1/I2 enforcement",
@@ -35,7 +35,25 @@
       "requires": {
         "capabilities": []
       },
-      "rationale": "Stable Core pure logic. No RenderDoc, so it cannot silently skip wholesale; the floor exists to catch a discovery failure that runs nothing."
+      "rationale": "Stable Core pure logic. No RenderDoc, so it cannot silently skip wholesale; the floor exists to catch a discovery failure that runs nothing.",
+      "lint": {
+        "command": [
+          "python",
+          "-m",
+          "ruff",
+          "check",
+          "--output-format=concise",
+          "."
+        ],
+        "rationale": "Static analysis configured in pyproject.toml with no executor. Four violations survived several full pipelines for that reason.",
+        "probe_command": [
+          "python",
+          "-m",
+          "ruff",
+          "--version"
+        ],
+        "probe_rationale": "A missing ruff launched as `python -m ruff` exits 1, the same code ruff uses for 'found violations'. Without an availability probe an absent tool is reported as a content regression."
+      }
     },
     {
       "id": "transport",

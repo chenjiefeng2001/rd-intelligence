@@ -176,7 +176,7 @@ def warm(mgr, capture, inventory, eid, n=WARMUP_QUERIES):
             pass
         try:
             mgr.query(capture, "trace_resource", resource=target, eid=eid)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - this query is a warm-up for the capture, not part of the comparison
             pass
     return n
 
@@ -241,11 +241,11 @@ def run(capture, warmup=WARMUP_QUERIES, mgr=None):
         # this capture's semantics when A_cold runs.
         try:
             mgr.ping(capture)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 - ping failure means the capture is not debuggable here; the gate records that as a verdict rather than raising
             raise GateAbort(f"worker did not start: {type(e).__name__}: {e}")
         try:
             inventory = mgr.inventory(capture)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 - inventory is a precondition probe; its failure is reported as missing capability, not raised
             raise GateAbort(f"inventory failed: {type(e).__name__}: {e}")
         cases = build_cases(inventory)
         eid = inventory["last_event_id"]

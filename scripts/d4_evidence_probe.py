@@ -100,7 +100,7 @@ def probe_session(capture, interleaves, pixels):
             categories["domain_query_error"] = "no error raised"
         except RDebugError as e:
             categories["domain_query_error"] = f"RDebugError: {e}"
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 - the probe classifies failures into categories, so the exception type is data rather than control flow
             categories["domain_query_error"] = f"{type(e).__name__}: {e}"
         categories["unsupported_operation"] = _try_debug(sess, pixels["a"])
         categories["bad_parameter"] = "handled at the transport boundary, not here"
@@ -115,7 +115,7 @@ def _try_debug(sess, xy):
     try:
         sess.debug_pixel(xy[0], xy[1], max_steps=16)
         return "succeeded (this capture is debuggable)"
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 - debugeability is an observation being recorded, so every failure mode is in scope
         return f"{type(e).__name__}: {e}"
 
 

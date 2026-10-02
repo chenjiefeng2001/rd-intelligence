@@ -87,7 +87,7 @@ def _probe_renderdoc(repo_root, env):
                 capture_output=True, text=True, timeout=30,
             )
             commit = out.stdout.strip() or None
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - no git means no commit to report; absence is the answer, not an error
             commit = None
 
     return {"fork_present": fork_present,
@@ -111,7 +111,7 @@ def _probe_gpu(repo_root, env):
                 replay_supported = bool(s._cap.LocalReplaySupport())
             finally:
                 s.close()
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - the probe closes over whatever the import left behind
             present = False
     return {"present": present, "driver": driver,
             "replay_supported": replay_supported,
@@ -132,7 +132,7 @@ def _probe_corpus(repo_root, env):
             capture_output=True, text=True, timeout=60,
         )
         tracked = len([ln for ln in out.stdout.splitlines() if ln.strip()])
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - an unrunnable git means tracked count is unknown, which the caller treats as unavailable rather than fatal
         tracked = 0
     manifest_path = os.path.normpath(
         os.path.join(repo_root, "..", "rdebug-validation", "reports", "n3",
@@ -159,7 +159,7 @@ def _probe_corpus(repo_root, env):
                 if h.hexdigest() != rec.get("sha256"):
                     bad.append(name)
             manifest_match = not bad
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - an unreadable manifest means the corpus cannot be verified; that is reported as an unmet requirement
             manifest_match = None
     return {"captures_present": bool(present), "capture_count": count,
             "tracked_captures": tracked, "manifest_match": manifest_match,
@@ -179,7 +179,7 @@ def _probe_runtime(repo_root, env):
     for mod in ("rdebug", "rdebug_mcp", "rdebug_ide"):
         try:
             __import__(mod)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - capability detection is the question -- 'can this import' is answered by any failure, not by one exception type
             dependencies_ok = False
             missing.append(mod)
     version = sys.version_info[:3]

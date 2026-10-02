@@ -7,11 +7,11 @@ document_living_note: >-
 ---
 # LINT EXECUTION CONTRACT
 
-status: design-approved
+status: implemented
 schema_version: 1
-implementation: pending
-authorized: no
-gate: none — no gate reads this file yet
+implementation: complete
+authorized: yes
+scope: existing unit gate; no eighth gate
 
 ## 1. 记录原因
 
@@ -39,7 +39,7 @@ unit gate
 * gate **数量**不是覆盖质量的指标，已由本轮审计证明；
 * 静态质量检查的性质更接近 unit 的前置条件，而非独立验证域。
 
-**本阶段只做设计。未获实施授权，不改门。**
+**已实施。** `release-gates.json` 的 `unit` 门带 `lint` 前置（`schema` 由 `/5` 升为 `/6`），门数仍为 7。
 
 ## 3. 问题 A：lint failure 的归类
 
@@ -99,7 +99,59 @@ review）。这两项留待实施阶段确定，本文件不猜测。
 它**不影响当前 release verdict**：`BLOCKED_INFRA / exit 3` 的成因是
 integration 门进程未干净退出，与 lint 无关。
 
-## 6. 下一步的前置条件
+## 6. 实施结果与实施中发现的三件事
 
-实施前需要单独授权，且需先裁决 §3.1 的三条出路。
-在本文件状态变为 `implemented` 之前，不得声称 lint 已被门禁覆盖。
+**归类的可执行形式需要可用性探测。** ruff 只用退出码即可分类，但
+`python -m ruff` 在没有 ruff 的机器上退出码也是 **1**，与「发现违规」相同。
+不做探测时，「ruff 缺失」会被报成内容回归 —— 这一点是被
+`test_lint_that_cannot_run_stops_the_gate` 抓到的，因为它驱动的是真实
+`run_gate` 而不是纯映射函数。`unit.lint.probe_command`（`ruff --version`）
+因此是契约的一部分，不是便利设施。探测失败 → INFRA。
+
+**已有控制抓到了我的回归。** 加入 lint 前置后，
+`test_orchestrator_marks_child_processes` 失败：递归 marker 原本在门命令
+spawn 之前设置，而 lint 的 `subprocess.run` 出现在它之前。当时并无实际递归
+（ruff 不执行测试套件），但该控制的意图是 orchestrator 的每个子进程都应看到
+marker，而一个日后多走一步的 lint 命令会悄悄绕过它。修法是把 marker 提前到
+任何子进程 spawn 之前，并把 lint 辅助函数移到 `run_gate` 之后，使文件文本
+顺序与 spawn 顺序一致。
+
+**报告曾丢弃 lint 子记录。** `build_report` 按白名单重建 gate 行，
+`lint` 不在其中，于是 unit 因 lint 判 `REGRESSION` 时，报告只有一串 detail
+而没有任何字段指明是哪个检查产生的。已透传，并加控制防止再次被丢 ——
+这与当初把 `tests_executed` 加进白名单是同一理由。
+
+**语法错误与规则违规同为退出码 1。** ruff 对「文件无法解析」与「发现违规」
+都给 1，因此都归 `REGRESSION`。对语法错误而言这是可辩的：文件坏了就是代码
+坏了。但「退出码 1 = 存在规则违规」并不严格成立，本文件据此修正措辞。
+
+## 7. 验收（真实 pipeline 运行，非模拟）
+
+向仅由 `unit` 门执行的文件注入一条真实 `UP031` 违规：
+
+```
+基线        exit 3 / BLOCKED_INFRA    unit PASS 434
+注入违规后  exit 2 / FAIL_REGRESSION  unit REGRESSION executed=0 exit=None
+                                    integration INFRASTRUCTURE_FAILURE 63
+                                    accounting_consistent True / 0 条不一致
+恢复后      exit 3 / BLOCKED_INFRA    unit PASS 434
+```
+
+七项断言全通过：unit 为 `REGRESSION`；**integration 仍保留自己的
+`INFRASTRUCTURE_FAILURE`**；总体按既有优先级升为 `FAIL_REGRESSION / exit 2`；
+accounting 未产生假不一致；unit 未执行测试（`executed=0`）；lint 子记录
+保留独立 outcome。
+
+`exit_code` 为 `None` 而非 lint 的 1 是刻意的：门的进程从未运行，把它记为 1
+会让 accounting 报出「非零退出但裁决未承认」这一并不存在的矛盾。
+
+第一次验收尝试注入的是 `scripts/cold_warm_gate.py`，即
+`cold_warm_equivalence` 门自己的脚本，于是该门一并失败，accounting 报的
+不一致是**真实的**而非误报。那次失败属于验收构造不当，不是实现缺陷。
+
+## 8. 仍未决定
+
+* §3.1 三条出路已由裁决定为「沿用现有优先级，不新增状态、不降级」。
+* **noqa 永久抑制的批准人**仍未定义。
+* **到期日的自动检查机制**仍未实现：本阶段只强制「临时抑制必须带日期」，
+  不检查该日期是否已过。按裁决，未自行决定。

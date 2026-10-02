@@ -238,7 +238,7 @@ class TestDiffPixel(unittest.TestCase):
         self.assertNotIn("note", entry)
 
     def test_shader_values_enabled_different_becomes_first_divergence(self):
-        inputs_by_x = lambda x, y: [  # noqa: E731
+        inputs_by_x = lambda x, y: [  # noqa: E731 - a named def here would restate the call table without adding to it
             {"name": "v1",
              "value": [0.5, 0.5, 0.5, 1.0] if x == 10 else [0.9, 0.1, 0.1, 1.0]}
         ]

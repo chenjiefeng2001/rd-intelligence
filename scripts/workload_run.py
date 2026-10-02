@@ -11,7 +11,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
-from tests.workload import harness  # noqa: E402
+from tests.workload import harness  # noqa: E402 - needs path above
 
 
 def main():

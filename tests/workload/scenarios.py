@@ -13,12 +13,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "tests"))
 
 
-from rdebug.adapter.core import CaptureSession  # noqa: E402
-from rdebug.analysis.pixel_trace import trace_pixel  # noqa: E402
-from rdebug.analysis.resource_flow import trace_resource  # noqa: E402
-from rdebug.analysis.shader_trace import debug_pixel  # noqa: E402
-from rdebug.errors import QueryError  # noqa: E402
-from rdebug.session_cache import SessionManager  # noqa: E402
+from rdebug.adapter.core import CaptureSession  # noqa: E402 - needs path above
+from rdebug.analysis.pixel_trace import trace_pixel  # noqa: E402 - needs path above
+from rdebug.analysis.resource_flow import trace_resource  # noqa: E402 - needs path above
+from rdebug.analysis.shader_trace import debug_pixel  # noqa: E402 - needs path above
+from rdebug.errors import QueryError  # noqa: E402 - needs path above
+from rdebug.session_cache import SessionManager  # noqa: E402 - needs path above
 
 
 def _caps():

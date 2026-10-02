@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "rdebug-release-gates/5"
+SCHEMA = "rdebug-release-gates/6"
 
 PASS = "PASS"
 REGRESSION = "REGRESSION"
@@ -234,7 +234,31 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
     # being run from inside the gate it exercises, and stand down. Without it
     # that test re-enters this runner, which re-enters the suite, which re-enters
     # the test, and the run times out having proved nothing.
+    # Set the recursion marker once, before any child is spawned. Adding the
+    # lint precondition put a subprocess.run above this line, which broke
+    # test_orchestrator_marks_child_processes -- and the control was right to.
+    # Ruff does not execute the suite, so nothing was actually recursing, but
+    # the guard's purpose is that every child of the orchestrator sees the
+    # marker, and a lint command that grew a step would have quietly escaped it.
     env["RDEBUG_GATE_RUN"] = "1"
+
+    # Lint is a precondition of this gate, not a gate. It runs before the gate's
+    # own command and short-circuits it, so a violation is reported without
+    # spending the run on tests whose result cannot change the verdict.
+    lint_spec = gate.get("lint")
+    if lint_spec:
+        lint_outcome, lint_detail, lint_exit, lint_cmd = run_lint(
+            lint_spec, repo_root, env, timeout=timeout)
+        if lint_outcome != PASS:
+            # The gate's own process never ran, so its exit code is honestly
+            # None rather than lint's. Folding lint's exit into the gate row
+            # would make a legitimate REGRESSION look like a gate that ignored
+            # its own non-zero exit, and accounting_inconsistencies would then
+            # report a contradiction that does not exist.
+            return record(lint_outcome, lint_detail, executed=0, exit_code=None,
+                          lint={"command": lint_cmd, "outcome": lint_outcome,
+                                "exit_code": lint_exit, "detail": lint_detail})
+
     proc = subprocess.run(
         gate["command"], cwd=repo_root, env=env,
         capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -253,7 +277,7 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         try:
             with open(report_path, encoding="utf-8") as fh:
                 verdict = json.load(fh)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001 - an unreadable verdict is INFRASTRUCTURE_FAILURE with the parse error as detail; the type adds nothing
             return record(INFRA, f"unreadable verdict: {e}")
         return record(verdict.get("outcome", INFRA),
                       _verdict_detail(verdict),
@@ -322,6 +346,86 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         return record(REGRESSION, f"exit {proc.returncode}: {tail[:120]}",
                       exit_code=proc.returncode)
     return record(PASS, "exit 0", exit_code=proc.returncode)
+
+
+LINT_DETAIL_LINES = 12
+
+
+def classify_lint(exit_code=None, stdout="", stderr="", launch_error=None):
+    """Map a lint run onto the existing four states. No fifth state.
+
+    Ruled in docs/LINT-EXECUTION-CONTRACT.md and unchanged from there:
+
+      ruff absent, not run, or unable to read its config -> INFRA
+      ruff ran and found violations                     -> REGRESSION
+
+    The split is whether anything was concluded about the code. A gate that
+    could not run has no conclusion, and recording one anyway is how a missing
+    tool turns into an accusation. This is the same distinction the integration
+    gate is being held to when its 63 tests pass and its process dies.
+
+    Exit codes: 0 clean, 1 violations. Anything else is INFRA, including
+    2 and 127, because only those two carry a meaning and guessing at the rest
+    would fail open.
+    """
+    if launch_error:
+        return INFRA, f"lint precondition could not run: {launch_error}"
+    stream = (stdout or "") + (stderr or "")
+    if exit_code == 0:
+        return PASS, "lint precondition: no violations"
+    if exit_code == 1:
+        lines = [ln for ln in stream.splitlines() if ln.strip()]
+        detail = f"lint precondition: {len(lines)} violation line(s)"
+        for ln in lines[:LINT_DETAIL_LINES]:
+            detail += "\n  " + ln
+        return REGRESSION, detail
+    return INFRA, (f"lint precondition exited {exit_code!r}, which is "
+                   "neither 0 (clean) nor 1 (violations); the gate could "
+                   "not reach a conclusion")
+
+
+def _lint_probe_cmd(cmd):
+    """Derive an availability probe from the check command.
+
+    Mapping the exit code alone is not enough. A missing ruff launched as
+    `python -m ruff` exits 1, which is the same code ruff uses for "found
+    violations" -- so an absent tool was being reported as a content
+    regression. Found by driving run_gate rather than classify_lint, which is
+    why the mapping alone was not enough of a control.
+    """
+    return ["--version" if part == "check" else part for part in cmd]
+
+
+def run_lint(lint_spec, repo_root, env, timeout=None):
+    """Run the lint precondition. Returns (outcome, detail, exit_code, cmd)."""
+    cmd = list(lint_spec.get("command") or [])
+
+    probe = list(lint_spec.get("probe_command") or []) or _lint_probe_cmd(cmd)
+    if probe and probe != cmd:
+        try:
+            probe_proc = subprocess.run(
+                probe, cwd=repo_root, env=env, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=timeout)
+        except (OSError, ValueError) as exc:
+            outcome, detail = classify_lint(launch_error=str(exc))
+            return outcome, detail, None, cmd
+        if probe_proc.returncode != 0:
+            outcome, detail = classify_lint(
+                launch_error=(f"lint is not runnable here "
+                              f"({' '.join(probe)} exited "
+                              f"{probe_proc.returncode!r})"))
+            return outcome, detail, None, cmd
+
+    try:
+        proc = subprocess.run(cmd, cwd=repo_root, env=env, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace",
+                              timeout=timeout)
+    except (OSError, ValueError) as exc:
+        outcome, detail = classify_lint(launch_error=str(exc))
+        return outcome, detail, None, cmd
+    outcome, detail = classify_lint(exit_code=proc.returncode,
+                                    stdout=proc.stdout, stderr=proc.stderr)
+    return outcome, detail, proc.returncode, cmd
 
 
 def run_all(spec, repo_root, env=None, only=None, timeout=None, runner=None):

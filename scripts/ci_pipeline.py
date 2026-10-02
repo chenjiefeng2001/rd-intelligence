@@ -63,7 +63,7 @@ def load_pipeline_spec(path):
             doc = json.load(fh)
     except FileNotFoundError:
         raise PipelineAbort(f"pipeline spec not found: {path}", [path])
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 - any spec parse failure becomes a PipelineAbort with the path; propagating the original type would only change the message
         raise PipelineAbort(f"pipeline spec unreadable: {e}", [path])
     if doc.get("schema") != SCHEMA:
         raise PipelineAbort(f"pipeline spec schema {doc.get('schema')!r} "
@@ -143,7 +143,7 @@ def run_orchestrator(spec, repo_root, timeout=None, extra_env=None):
     try:
         with open(report_path, encoding="utf-8") as fh:
             report = json.load(fh)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 - an unreadable report is an abort condition, and the reason belongs in the message not in a traceback
         raise PipelineAbort(f"gate report unreadable: {e}", [report_path])
     return proc.returncode, report, proc
 
@@ -210,6 +210,12 @@ def build_report(spec, exit_code, gate_report, unmet, stdout_tail="",
             "blocking": g.get("blocking"),
             "detail": g.get("detail"),
             "spec_ref": g.get("spec_ref"),
+            # The lint precondition is part of this gate's outcome and carries
+            # its own command, exit code and classification. Dropping it here
+            # would leave the report saying REGRESSION with no record of which
+            # check produced it, which is the same omission the test result
+            # would have been.
+            "lint": g.get("lint"),
         })
     inconsistencies = accounting_inconsistencies(gates)
     return {
@@ -242,7 +248,7 @@ def collect_readiness(repo_root, spec, report_path=None):
     """
     try:
         import pipeline_readiness as readiness_mod
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - readiness is a probe: a probe that fails to import reports itself rather than aborting the gate run
         return {"available": False,
                 "error": f"{type(exc).__name__}: {exc}",
                 "meaning": "readiness could not be observed; this is not a "
@@ -258,7 +264,7 @@ def collect_readiness(repo_root, spec, report_path=None):
         return {"available": True, "scope": "capability",
                 "executes_anything": False,
                 "environment": environment, "gates": gates}
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - same probe contract -- collected data must survive a failure inside it
         return {"available": False,
                 "error": f"{type(exc).__name__}: {exc}",
                 "meaning": "readiness probe failed; no gate verdict is implied"}
@@ -320,7 +326,7 @@ def _write(path, report):
     try:
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=1, default=str)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - a failed write must not replace the run's exit code with an I/O traceback
         pass
 
 
