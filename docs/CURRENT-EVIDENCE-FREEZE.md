@@ -10,9 +10,9 @@ document_point_in_time_note: >-
 
 冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
 前一刷新基线为 `a81600e`）
-baseline_commit: d1c3522
+baseline_commit: 6f82f82
 baseline_drift: 1
-冻结点 commit：`a898381`（114 commits）
+冻结点 commit：`a898381`（116 commits）
 
 `baseline_drift` 是本文档自陈的陈旧度。**刷新节奏为 milestone** ——
 即已授权工作流完成并冻结、实现状态改变、或 OPEN 项得到裁决时才刷新；
