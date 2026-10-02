@@ -17,36 +17,72 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 **不做选择。** 每项只列出选项、各自的后果，以及裁决前无法推进的部分。
 任何一项在没有裁决的情况下被实现，都等于把未决语义伪装成已决规则。
 
-## 2. F3 — `freshness_policy` 与治理 `FROZEN` 如何共存
+## 2. F3 — `freshness_policy` 与正文 `status:` 行
 
 **status: OPEN / CLASSIFICATION-CONSISTENCY GAP**
 
-问题：`freshness_policy: living` 的语义是「必须与当前状态一致」；
-`status: FROZEN` 的语义是「内容不再变更」。两者不矛盾，但共存规则不存在。
-`LINT-EXECUTION-CONTRACT.md` 当前两者并存且无控制可判对错。
+### 2.1 实测后范围已缩小
+
+**`status:` 位于正文，不在 front matter。** front matter 里出现 `status`
+会被分类控制当未知键拒绝 —— 这不是巧合，而是该 schema 的既有约束。
+因此这不是「两个字段冲突」，而是「机器校验的 schema 字段」与
+「无人校验的散文状态行」并存。
+
+全仓同时具备两者的文档共 5 份：
+
+| 文档 | freshness_policy | 正文 status |
+| --- | --- | --- |
+| `LINT-EXECUTION-CONTRACT.md` | `living` | **FROZEN** |
+| `CONTROL-ADMISSION-CONTRACT.md` | `living` | `proposed` |
+| `DOCUMENT-CLASSIFICATION-CONTRACT.md` | `mixed` | `proposed` |
+| `OPEN-DECISIONS.md` | `living` | `active` |
+| `REPORT-SCHEMA-OWNERSHIP.md` | `living` | `implemented` |
+
+**只有 1 份主张内容冻结。** 其余四份的散文状态都不与 `living` 冲突：
+`proposed` / `active` / `implemented` 描述的是治理进度，不是文本时效。
+
+故实际待决问题不是「二者如何普遍共存」，而是**一个**用例。
+
+### 2.2 该用例的选项
 
 | 选项 | 后果 | 裁决前无法做的事 |
 | --- | --- | --- |
-| **A. 治理状态不参与 freshness** — `status` 属治理层，`freshness_policy` 只描述文本时效；FROZEN 的 living 文档即「规范文本已冻结，但若实现变化仍需更新」 | 需新增第三个维度或显式说明二者正交；现有分类控制可加一条正交性检查 | 无法判定 LINT contract 当前声明是否合法 |
-| **B. FROZEN 蕴含 point_in_time** — 冻结文档不再要求与当前状态一致 | 已冻结的 6 份文档需重审 `freshness_policy`；「冻结但必须随实现更新」这一诉求无法表达 | 无法为 FROZEN 文档写正确的 living correction 流程 |
-| **C. 禁止共存** — FROZEN 文档必须声明 `point_in_time` | 需修改至少 1 份已冻结文档；`as_of_commit` 语义要重新界定 | 无法判定哪些文档违规 |
+| **A. 散文 status 不受 schema 约束** —— 二者分属不同层，无需规则 | 无需改任何文档；F3 关闭。但「散文状态可与 front matter 矛盾」成为既定事实 | 无法为散文行写任何检查 |
+| **B. 散文 status 须与 freshness_policy 相容** —— `FROZEN` 要求文档声明 `point_in_time` | 该文档改为 `point_in_time`；「冻结但随实现更新」的表述不再可用 | 无法判定它当前声明是否合法 |
+| **C. 禁止正文出现 status 行** —— 状态必须是 schema 字段 | 5 份文档的状态需全部迁入 front matter 并加入 SCHEMA_KEYS | 无法迁移 |
 
-**裁决所需的一句话**：「冻结」指的是规范文本冻结，还是治理状态冻结。
+**裁决所需的一句话**：正文的散文 `status:` 行是否受 schema 约束。
+先前记录的「冻结指规范文本还是治理状态」仍然有效，但它是 B 与 A 的区分点之一，
+而非唯一要回答的问题。
 
 ## 3. F4 — drift 界的基准节奏
 
 **status: OPEN / CALIBRATION GAP**
 
-问题：drift 界每 2 次提交即触发一次。它测量的是一个**节奏未声明**的刷新流程。
+### 3.1 实测节奏
 
-| 选项 | 后果 | 裁决前无法做的事 |
+`CURRENT-EVIDENCE-FREEZE.md` 相邻两次刷新的提交间隔：
+
+```
+[1, 1, 1, 2, 1, 1, 3, 3, 3, 2, 2, 1, 19, 9, 1, 1, 3]
+中位数 2   最大 19   共 17 个间隔
+```
+
+**实测节奏不是「每 2 提交」。** 中位数为 2，但存在 19 与 9 的长间隔。
+`MAX_DRIFT=5` 低于实测最大间隔 19，因此它会在长间隔期间触发。
+
+### 3.2 后果测算
+
+| 若节奏定为 | 则 MAX_DRIFT 至少需 | 现状 |
 | --- | --- | --- |
-| **A. 每提交刷新** — `baseline_commit` 随每次提交更新，`baseline_drift` 恒为 1 | drift 界退化为形式检查；陈旧度不再有信号 | 无法校准窗口 |
-| **B. 每里程碑刷新** — 仅在里程碑提交更新基线 | 需先定义何为里程碑；非里程碑提交期间 drift 会增长 | 无法校准窗口 |
-| **C. 事件驱动刷新** — 仅在状态文档所描述的事实变化时更新 | 需机器可判定「事实是否变化」；最复杂但语义最准 | 无法校准窗口 |
+| 每提交或近每提交（中位 1–2） | 3–5 即足够 | 5 偏宽，不会触发 |
+| 每阶段 / 里程碑（实测最长 19） | ≥ 19 | 5 会误报，且**已经**误报过 |
 
-**裁决所需的一句话**：状态文档应在何时刷新。当前无论选哪个，`MAX_DRIFT=5`
-都只是相对于未声明节奏的猜测。
+即：5 是否合适，完全取决于节奏选择。**在节奏未定之前没有可校准的基准**，
+这正是 F4 不能靠调阈值关闭的原因。
+
+**裁决所需的一句话**：状态文档应在何时刷新。选定后窗口即由实测分布直接给出，
+不需要猜测。
 
 ## 4. 其余待裁决项（无选项，因为缺的是授权而非定义）
 

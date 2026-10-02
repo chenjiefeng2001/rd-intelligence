@@ -2,8 +2,10 @@
 document_role: contract
 freshness_policy: living
 document_living_note: >-
-  本文档定义尚未实施的 lint 执行设计。它不描述发生过的事，
-  其中的失败案例是设计输入而非记录，因此 freshness_policy 为 living。
+  本文档的规范条款描述当前规则，随规则演进而更新，故为 living。
+  注意：正文的 status 行是**散文**，不是 schema 字段；本文件的
+  freshness_policy 与它并存不是冲突，二者分属不同层——见
+  OPEN-DECISIONS.md F3。
 ---
 # LINT EXECUTION CONTRACT
 
