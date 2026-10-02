@@ -185,6 +185,35 @@ class TestContractAndReportAgree(unittest.TestCase):
             "mismatch turns into a precondition failure at run time rather "
             "than a schema error at review time.")
 
+    def test_schema_history_is_append_only(self):
+        """Bumping a version must not erase the ones before it.
+
+        This round's own version bump did exactly that. A script assigned a
+        freshly-built dict over schema_history, so release-gates went from six
+        entries to one and ci-pipeline from three to one -- while the commit
+        carrying the change described itself as making the audit trail
+        auditable. The history is the record that makes a version bump
+        reviewable; truncating it destroys the evidence and leaves every
+        earlier schema unexplained.
+
+        No control looked, because every field check read the current version
+        and found it present.
+        """
+        for name in ("release-gates.json", "ci-pipeline.json"):
+            spec = json.load(open(os.path.join(REPO_ROOT, name),
+                                  encoding="utf-8"))
+            history = spec.get("schema_history") or {}
+            self.assertGreaterEqual(
+                len(history), 2,
+                f"{name} has {len(history)} schema_history entries. A schema "
+                "file that has been bumped more than once but documents one "
+                "version has had its history truncated rather than extended.")
+            for version, text in history.items():
+                self.assertTrue(
+                    text.strip(),
+                    f"{name} documents {version} with empty text, so the entry "
+                    "records a version without saying what changed")
+
     def test_the_new_schema_version_has_a_rationale(self):
         """release-gates was bumped to /6 with only a /5 entry for two commits."""
         spec = json.load(open(SPEC, encoding="utf-8"))
