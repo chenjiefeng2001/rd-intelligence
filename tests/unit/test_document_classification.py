@@ -56,6 +56,7 @@ SAMPLES = {
     "docs/AUDIT-2026-10-02-B.md": ("audit_record", "point_in_time"),
     "docs/CAPTURE-CORPUS-CONTRACT.md": ("contract", "living"),
     "docs/DOCUMENT-CLASSIFICATION-CONTRACT.md": ("contract", "mixed"),
+    "docs/AUDIT-2026-10-02-C.md": ("audit_record", "point_in_time"),
 }
 
 ROLES = ("contract", "evidence_record", "audit_record", "historical_note")
