@@ -589,3 +589,22 @@ re-opens a known failure mode: nearest export name read as function identity.
 Teardown fix remains **UNAUTHORIZED and NOT STARTED**. Exit-code masking,
 `os._exit`, and exit-path workarounds remain forbidden. The accounting Contract
 is untouched and the pipeline correctly reports `BLOCKED_INFRA / exit 3`.
+
+## 9. 状态更新（2026-10）
+
+**status: `REPRODUCED / FAULTING BYTES ESTABLISHED / PREVIOUS INSTRUCTION INTERPRETATION SUPERSEDED / ROOT CAUSE OPEN / SYMBOLIC ATTRIBUTION NOT ESTABLISHED`**
+
+此前记录的故障形状 —— `mov rbx,[rax]`，`rax == 0`，即从空指针**读取** ——
+**已从当前事实中撤下，标记为 superseded observation**。该指令的字节
+（`48 8b 18`）在故障地址 ±96 字节内出现 0 次；实际字节是经 vtable 的虚调用，
+指令首字节为 `0x4A0A4D`，而记录写的是 `0x4A0A4E`。
+
+**当前更准确的事实**：
+
+> 故障指令是经从 `[rbx]` 载入的 qword 的间接虚调用；故障时该 vtable 指针为零。
+
+**根因仍未确立。** vtable 或对象状态为何为零尚不能选定：可能来自清零、
+生命周期错误或未完成构造，证据不足以在三者间判定。因此本更新**不写成
+root cause**。
+
+按 scope decision：**未修改 RenderDoc、未启用 WER、未采集 dump、未进行代码修复。**

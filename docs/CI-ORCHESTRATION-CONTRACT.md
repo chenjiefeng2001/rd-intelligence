@@ -274,11 +274,18 @@ D6 的「measured / NOT A GATE」由此机械化（已有对照
 被全部报告与控制引用；`skipped/failures/errors` → `tests_*` 是同一意图的更精确
 命名。让文档去匹配实现，而不是反过来改名去匹配一份已冻结的提案。
 
-**待裁决，本表不单方面处理**：
+**两项契约要求已撤销（裁决，非补实现）**：
 
-* `evidence_ref` —— 契约要求但实现从未输出过，且 §6.2 不依赖它。
-  删除它属于**放宽契约**，须经裁决，不得静默处理。
-* `duration_s` —— 同上。
+* `evidence_ref` —— 实现从未产生该字段，§6.2 不依赖它，且它未承载任何
+  当前裁决所需的事实。长期保留一个实现永不兑现的 mandatory declaration
+  只会制造 schema drift，故**从 mandatory report contract 中移除**。
+* `duration_s` —— 同上。特别说明：**不**为「字段已声明」而补一个未被语义
+  使用的计时器 —— 那会把非必要 telemetry 变成新的事实来源。
+
+这是**契约收窄**，不是实现缺失。两项的移除各有独立控制
+（`test_evidence_ref_is_not_a_contract_requirement` 与
+`test_duration_s_is_not_a_contract_requirement`），以免一个删除动作
+掩盖另一个字段；且移除必须被记录，而非静默删去。
 
 ### 6.2 MUST 成立的不变式
 

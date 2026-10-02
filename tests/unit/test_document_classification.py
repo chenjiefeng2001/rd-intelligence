@@ -525,5 +525,63 @@ class TestDocumentClassificationSchema(unittest.TestCase):
                 f"{resolved!r}")
 
 
+class TestAdmissionCondition(unittest.TestCase):
+    """Ruling 8.2: classification is required at the moment of dependency.
+
+    The alternative -- migrating all 41 documents -- buys nothing and would
+    have to be redone whenever the schema moves. So the obligation is attached
+    to the point where a document becomes a machine-interpreted input to an
+    active control, which is the moment it can start doing damage if it is
+    wrong.
+
+    Mechanical form: any `.md` path a test module names as a constant is an
+    input that control will read, so it must be classified.
+    """
+
+    #: Test modules whose path constants are treated as active dependencies.
+    #: Scoped to this module and its sibling governance controls; a general
+    #: sweep would flag fixtures and scratch paths.
+    SCANNED = ("test_document_classification.py",
+               "test_meta_integrity.py",
+               "test_report_schema.py",
+               "test_text_integrity.py",
+               "test_ruling_enforcement.py")
+
+    def _referenced_markdown(self, module_name):
+        import ast
+        path = os.path.join(REPO_ROOT, "tests", "unit", module_name)
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+        found = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                value = node.value
+                if value.endswith(".md") and ".." not in value:
+                    found.add(os.path.normpath(
+                        os.path.join(REPO_ROOT, value)).replace(os.sep, "/"))
+        return found
+
+    def test_unclassified_documents_are_not_machine_read(self):
+        classified = _documents()
+        unclassified = []
+        for module_name in self.SCANNED:
+            for rel in sorted(self._referenced_markdown(module_name)):
+                rel = os.path.relpath(rel, REPO_ROOT).replace(
+                    os.sep, "/")
+                # The cross-repo report lives outside this repository
+                # and is never classified here.
+                if rel.endswith("STATUS.md"):
+                    continue
+                if not os.path.exists(os.path.join(REPO_ROOT, rel)):
+                    continue
+                if rel not in classified:
+                    unclassified.append((module_name, rel))
+        self.assertEqual(
+            unclassified, [],
+            "these documents are named as machine-readable inputs by active "
+            f"controls but carry no classification: {unclassified}. Ruling 8.2 "
+            "requires classification at the moment of dependency.")
+
+
 if __name__ == "__main__":
     unittest.main()

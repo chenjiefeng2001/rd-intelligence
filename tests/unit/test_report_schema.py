@@ -25,10 +25,11 @@ CONTRACT = os.path.join(REPO_ROOT, "docs", "CI-ORCHESTRATION-CONTRACT.md")
 PIPELINE = os.path.join(REPO_ROOT, "scripts", "ci_pipeline.py")
 SPEC = os.path.join(REPO_ROOT, "ci-pipeline.json")
 
-#: Contract names that are explicitly awaiting a ruling. Recorded in 6.1 as
-#: pending rather than deleted, so the exemption is visible instead of the
-#: requirement quietly disappearing.
-PENDING_RULING = ("evidence_ref", "duration_s")
+#: Contract names explicitly awaiting a ruling. Empty: both former entries
+#: were resolved by ruling and removed from the contract. Kept as a set
+#: rather than deleted so a future ruling has an obvious place to land and
+#: so an empty value is visible rather than inferred from a missing name.
+PENDING_RULING = ()
 
 
 def _contract_rows():
@@ -130,32 +131,104 @@ class TestContractAndReportAgree(unittest.TestCase):
             "schema drift: tools, auditors and readers each learn a "
             "different shape.")
 
-    def test_pending_rulings_are_still_recorded_as_pending(self):
-        """The exemption must not outlive the need for it."""
+    def _section(self):
         text = open(CONTRACT, encoding="utf-8").read()
-        section = text[text.index("### 6.1"):text.index("### 6.2")]
-        self.assertIn("待裁决", section,
-                      "the pending rulings note is gone from 6.1. If those "
-                      "fields were ruled on, delete them from the contract; if "
-                      "not, the note must stay so the exemption is visible.")
+        return text[text.index("### 6.1"):text.index("### 6.2")]
+
+    def test_evidence_ref_is_not_a_contract_requirement(self):
+        """Removed by ruling, and the removal is recorded.
+
+        Separate from duration_s on purpose. One control covering both would
+        let a delete of one satisfy the assertion about the other, which is how
+        a field can disappear with nothing noting it.
+        """
+        section = self._section()
+        self.assertNotIn(
+            "evidence_ref", PENDING_RULING,
+            "evidence_ref was ruled removed from the contract; leaving it in "
+            "the exemption list would re-grant a requirement that no ruling "
+            "restores")
+        body = [row for row in section.splitlines()
+                if "evidence_ref" in row and row.strip().startswith("|")]
+        self.assertEqual(
+            body, [],
+            "evidence_ref is bound as a requirement in the 6.1 table; the "
+            "ruling removed "
+            "it from the contract")
+        self.assertIn(
+            "evidence_ref", section,
+            "the removal must be recorded in 6.1. A contract requirement that "
+            "vanishes without a note is indistinguishable from an editing "
+            "accident.")
+
+    def test_duration_s_is_not_a_contract_requirement(self):
+        """Removed by ruling. Separate control, for the same reason."""
+        section = self._section()
+        self.assertNotIn(
+            "duration_s", PENDING_RULING,
+            "duration_s was ruled removed from the contract")
+        body = [row for row in section.splitlines()
+                if "duration_s" in row and row.strip().startswith("|")]
+        self.assertEqual(
+            body, [],
+            "duration_s is bound as a requirement in the 6.1 table; the "
+            "ruling removed "
+            "it from the contract, and adding a timer to satisfy a declared "
+            "field would create telemetry nothing uses")
+        self.assertIn(
+            "duration_s", section,
+            "the removal must be recorded in 6.1")
+
+    def test_a_report_without_those_fields_still_satisfies_the_contract(self):
+        """The ruling required checking that nothing depends on them.
+
+        Not implied by the two controls above: a control elsewhere could still
+        read either field, and only a report that lacks them shows that the
+        contract no longer requires them.
+        """
+        gate_report = {"gates": [{
+            "gate": "unit", "state": "IMPLEMENTED", "outcome": "PASS",
+            "required_execution": True, "attempted": True, "executed": 3,
+            "exit_code": 0,
+        }]}
+        report = self._build(gate_report, 0)
+        row = next(g for g in report["gates"] if g["gate"] == "unit")
+        for field in ("evidence_ref", "duration_s"):
+            self.assertNotIn(
+                field, row,
+                f"{field} is absent from the gate report yet appears in the "
+                "pipeline report; the ruling removed it from the contract, so "
+                "nothing should reintroduce it")
+
+    def _build(self, gate_report, exit_code):
+        import importlib.util
+        loader = importlib.util.spec_from_file_location(
+            "cp", os.path.join(REPO_ROOT, "scripts", "ci_pipeline.py"))
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+        return module.build_report({}, exit_code, gate_report, [])
 
     def test_the_facts_are_produced_not_defaulted(self):
         """build_report forwarding a key is not the same as the fact flowing.
 
-        Found by revert-only: removing the field from release_gate's record()
-        left every other control green, because build_report writes
-        g.get(field, []) and a default satisfies a key's existence. The
-        report then carried an always-empty list, which looks exactly like a
-        gate with no missing prerequisites -- the value a reader most needs to
-        be able to trust is the one nothing checked.
+        Removed by a slice-based edit and reinstated. Nothing detected the
+        loss: no control counts controls, so a whole assertion can vanish with
+        a green suite. The report-schema work reported this control as present
+        and as the one that caught the empty-list revert, and that claim had
+        quietly stopped being true.
 
-        So this asserts the producing side: the field is in record()'s literal
-        output, not merely forwarded.
+        The substantive point stands on its own. build_report writes
+        g.get(field, []), so deleting the field from release_gate's record()
+        leaves every key present and every value an empty list -- which reads
+        exactly like a gate that genuinely had no missing prerequisites. The
+        value a reader most needs to trust is the one nothing checked.
         """
-        source = open(os.path.join(REPO_ROOT, "scripts", "release_gate.py"),
-                      encoding="utf-8").read()
-        start = source.index("def run_gate(")
-        tree = ast.parse(source[start:source.index("def run_all(")])
+        with open(os.path.join(REPO_ROOT, "scripts", "release_gate.py"),
+                  encoding="utf-8") as fh:
+            source = fh.read()
+        body = source[source.index("def run_gate("):
+                      source.index("def run_all(")]
+        tree = ast.parse(body)
         produced = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.FunctionDef) and node.name == "record":

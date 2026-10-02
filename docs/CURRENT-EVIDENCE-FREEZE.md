@@ -52,9 +52,16 @@ Pipeline Phase 1         COMPLETE / FROZEN
   overall               BLOCKED_INFRA / exit 3 / failure   ← 本轮由 exit 4 变更
 Pipeline readiness      COMPLETE / VERIFIED / FROZEN
 Execution accounting    COMPLETE / VERIFIED / FROZEN
-Teardown crash          REPRODUCED / LOCATION ESTABLISHED / ROOT CAUSE OPEN
+Teardown crash          REPRODUCED / FAULTING BYTES ESTABLISHED
+  previous interp       SUPERSEDED -- mov rbx,[rax] is not present at the
+                        recorded offset; see TEARDOWN-CRASH-INVESTIGATION 4
+  faulting instruction  indirect virtual call through the qword at [rbx]
+  instruction start     0x4A0A4D (the record said 0x4A0A4E, one byte late)
+  vtable pointer        zero at the fault
+  root cause            OPEN -- zeroed, lifecycle, or incomplete construction
+                        cannot be separated on current evidence
   module                renderdoc.dll（非 renderdoc.pyd）
-  fault                 mov rbx,[rax]; rax==0; c0000005
+  access                read of address 0 (c0000005)
   function attribution  NOT_ESTABLISHED（PDB 未提供该地址私有符号）
 Termination evidence    COMPLETE / VERIFIED / FROZEN
    Report schema owner.   IMPLEMENTED / VERIFIED  (commit 2bb188e)

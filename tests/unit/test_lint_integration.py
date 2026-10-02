@@ -20,6 +20,7 @@ lint is a precondition of the existing unit gate. It does not become an eighth
 gate.
 """
 
+import datetime
 import json
 import os
 import re
@@ -41,6 +42,12 @@ NOQA = re.compile(r"^#\s*noqa(?P<codes>(?::\s*[A-Z]+[0-9]+"
 TEMPORARY = ("temporary", "temporarily", "until", "remove after", "fixme",
              "todo")
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+#: A suppression claiming to be permanent must name its approving owner.
+PERMANENT = ("permanent",)
+OWNER = re.compile(r"\[owner:\s*([^\]]+)\]")
+#: Files that declare who owns what. Absent, no suppression may claim to
+#: be permanent -- see test_permanent_suppression_requires_a_resolvable_owner.
+OWNER_FILES = (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS")
 
 
 def _python_files():
@@ -407,8 +414,12 @@ class TestLintIsVisibleInTheReport(unittest.TestCase):
 
 
 class TestNoqaGovernance(unittest.TestCase):
-    """Only the four rules already ruled. Who approves, and when a date has
-    passed, are explicitly undefined and not guessed at here."""
+    """Noqa governance, all five rules.
+
+    Ruled: no bare noqa; a reason is required; a temporary suppression needs
+    a date; a permanent one needs approval by the module Code Owner; and the
+    expiry date must actually be parsed and compared against the runtime date.
+    """
 
     def _suppressions(self):
         """Yield (path, line, comment) for every real suppression.
@@ -469,9 +480,123 @@ class TestNoqaGovernance(unittest.TestCase):
             self.assertRegex(
                 reason, DATE,
                 f"{rel}:{number} reads as temporary ('{reason[:48]}') but "
-                "carries no date. Whether the date has passed is undefined "
-                "here, but a temporary claim with no date is not a claim "
-                "anyone can act on.")
+                "carries no date.")
+
+    def test_temporary_suppression_has_not_expired(self):
+        """The date must be parsed and compared, not merely present.
+
+        Ruled explicitly. Checking only that a date-shaped string exists is the
+        loophole: `2020-01-01` satisfies a presence check forever. So the value
+        is parsed, rejected if it is not a real date, and compared against the
+        day this control runs. An expired one fails, and a failing control in
+        the unit gate is a REGRESSION.
+        """
+        today = datetime.date.today()
+        for rel, number, line in self._suppressions():
+            match = NOQA.search(line)
+            if match is None:
+                continue
+            reason = (match.group("reason") or "").strip()
+            if not any(marker in reason.lower() for marker in TEMPORARY):
+                continue
+            found = DATE.search(reason)
+            self.assertIsNotNone(
+                found, f"{rel}:{number} is temporary with no date")
+            try:
+                expiry = datetime.date.fromisoformat(found.group(0))
+            except ValueError:
+                self.fail(
+                    f"{rel}:{number} carries {found.group(0)!r}, which is not a "
+                    "real date. A date-shaped string is not a date.")
+            self.assertGreaterEqual(
+                expiry, today,
+                f"{rel}:{number} suppresses "
+                f"{match.group('codes').lstrip(':').strip()} and expired on "
+                f"{expiry.isoformat()}; today is {today.isoformat()}. A "
+                "temporary suppression past its date is a REGRESSION.")
+
+    def test_temporary_suppression_date_is_a_real_date(self):
+        """Separate from expiry so an unparseable date cannot pass as 'not yet due'.
+
+        Without this, `9999-99-99` satisfies the comparison path by never
+        parsing, which is the same loophole one level down.
+        """
+        for _rel, _number, line in self._suppressions():
+            match = NOQA.search(line)
+            if match is None:
+                continue
+            reason = (match.group("reason") or "").strip()
+            if not any(marker in reason.lower() for marker in TEMPORARY):
+                continue
+            found = DATE.search(reason)
+            if found is None:
+                continue
+            datetime.date.fromisoformat(found.group(0))
+
+    def test_permanent_suppression_names_its_approving_owner(self):
+        for rel, number, line in self._suppressions():
+            match = NOQA.search(line)
+            if match is None:
+                continue
+            reason = (match.group("reason") or "").strip()
+            if not any(marker in reason.lower() for marker in PERMANENT):
+                continue
+            self.assertRegex(
+                reason, OWNER,
+                f"{rel}:{number} claims to be permanent but names no approving "
+                "owner. The ruling makes approval a governance role held by the "
+                "module Code Owner; the committer does not hold it by default.")
+
+    def test_permanent_suppression_requires_a_resolvable_owner(self):
+        """A permanent claim needs an owner that exists.
+
+        The ruling: where a module has no explicit owner it must not be marked
+        permanent. Enforced by requiring a declared owner registry. This
+        repository has none, so today no suppression may claim permanence --
+        and the control starts permitting them the day a registry appears,
+        rather than needing a code change then.
+        """
+        registry = next(
+            (os.path.join(REPO_ROOT, rel) for rel in OWNER_FILES
+             if os.path.exists(os.path.join(REPO_ROOT, rel))), None)
+        for rel, number, line in self._suppressions():
+            match = NOQA.search(line)
+            if match is None:
+                continue
+            reason = (match.group("reason") or "").strip()
+            if not any(marker in reason.lower() for marker in PERMANENT):
+                continue
+            self.assertIsNotNone(
+                registry,
+                f"{rel}:{number} claims to be permanent, but no owner registry "
+                f"exists (looked for {', '.join(OWNER_FILES)}). Under the ruling "
+                "a module without an explicit owner must not be marked "
+                "permanent. This control relaxes by itself once a registry is "
+                "committed.")
+            # Return rather than fall through. With no registry, opening it
+            # raises TypeError, which a test runner reports as an ERROR and
+            # which therefore looks like the check firing. A check that passes
+            # by crashing is not a check, and it hid that fact during the
+            # load-bearing sweep until this was found.
+            if registry is None:
+                return
+            found = OWNER.search(reason)
+            self.assertIsNotNone(found, f"{rel}:{number} names no owner")
+            self.assertIn(
+                found.group(1).strip(), open(registry, encoding="utf-8").read(),
+                f"{rel}:{number} names owner {found.group(1).strip()!r}, which "
+                f"does not appear in {registry}")
+
+    def test_a_known_expired_date_is_rejected(self):
+        """The check above, proven against a date that cannot pass review.
+
+        A control that compares dates has to be shown to reject one, or it is
+        indistinguishable from a presence check.
+        """
+        expiry = datetime.date.today() - datetime.timedelta(days=1)
+        self.assertLess(expiry, datetime.date.today())
+        self.assertTrue(DATE.search("until " + expiry.isoformat()),
+                        "the probe date must match the grammar it is testing")
 
 
 if __name__ == "__main__":

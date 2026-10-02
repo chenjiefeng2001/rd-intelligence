@@ -10,11 +10,11 @@ document_living_sections:
   - "4. v1.1：`mixed` 的全覆盖"
   - "5. 已标记的样本文档"
   - "6. 控制范围"
-  - "8. 与已冻结决策的关系"
+  - "8. 治理边界与纳入条件"
 document_mixed_note: >-
   §1-§6、§8 为 living；§7（实施过程中暴露的两个缺陷）为
   发现记录，按 document_default_policy 为 historical。preamble 含
-  schema_version 与 migrated_documents 等当前状态字段，故为 living。
+  schema_version 等当前状态字段，故为 living。
 ---
 # DOCUMENT CLASSIFICATION CONTRACT
 
@@ -253,10 +253,52 @@ median 2   max 19   17 个间隔
 
 「声明值至少接近实际值」这一检查随每提交节奏一并移除。
 
-## 8. 与已冻结决策的关系
+## 8. 治理边界与纳入条件
 
-* 未迁移其余 37 份文档；未标记的文档**不受本 schema 约束**，
-  控制不要求它们声明分类（否则会一次性产生 37 个失败）。
+### 8.1 范围是治理边界，不是 rollout 进度
+
+先前把未标记的文档描述为「待完成的遗漏」，理由是第一批评测覆盖。这个理由
+描述的是**暂时的推进状态**，因此一旦 schema 演进就会失效 —— 事实上它已失效：
+schema 现为 1.1，F3/F4 已裁决并实施。
+
+**现行范围**：分类 contract 治理的是**参与现行状态、CI、证据冻结与审计闭环**
+的文档。尚未纳入该治理面的文档，**不因未分类而成为错误**。
+
+未分类因此不再是待补的缺口，而是一个**边界外的事实**。
+
+### 8.2 纳入条件（admission condition）
+
+> 一个未分类文档，一旦被 active contract、current-state record、CI gate 或
+> audit control 作为**机器可解释输入**使用，就必须先完成分类。
+
+这条取代「逐步迁移 41 份」。它把义务放在**依赖发生的那一刻**，而不是放在
+一份永远追不上的迁移清单上：既不要求低价值的大规模迁移，也不允许新的
+active 依赖绕过分类。
+
+该条件由 `test_unclassified_documents_are_not_machine_read` 机械强制 ——
+凡被控制以路径常量引用的 `.md`，必须已分类。
+
+### 8.3 与已冻结决策的关系
+
+* 未迁移其余 41 份文档，且**不将其记为负债**。
 * `historical_note` 已定义但第一批未使用 —— 如实记录，不为凑齐而误标。
-* 不改变任何现有事实文本；本阶段只新增 front matter、修复一处
-  front matter 粘连，并新增本文件。
+* 本阶段不改变任何现有事实文本。
+
+---
+document_role: contract
+freshness_policy: mixed
+document_living_preamble: true
+document_default_policy: historical
+document_living_sections:
+  - "1. 要解决的问题"
+  - "2. 维度一：`document_role`"
+  - "3. 维度二：`freshness_policy`"
+  - "4. v1.1：`mixed` 的全覆盖"
+  - "5. 已标记的样本文档"
+  - "6. 控制范围"
+  - "8. 与已冻结决策的关系"
+document_mixed_note: >-
+  §1-§6、§8 为 living；§7（实施过程中暴露的两个缺陷）为
+  发现记录，按 document_default_policy 为 historical。preamble 含
+  schema_version 与 migrated_documents 等当前状态字段，故为 living。
+---
