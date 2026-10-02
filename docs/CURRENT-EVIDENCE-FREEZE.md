@@ -1,7 +1,10 @@
 # CURRENT EVIDENCE FREEZE
 
-冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113` / 57 commits）
-冻结点 commit：`a81600e`（86 commits）
+冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
+前一刷新基线为 `a81600e`）
+baseline_commit: a898381
+baseline_drift: 1
+冻结点 commit：`a898381`（90 commits）
 覆盖仓库：`rd-intelligence`（`rdebug-validation` 冻结物**本轮只读未复验**，见下）
 
 > **本版与上一版的差异来源**：审计（`docs/AUDIT-2026-10-02.md`）发现本文件与
@@ -16,15 +19,23 @@ CURRENT EVIDENCE FREEZE
                               provenance 绑定、被 F1–F4 强制
   └ audit_fork_integrity exit 0（本轮实测）
   └ git status --porcelain 仍**非空**（2 行），本冻结不宣称其为空
-14 frozen artifacts      14/14 hash MATCH（本轮实测，见下）
-  └ 验证机制 = `pipeline_readiness._probe_corpus` 的 `manifest_match`
-    （对 `rdebug-validation/reports/n3/N3-05A-freeze-manifest.json` 所列
-    14 项逐项 sha256 比对）
+  └ ✅ 已接线为 blocking 门禁（§4 门 5），非「无人运行则不阻止任何事」
+14 frozen artifacts      14/14 hash MATCH（本轮实测）
+  └ 验证机制 = pipeline_readiness._probe_corpus 的 manifest_match
 §4 automation            RESOLVED WITH OBSERVED CONSEQUENCE (A2) → 门禁已接线并可运行
 context_eid             FIXED / VERIFIED（real capture confirmation 仍 pending）
 CI gate verdict (§4.1)   DEFINED / FROZEN
 G1 / G2 verdicts         COMPLETE / VERIFIED
-Gate 3 (§4.3)            IMPLEMENTED / VERIFIED / bounded coverage
+§4 门 1 unit             IMPLEMENTED / blocking / PASS 370→387
+§4 门 1 transport        IMPLEMENTED / blocking / PASS 58
+§4 门 1 integration      IMPLEMENTED / blocking / INFRASTRUCTURE_FAILURE 63
+                                       (process exit 3221225477)
+§4 门 2 boundary_audit   IMPLEMENTED / blocking / PASS 18/18 + 1 deviation
+§4 门 3 cold_warm_equivalence
+                         IMPLEMENTED / blocking / PASS（bounded coverage）
+§4 门 4 benchmark_archive
+                         PROCESS_ONLY / not blocking / UNKNOWN（Gate 4）
+§4 门 5 fork_integrity   IMPLEMENTED / blocking / PASS（audit exit 0）
 Pipeline Phase 1         COMPLETE / FROZEN
   overall               BLOCKED_INFRA / exit 3 / failure   ← 本轮由 exit 4 变更
 Pipeline readiness      COMPLETE / VERIFIED / FROZEN

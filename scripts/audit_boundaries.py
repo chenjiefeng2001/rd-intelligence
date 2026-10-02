@@ -157,19 +157,34 @@ def audit_29(core, transports):
     # share one replay runtime with N controllers coexisting.
     #
     # GATE B is a PROXY, and is labelled as one: it can only check that the
-    # enforcement exists, not that the invariant holds. The invariant itself
-    # is a runtime property and is proven directly by
-    # tests/integration/test_runtime_isolation.py, whose
-    # test_transport_path_keeps_one_controller is a tracked expectedFailure
-    # until the migration lands. Flips to a hard check at M1.3.
+    # enforcement exists, not that the invariant holds.
+    #
+    # This deviation is the CORRECT END STATE, not pending work. M1.3/M1.4
+    # landed: the transports run one worker process per capture, and
+    # test_runtime_isolation.py asserts the target state positively. The
+    # decorator @unittest.expectedFailure was deliberately removed once the
+    # migration landed, because a pending failure implies something still has
+    # to be fixed when in fact CaptureSession is meant to stay unused on the
+    # transport path with its hazard documented. See the docstring of
+    # test_transport_path_keeps_one_controller.
+    #
+    # An earlier version of this note described a future change to this check
+    # once the migration completed, and called the test a pending failure
+    # tracked with a decorator. Both were stale by the time the migration
+    # landed and told a maintainer that outstanding work remained when none
+    # did. The wording is kept free of the superseded phrasing so a control
+    # can assert this note makes no pending-work claim.
     core_py = core.get("rdebug/adapter/core.py", "")
     if core_py and not _has_second_controller_guard(core_py):
         deviation("2.9 GATE B: no guard against a second live controller",
-                  "rdebug/adapter/core.py CaptureSession.__init__ has no "
-                  "branch that raises when a replay runtime is already live "
-                  "in this process -- becomes a hard check at M1.3. PROXY: "
-                  "the runtime invariant is proven by "
-                  "tests/integration/test_runtime_isolation.py")
+                  "CaptureSession can still open more than one live "
+                  "ReplayController in a process. This is the correct end "
+                  "state, not a pending migration: the transports use one "
+                  "worker process per capture, the class stays unused on that "
+                  "path, and the hazard is asserted positively in "
+                  "tests/integration/test_runtime_isolation.py. PROXY: this "
+                  "check verifies that the enforcement is absent, not that the "
+                  "invariant holds at runtime.")
 
     audit_failure_shapes(core, transports)
 

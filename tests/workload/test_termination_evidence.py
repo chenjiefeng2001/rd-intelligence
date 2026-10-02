@@ -151,10 +151,17 @@ class RealProcessControls(unittest.TestCase):
             if proc.poll() is None:
                 proc.kill()
         self.assertNotEqual(proc.returncode, 0)
-        self.assertFalse(
-            proc.returncode == NTSTATUS_AV,
-            "if an external kill ever reports an AV status, the deliberate-exit "
-            "control above would no longer distinguish it")
+        self.assertNotEqual(proc.returncode, NTSTATUS_AV)
+        # Assert on the classification this process would actually produce,
+        # not only on its return code. A return-code comparison alone would let
+        # this control pass while the classifier promoted the kill.
+        obs = T.observe(returncode=proc.returncode, stdout="", stderr="",
+                        sentinel=SENTINEL)
+        self.assertNotEqual(obs["termination_observation"]["class"],
+                            T.NATIVE_TERMINATION_SUSPECTED)
+        self.assertNotEqual(obs["termination_observation"]["class"],
+                            T.SIGNAL_TERMINATION)
+        self.assertFalse(T.is_crash(obs))
 
     def test_real_timeout_is_recorded(self):
         """A hang must produce an observation, not an exception.
