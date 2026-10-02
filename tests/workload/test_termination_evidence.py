@@ -35,8 +35,22 @@ NTSTATUS_AV = 0xC0000005
 SENTINEL = "SCENARIO_OK"
 
 
+#: Temp directories made by _script, removed in tearDownModule. Before this
+#: existed every one of the seven controls leaked a directory per run, and
+#: nothing reported it: an accumulating pile of empty directories is invisible
+#: to a test run that only checks assertions.
+_TEMP_DIRS = []
+
+
+def tearDownModule():
+    for directory in _TEMP_DIRS:
+        shutil.rmtree(directory, ignore_errors=True)
+    del _TEMP_DIRS[:]
+
+
 def _script(body):
     d = tempfile.mkdtemp(prefix="term_evidence_")
+    _TEMP_DIRS.append(d)
     p = os.path.join(d, "child.py")
     with open(p, "w", encoding="utf-8") as fh:
         fh.write(body)
@@ -140,22 +154,29 @@ class RealProcessControls(unittest.TestCase):
         # promoted into a crash.
         script = _script("import time\nprint('ready', flush=True)\n"
                          "time.sleep(300)\n")
-        proc = subprocess.Popen([sys.executable, script],
-                                stdout=subprocess.PIPE, text=True)
-        try:
-            proc.stdout.readline()
-            subprocess.run(["taskkill", "/F", "/PID", str(proc.pid)],
-                           capture_output=True)
-            proc.wait(timeout=60)
-        finally:
-            if proc.poll() is None:
-                proc.kill()
-        self.assertNotEqual(proc.returncode, 0)
-        self.assertNotEqual(proc.returncode, NTSTATUS_AV)
+        # `with` closes the pipe. Without it the TextIOWrapper over stdout is
+        # left to the garbage collector, which surfaced as a ResourceWarning
+        # naming encoding='cp936' -- text=True with no explicit encoding had
+        # picked up the machine's locale codepage, making a control that is
+        # supposed to be deterministic depend on where it runs.
+        with subprocess.Popen([sys.executable, script],
+                              stdout=subprocess.PIPE,
+                              encoding="utf-8") as proc:
+            try:
+                proc.stdout.readline()
+                subprocess.run(["taskkill", "/F", "/PID", str(proc.pid)],
+                               capture_output=True)
+                proc.wait(timeout=60)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+            returncode = proc.returncode
+        self.assertNotEqual(returncode, 0)
+        self.assertNotEqual(returncode, NTSTATUS_AV)
         # Assert on the classification this process would actually produce,
         # not only on its return code. A return-code comparison alone would let
         # this control pass while the classifier promoted the kill.
-        obs = T.observe(returncode=proc.returncode, stdout="", stderr="",
+        obs = T.observe(returncode=returncode, stdout="", stderr="",
                         sentinel=SENTINEL)
         self.assertNotEqual(obs["termination_observation"]["class"],
                             T.NATIVE_TERMINATION_SUSPECTED)
