@@ -10,9 +10,9 @@ document_point_in_time_note: >-
 
 冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
 前一刷新基线为 `a81600e`）
-baseline_commit: 2bb188e
+baseline_commit: bbd011d
 baseline_drift: 1
-冻结点 commit：`a898381`（106 commits）
+冻结点 commit：`a898381`（107 commits）
 
 `baseline_drift` 是本文档自陈的陈旧度，容许上界 5。它**不做等值断言**：写入
 本文档的那个提交本身就是下一个提交，任何要求「声明值 == 实际值」的规则在提交
@@ -57,6 +57,19 @@ Teardown crash          REPRODUCED / LOCATION ESTABLISHED / ROOT CAUSE OPEN
   fault                 mov rbx,[rax]; rax==0; c0000005
   function attribution  NOT_ESTABLISHED（PDB 未提供该地址私有符号）
 Termination evidence    COMPLETE / VERIFIED / FROZEN
+   Report schema owner.   IMPLEMENTED / VERIFIED  (commit 2bb188e)
+     direction             contract 6.1 <-> pipeline report, both directions
+     field split            diagnosis fields follow the contract; naming follows
+                            the implementation. Section 6.2's invariants depend
+                            only on executed/attempted/required_execution/state,
+                            so no gate semantics moved
+     report schema          rdebug-ci-pipeline-report /2 -> /3, produced by a
+                            real run (7/7 gate rows carry all five fields)
+     history preserved     release-gates /1-/6 and ci-pipeline /2-/4 all
+                            present; append-only control added after this round
+                            truncated the history it was extending
+     open by decision      evidence_ref, duration_s -- removing a contractual
+                            requirement is a relaxation, not a cleanup
    Lint execution          COMPLETE / VERIFIED / FROZEN  (commit 2c6079e)
      direction             ruff as a precondition of the existing unit gate
      gate count            7 — unchanged; lint is not an eighth gate
@@ -126,6 +139,7 @@ RenderDoc 归属 scope     RULED / FROZEN
 | Termination evidence | `FREEZE-TERMINATION-EVIDENCE-2026-10-01.md` | 34 |
 | RenderDoc 归属 scope | `SCOPE-DECISION-RENDERDOC-OWNERSHIP.md` | — |
 | Lint execution | `LINT-EXECUTION-CONTRACT.md` | 19 |
+| Report schema ownership | `REPORT-SCHEMA-OWNERSHIP.md` | 9 |
 
 前三项与 termination 的控制均位于 **unit gate 内受强制**；termination 的
 真实子进程层（7 项）不在任何门禁内，故另有 3 项控制断言其仍存在。
