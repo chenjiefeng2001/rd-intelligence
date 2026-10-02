@@ -35,22 +35,29 @@
 | --- | --- | --- | --- |
 | **1** 测试全绿 | `unittest discover -s tests/unit`<br>`-s tests_transport`<br>`-s tests/integration -t .` | **3** | **IMPLEMENTED** |
 | **2** 边界审计 | `python scripts/audit_boundaries.py` | 1 | **IMPLEMENTED** |
-| **3** cold==warm 等价 | **无** | 0 | ⚠️ **NOT_IMPLEMENTED**<br>（语义已定义，证据已采，未实现） |
+| **3** cold==warm 等价 | `python scripts/cold_warm_gate.py <capture> --json .gate3_verdict.json` | 3 | **IMPLEMENTED**<br>（`debug_pixel` / `diff_pixel` / `diff_pixel_shader_values`）<br>⚠️ **bounded coverage** —— 不等于完整证明 |
 | **4** benchmark 存档 | **无可执行检查** | 0 | ⚠️ **PROCESS_ONLY**<br>（规范为流程要求，无自动判定路径） |
 | **5** fork 零 tracked mod | `python scripts/audit_fork_integrity.py` | 1 | **IMPLEMENTED** |
 
-合计：**5 个可执行检查**（对应 §4 门 1/2/5），**2 个无可执行物**（门 3、门 4）。
+合计：**6 个可执行检查**（对应 §4 门 1/2/3/5，其中门 1 含 3 个执行入口），**1 个无可执行物**（门 4）。
 
 ### 1.1 ⚠️ 必须点明的治理后果
 
-> **只要门 3 与门 4 无可执行物，总体 CI 状态就不可能是 `PASS`。**
+> **只要门 4 无可执行物，总体 CI 状态就不可能是 `PASS`。**
 
 这不是缺陷，而是正确结果：
-`§4` 声明了五个门，其中两个**没有实现**；
-声称「CI 全绿」等于**把两个未实现的门当作已通过** ——
+`§4` 声明了五个门，其中门 4 **没有实现**（流程要求，无自动判定路径）；
+声称「CI 全绿」等于**把未实现的门当作已通过** ——
 那正是 §4.1 与 I1 要禁止的「没验证当成通过」。
 
+> 门 3 曾长期处于 `NOT_IMPLEMENTED`，现已实现并接入 `cold_warm_gate.py`。
+> 但其覆盖是 **bounded**，因此 §1 的状态列标注为 `IMPLEMENTED`
+> **不等于**「门 3 已被完整证明」，也不等于 release safe。
+
 **MUST**：未实现/仅流程的门**必须**进入总体裁决，贡献 `UNKNOWN`。
+实现细节上，总体裁决对**全部已声明门**的 `outcome` 取值，
+**不因某门标了 `blocking: false` 而将其排除** —— 门 4 正是如此：
+它不阻断单门执行，但其 `UNKNOWN` 仍把总体压到 `NEEDS_REVIEW`。
 **MUST NOT** 为使其变绿而：实现临时 check、加虚拟 check、
 拿 D6 benchmark 充当门 3、或降低门 3 的 Contract。
 
@@ -58,10 +65,17 @@
 
 ## 2. 问 2：四态 → 总体 CI 状态
 
-**当前实现是二值的**（`RESULT: PASS` / `RESULT: BLOCKED`，exit 0/1），
-不产出四态总体裁决。**提案：总体也用四态，且退出码可区分。**
+**当前实现已产出四态总体裁决**，四态退出码互不相同：
+`PASS` / `FAIL_REGRESSION` / `BLOCKED_INFRA` / `NEEDS_REVIEW`。
 
-### 2.1 映射规则（提案，按优先级自上而下）
+**exit 映射的唯一可执行来源是 `scripts/release_gate.py` 的 `EXIT_CODES`。**
+本节陈述四态**存在**与**判别顺序**；下方 §2.1 表格中的数字是**契约表述**，
+不属于独立来源 —— 若在别处再写一份映射，就会出现要避免的双事实：
+`代码: BLOCKED_INFRA → 3` 与 `文档: blocked → 1` 并存。
+§2.1 与 §10 各有一份契约表述的映射表；**当前无自动控制校验这两份表与
+`release_gate.py` 的 `EXIT_CODES` 三者一致** —— 已记为待办。
+
+### 2.1 映射规则（按优先级自上而下）
 
 | 优先级 | 条件 | 总体状态 | exit |
 | --- | --- | --- | --- |
@@ -70,24 +84,34 @@
 | 3 | 无上二者，但任一 = `UNKNOWN` 或 `NOT_IMPLEMENTED` | **`NEEDS_REVIEW`** | **4** |
 | 4 | 全部 `PASS`，且 §4 五门**全部** `IMPLEMENTED` | **`PASS`** | **0** |
 
-**MUST**：退出码**按状态区分**（0/2/3/4），使外层无需解析文本即可分支。
-当前二值实现（恒 1）**丢失了 regression 与 infra 的区别**，
-这与 I3「三者必须可区分」冲突 —— 属本阶段发现的缺口。
+**MUST**：退出码**按状态区分**，使外层无需解析文本即可分支。
+
+本条针对的是**本阶段修复之前**的实现：当时总体裁决为二值且恒返回 1，
+丢失了 regression 与 infra 的区别，与 I3「三者必须可区分」冲突。
+该缺口已修（见 §10 G1）。下方表格中的数字是**契约表述**，
+其唯一可执行来源是 `scripts/release_gate.py` 的 `EXIT_CODES`。
 
 **MUST NOT**：`NEEDS_REVIEW` 与 `PASS` 共用退出码。
 **MUST NOT**：`BLOCKED_INFRA` 与 `FAIL_REGRESSION` 共用退出码。
 
 ### 2.2 依此规则的**当前实际结果**
 
-门 3 = `NOT_IMPLEMENTED` → 落入优先级 3 →
+`integration` = `INFRASTRUCTURE_FAILURE` → 落入优先级 2 →
 
 ```
-总体 = NEEDS_REVIEW (exit 4)
-原因 = §4 门 3 (NOT_IMPLEMENTED), §4 门 4 (PROCESS_ONLY)
+总体 = BLOCKED_INFRA (exit 3)
+原因 = integration（63 项测试报 OK，但进程 exit 3221225477 / 0xC0000005）
 ```
 
-> **即：现在把 release_gate 接上，CI 也不会是绿的。**
-> 这是正确的诚实结果，不是待修的 bug。
+门 4 仍为 `PROCESS_ONLY` → `UNKNOWN`；若 integration 干净退出，
+它将使总体落入优先级 3 的 `NEEDS_REVIEW (exit 4)`。
+`UNKNOWN` 不会掩盖 `INFRASTRUCTURE_FAILURE` —— 优先级顺序正在此处生效。
+
+> **即：release_gate 已接线，CI 仍不是绿的，但原因已经变了。**
+> 早前此处的原因是门 3 / 门 4 没有可执行物；门 3 现已实现。
+> 当前非 `PASS` 的原因是 integration 进程未干净退出，
+> 这是正确的诚实结果，不是待修的 style 问题 ——
+> 真正待修的是该进程退出本身（teardown 归因仍 `NOT_ESTABLISHED`）。
 
 ---
 
