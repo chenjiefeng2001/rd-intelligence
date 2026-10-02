@@ -1,7 +1,7 @@
 ---
 document_role: evidence_record
 freshness_policy: point_in_time
-as_of_commit: 8679553
+as_of_commit: 2c6079e
 document_point_in_time_note: >-
   本文档是冻结证据，不追随 HEAD。其中的测量结果（如 unit 计数）
   属于某一时点，按裁决不做自动数值校验；身份事实与语义事实仍受控。
@@ -57,6 +57,14 @@ Teardown crash          REPRODUCED / LOCATION ESTABLISHED / ROOT CAUSE OPEN
   fault                 mov rbx,[rax]; rax==0; c0000005
   function attribution  NOT_ESTABLISHED（PDB 未提供该地址私有符号）
 Termination evidence    COMPLETE / VERIFIED / FROZEN
+   Lint execution          COMPLETE / VERIFIED / FROZEN  (commit 2c6079e)
+     direction             ruff as a precondition of the existing unit gate
+     gate count            7 — unchanged; lint is not an eighth gate
+     spec schema           release-gates /5 -> /6 (gate sub-records only)
+     mapping               0 -> PASS; 1 -> REGRESSION; other -> INFRA
+     availability probe    required; `python -m ruff` exits 1 when absent,
+                           which is also ruff's 'violations found' code
+     open by decision      noqa permanent approver; expiry auto-check
   classification        跨平台实测（Windows + WSL Ubuntu）
   crash claim           恒不成立（is_crash 恒 False）
 workload mcp_contract   RETIRED（covered_by_existing_blocking_gates）
@@ -117,9 +125,56 @@ RenderDoc 归属 scope     RULED / FROZEN
 | Scenario 生命周期（RETIRED） | `SCENARIO-LIFECYCLE-ADJUDICATION.md` | 18 |
 | Termination evidence | `FREEZE-TERMINATION-EVIDENCE-2026-10-01.md` | 34 |
 | RenderDoc 归属 scope | `SCOPE-DECISION-RENDERDOC-OWNERSHIP.md` | — |
+| Lint execution | `LINT-EXECUTION-CONTRACT.md` | 19 |
 
 前三项与 termination 的控制均位于 **unit gate 内受强制**；termination 的
 真实子进程层（7 项）不在任何门禁内，故另有 3 项控制断言其仍存在。
+
+## Lint execution 的验收记录（真实 pipeline 运行）
+
+commit `2c6079e`，worktree clean，7 gates。
+
+向**仅由 unit 门执行**的文件（`tests/unit/test_pixel_diff.py`）注入一条真实
+`UP031` 违规，其余不动：
+
+```
+baseline    exit 3 / BLOCKED_INFRA    unit PASS 434
+            integration INFRASTRUCTURE_FAILURE 63 (process_exit 3221225477)
+            accounting_consistent True / 0 条不一致
+
+violation   exit 2 / FAIL_REGRESSION  unit REGRESSION  executed=0  exit=None
+            integration INFRASTRUCTURE_FAILURE 63 (process_exit 3221225477)
+            accounting_consistent True / 0 条不一致
+
+restored    exit 3 / BLOCKED_INFRA    unit PASS 434
+```
+
+**7/7 断言通过**：
+
+| # | 断言 | 结果 |
+| --- | --- | --- |
+| 1 | `unit` == `REGRESSION` | ✅ |
+| 2 | `integration` 仍为 `INFRASTRUCTURE_FAILURE` | ✅ |
+| 3 | 总体 == `FAIL_REGRESSION` | ✅ |
+| 4 | `exit == 2` | ✅ |
+| 5 | accounting 未报假不一致 | ✅ |
+| 6 | unit 未执行测试（`executed == 0`） | ✅ |
+| 7 | lint 子记录保留独立 outcome | ✅ |
+
+**`exit=None` 是刻意的。** unit 的进程从未运行，把 lint 的 exit 1 填进
+unit 的 process exit 会凭空制造一个不存在的进程事实，并让 accounting 报出
+「非零退出但裁决未承认」这一并不存在的矛盾。
+
+**`unit.lint` 在 PASS 路径上为 `null` 是预期结构**，不是「lint 未运行」：
+只有前置失败短路时才写入子记录。
+
+**第一次验收注入的是 `scripts/cold_warm_gate.py`，即 `cold_warm_equivalence`
+门自己的脚本**，于是该门一并失败，accounting 报出的不一致**是真实的**而非
+误报。那次失败属于**验收构造错误**，不作为实现缺陷记录。
+
+**本轮冻结不改变 pipeline verdict。** `overall` 仍为 `BLOCKED_INFRA / exit 3`，
+成因**仍然只有** integration 的 RenderDoc native teardown `0xC0000005`。
+lint 完整通过，未改写、未解决、也未掩盖该问题。
 
 ## 保持生效的 scope decision（为何现在不开启）
 

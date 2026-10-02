@@ -7,11 +7,14 @@ document_living_note: >-
 ---
 # LINT EXECUTION CONTRACT
 
-status: implemented
+status: FROZEN
 schema_version: 1
 implementation: complete
 authorized: yes
+frozen_at_commit: 2c6079e
 scope: existing unit gate; no eighth gate
+frozen: lint execution contract + implementation, COMPLETE / VERIFIED
+open_by_decision: noqa permanent-suppression approver; expiry auto-check
 
 ## 1. 记录原因
 
@@ -148,6 +151,20 @@ accounting 未产生假不一致；unit 未执行测试（`executed=0`）；lint
 第一次验收尝试注入的是 `scripts/cold_warm_gate.py`，即
 `cold_warm_equivalence` 门自己的脚本，于是该门一并失败，accounting 报的
 不一致是**真实的**而非误报。那次失败属于验收构造不当，不是实现缺陷。
+
+## 9. 冻结边界
+
+本文件冻结于 commit `2c6079e`，worktree clean。冻结的是
+**lint execution contract + implementation**，即 §2–§7。
+
+**以下不在冻结范围内，仍为 OPEN / UNDEFINED BY DECISION**：
+
+* **noqa 永久 suppression 的批准人** —— 未定义。§4 只要求理由，未指定谁能批准
+  「永久」。
+* **到期日的自动检查机制** —— 未实现。控制只强制「临时 suppression 必须带
+  日期」，**不检查该日期是否已过**。按裁决，未自行决定机制。
+
+冻结 lint 实现**没有**顺带解决这两项，也不得被引用为它们已有答案。
 
 ## 8. 仍未决定
 
