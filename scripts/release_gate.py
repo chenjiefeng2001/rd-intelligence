@@ -201,6 +201,11 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         """
         out = {
             "gate": gate["id"],
+            # Declared by contract 6.1 and previously reachable only as prose
+            # inside `detail`. Defaulted here so the key always exists; a
+            # consumer must not have to test for presence to read it.
+            "missing_prerequisites": [],
+            "discovery_anomaly": False,
             "spec_gate": gate.get("spec_gate"),
             "state": gate.get("state", "IMPLEMENTED"),
             "outcome": outcome,
@@ -228,7 +233,7 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
     if missing:
         return record(INFRA,
                       "missing prerequisites: " + ", ".join(missing),
-                      executed=0)
+                      executed=0, missing_prerequisites=list(missing))
 
     # Marker so a test that exercises the whole pipeline can detect that it is
     # being run from inside the gate it exercises, and stand down. Without it
@@ -306,7 +311,8 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
                           + "; a module that cannot be imported is a "
                             "test-infrastructure problem, not a content "
                             "regression",
-                          exit_code=proc.returncode, **counts)
+                          exit_code=proc.returncode,
+                          discovery_anomaly=True, **counts)
         if counts["failures"] or counts["errors"]:
             # Content outranks the process exit, deliberately and first. A real
             # failure also exits non-zero, so a rule of the form "non-zero exit

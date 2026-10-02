@@ -1,5 +1,5 @@
 {
-  "schema": "rdebug-ci-pipeline/3",
+  "schema": "rdebug-ci-pipeline/4",
   "declared_at": "2026-09-29",
   "note": "Forge-neutral description of how a CI system should run the DESIGN_SPEC section 4 gates. It declares what the environment must provide, because a pipeline cannot provision something the gate spec does not ask for. It does not schedule anything and blocks no pull request; scripts/ci_pipeline.py is what a pipeline would invoke.",
   "forge_target": {
@@ -119,8 +119,7 @@
     "note": "Release blocking is not authorized. Until it is, an exit 4 is a legitimate resting state and the overall result stays NEEDS_REVIEW because section 4 gate 4 has no executable check."
   },
   "schema_history": {
-    "rdebug-ci-pipeline/2": "declares the four runner capability classes explicitly (DESIGN_SPEC 4.2.1) and links to scripts/pipeline_readiness.py, which observes them and provisions nothing.",
-    "rdebug-ci-pipeline/3": "declares the capture corpus as a required external prerequisite with provenance, per docs/CAPTURE-CORPUS-CONTRACT.md. A declaration only; nothing is fetched or generated."
+    "rdebug-ci-pipeline/4": "Per-gate rows carry missing_prerequisites, discovery_anomaly and spec_gate as fields rather than only as prose inside detail, and carry a lint sub-record when the gate declares a lint precondition. Contract 6.1 declared the first two; they were previously unreadable by a machine."
   },
   "capability_declaration": {
     "note": "DESIGN_SPEC 4.2.1. These are execution prerequisites, not semantic checks. Resolved by scripts/pipeline_readiness.py, which observes and reports; it never installs, downloads or clones.",

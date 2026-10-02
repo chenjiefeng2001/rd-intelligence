@@ -38,7 +38,7 @@ import os
 import subprocess
 import sys
 
-SCHEMA = "rdebug-ci-pipeline/3"
+SCHEMA = "rdebug-ci-pipeline/4"
 
 PASS_EXIT = 0
 REGRESSION_EXIT = 2
@@ -210,6 +210,16 @@ def build_report(spec, exit_code, gate_report, unmet, stdout_tail="",
             "blocking": g.get("blocking"),
             "detail": g.get("detail"),
             "spec_ref": g.get("spec_ref"),
+            # 6.1 names spec_gate; the gate row has always carried it and the
+            # pipeline report dropped it. Also the two diagnosis fields that
+            # were previously reachable only as prose in `detail`.
+            "spec_gate": g.get("spec_gate"),
+            "missing_prerequisites": g.get("missing_prerequisites", []),
+            "discovery_anomaly": g.get("discovery_anomaly", False),
+            # The identities, not just the flag. A boolean says a discovery
+            # failure happened; only the list says which module could not be
+            # imported, which is the whole point of G2 over an exit code.
+            "discovery_anomalies": g.get("discovery_anomalies", []),
             # The lint precondition is part of this gate's outcome and carries
             # its own command, exit code and classification. Dropping it here
             # would leave the report saying REGRESSION with no record of which
@@ -219,7 +229,7 @@ def build_report(spec, exit_code, gate_report, unmet, stdout_tail="",
         })
     inconsistencies = accounting_inconsistencies(gates)
     return {
-        "schema": "rdebug-ci-pipeline-report/2",
+        "schema": "rdebug-ci-pipeline-report/3",
         "overall": {
             "exit_code": exit_code,
             "status": (gate_report or {}).get("status"),
@@ -280,7 +290,7 @@ def run(spec_path, repo_root, timeout=None, extra_env=None, report_path=None):
                                                    extra_env)
     except PipelineAbort as e:
         report = {
-            "schema": "rdebug-ci-pipeline-report/2",
+            "schema": "rdebug-ci-pipeline-report/3",
             "overall": {"exit_code": INFRA_EXIT, "status": "INFRASTRUCTURE",
                         "conclusion": "failure",
                         "meaning": "the pipeline layer could not run"},
@@ -301,7 +311,7 @@ def run(spec_path, repo_root, timeout=None, extra_env=None, report_path=None):
         # An exit the frozen mapping does not define is the orchestrator
         # misbehaving. That is infrastructure, not a verdict.
         report = {
-            "schema": "rdebug-ci-pipeline-report/2",
+            "schema": "rdebug-ci-pipeline-report/3",
             "overall": {"exit_code": INFRA_EXIT, "status": "INFRASTRUCTURE",
                         "conclusion": "failure",
                         "meaning": "orchestrator returned an undefined exit"},

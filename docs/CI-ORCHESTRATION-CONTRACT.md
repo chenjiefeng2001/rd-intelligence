@@ -244,21 +244,41 @@ D6 的「measured / NOT A GATE」由此机械化（已有对照
 
 ## 6. 问 6：报告必须能证明每个要求执行的 gate **实际执行过**
 
-### 6.1 每个 gate 的必备会计字段（提案）
+### 6.1 每个 gate 的必备会计字段（**已实现**）
 
-| 字段 | 含义 |
-| --- | --- |
-| `gate_id` / `spec_gate` | 检查 id / 对应 §4 门号 |
-| `state` | `IMPLEMENTED` / `NOT_IMPLEMENTED` / `PROCESS_ONLY` |
-| `required_execution` | 是否要求实际执行 |
-| `attempted` | 是否被尝试运行 |
-| `executed` | **实际执行的检查数** |
-| `skipped` / `failures` / `errors` | 计数 |
-| `discovery_anomaly` | discovery 异常标记（§4.1） |
-| `missing_prerequisites` | 缺失前置清单 |
-| `exit_code` / `duration_s` | 过程证据 |
-| `outcome` | 四态之一 |
-| `evidence_ref` | 可复查的产物路径 |
+字段名以实现为准；本表是契约表述与实际字段的**映射**，不是第二份字段清单。
+两个方向的偏差都由 `test_declared_accounting_fields_exist_in_the_report` 约束。
+
+| 契约要求 | 实际字段 | 状态 |
+| --- | --- | --- |
+| `gate_id` | `gate` | 重命名 |
+| `state` | `state` | 一致 |
+| `required_execution` | `required_execution` | 一致 |
+| `attempted` | `attempted` | 一致 |
+| `executed` | `executed` | 一致 |
+| `exit_code` | `exit_code` / `process_exit_code` / `execution_clean` | 实现给出三项，均为派生值 |
+| `outcome` | `outcome` | 一致 |
+| `skipped` / `failures` / `errors` | `tests_executed` / `tests_failed` / `tests_errors` | 更精确的命名 |
+| `discovery_anomaly` | `discovery_anomaly`（布尔）与 `discovery_anomalies`（身份列表） | **本轮补齐** |
+| `missing_prerequisites` | `missing_prerequisites` | **本轮补齐** |
+| —（契约未声明，实现已有） | `blocking` / `command` / `detail` / `spec_ref` / `spec_gate` / `test_result` / `lint` | 已登记 |
+
+**为什么有些字段是「实现回到契约」而不是反过来。**
+`missing_prerequisites` 与 `discovery_anomaly` 此前**只以散文存在于 `detail`**。
+§6.2 的不变式只依赖 `executed` / `attempted` / `required_execution` / `state`，
+因此它们不承载任何 PASS/FAIL 不变式；但它们承载**诊断**：报告要能区分
+「因环境缺失而未运行」与「运行了且失败」。散文不是同一事实的弱形式，
+散文是一个机器读不到的事实。故这两个字段由实现补齐。
+
+**为什么其余方向是契约跟随实现。** `gate_id` → `gate` 是纯改名，实现侧的名字
+被全部报告与控制引用；`skipped/failures/errors` → `tests_*` 是同一意图的更精确
+命名。让文档去匹配实现，而不是反过来改名去匹配一份已冻结的提案。
+
+**待裁决，本表不单方面处理**：
+
+* `evidence_ref` —— 契约要求但实现从未输出过，且 §6.2 不依赖它。
+  删除它属于**放宽契约**，须经裁决，不得静默处理。
+* `duration_s` —— 同上。
 
 ### 6.2 MUST 成立的不变式
 
