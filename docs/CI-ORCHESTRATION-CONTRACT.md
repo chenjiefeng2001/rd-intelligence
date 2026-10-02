@@ -7,7 +7,7 @@ document_living_sections:
   - "0. 本阶段确立的 Contract 基础"
   - "1. 问 1：五个 §4 Gate 的执行入口与当前状态"
   - "2. 问 2：四态 → 总体 CI 状态"
-  - "3. 问 3：未实现的 Gate 3 如何显示"
+  - "3. 问 3：无可执行物的门如何显示"
   - "4. 问 4：execution accounting 的四种情形"
   - "5. 问 5：release-blocking vs diagnostic"
   - "6. 问 6：报告必须能证明每个要求执行的 gate **实际执行过**"
@@ -24,9 +24,14 @@ document_mixed_note: >-
 ---
 # CI integration Phase 1：orchestration Contract
 
-日期：2026-09-29
+日期：2026-09-29（Contract）；状态刷新 2026-10-02。
 授权范围：**仅 orchestration Contract**（7 问）。
-**未写 pipeline 配置、未接线 release blocking、未实现 Gate 3。**
+
+**当前状态（2026-10-02 实测）**：pipeline 配置已写并接线
+（`scripts/ci_pipeline.py` + `ci-pipeline.json`，门数、exit 映射与 readiness 组合均已落地）；
+**§4 门 3 已实现**（`scripts/cold_warm_gate.py`，blocking，实测 `PASS`）；
+**release blocking 仍未启用且未获授权**（`release_blocking_enabled: false`）——
+这是**裁决状态**，不是「未接线」。
 
 回答的问题只有一个：
 
@@ -35,6 +40,10 @@ document_mixed_note: >-
 而不是：
 
 > **「CI 现在开始强制这些 gates。」**
+
+> 当前编排层已对全部七个门产出裁决并据此退出
+> （现为 `BLOCKED_INFRA / exit 3`），但**尚未对 release 形成阻断**——
+> 后者仍需单独授权，且受 integration 门未干净退出的问题阻塞。
 
 ---
 
@@ -45,8 +54,8 @@ document_mixed_note: >-
 | §4.1 verdict semantics | **FROZEN** |
 | harness I1/I2 | **已授权 / 可验证**（`scripts/release_gate.py`） |
 | regression / unknown / infrastructure 三分 | **已定义**（Q3 裁决） |
-| §2.1 fork-integrity audit | **可执行**（22 项对照） |
-| Gate 3 语义定义 | **DEFINED**（`docs/GATE3-COLD-WARM-CONTRACT.md`） |
+| §2.1 fork-integrity audit | **可执行**（18 项对照 + 1 条已记录 deviation） |
+| Gate 3 语义定义 | **DEFINED**（`docs/GATE3-COLD-WARM-CONTRACT.md`）<br>语义定义之外**已实现**并接入编排层（coverage 为 bounded） |
 | **Gate 3 可执行检查** | **NOT IMPLEMENTED** |
 
 ---
@@ -139,25 +148,32 @@ document_mixed_note: >-
 
 ---
 
-## 3. 问 3：未实现的 Gate 3 如何显示
+## 3. 问 3：无可执行物的门如何显示
 
-**MUST** 以独立状态呈现，**MUST NOT** 折叠为 `PASS`：
+**MUST** 以独立状态呈现，**MUST NOT** 折叠为 `PASS`。
+现行例为 **§4 门 4（`benchmark_archive`）** —— 门 3 已实现，不再适用：
 
-| 字段 | 值 |
+| 字段 | 值（门 4 实测） |
 | --- | --- |
-| `gate_id` | `cold_warm_equivalence` |
-| `state` | **`NOT_IMPLEMENTED`** |
-| `contributes` | **`UNKNOWN`** |
-| `required_execution` | `true`（它是 §4 声明的门） |
+| `gate_id` | `benchmark_archive` |
+| `state` | **`PROCESS_ONLY`** |
+| `contributes` / `outcome` | **`UNKNOWN`** |
+| `required_execution` | `false`（规范为流程要求，非自动判定路径） |
+| `attempted` | `false` |
 | `executed` | `0` |
-| `spec_ref` | `docs/GATE3-COLD-WARM-CONTRACT.md` |
-| `note` | 语义已定义、证据已采、**检查未实现**；五项覆盖缺口见该文件 §8 |
+| `blocking` | `false` |
+| `note` | 规范要求 session 与 latency 数据归档；无自动判定路径 |
 
 **MUST NOT** 把 `NOT_IMPLEMENTED` 归入 `PROCESS_ONLY`：
-门 4 是「规范要求人工流程」，门 3 是「规范要求自动检查但尚未写」——
-两者缺失原因不同，报告必须能区分。
+门 4 是「规范要求人工流程」，而 `NOT_IMPLEMENTED` 是
+「规范要求自动检查但尚未写」—— 两者缺失原因不同，报告必须能区分。
 
-**MUST NOT** 在门 3 处输出任何形式的 `PASS`、`SKIPPED (optional)` 或静默省略。
+**MUST NOT** 在无可执行物的门处输出任何形式的 `PASS`、
+`SKIPPED (optional)` 或静默省略。
+
+> **MUST NOT** 折叠 `blocking: false` 的门对总体裁决的影响：
+> 门 4 虽 `blocking: false`，其 `UNKNOWN` 仍使总体无法 `PASS`
+> （`release_gate.py` 的 `outcomes` 取全部已声明门，不按 `blocking` 过滤）。
 
 ---
 
@@ -170,7 +186,10 @@ document_mixed_note: >-
 | **环境缺失** | `missing_prerequisites[]` 非空 | `INFRASTRUCTURE_FAILURE`（**运行前**判定） | ❌ 无 |
 | **测试 discovery 异常** | `discovery_anomaly=true` | **`INFRASTRUCTURE_FAILURE`** | ❌ 无 |
 
-### 4.1 ⚠️ 新发现：discovery 异常当前被误判为 `REGRESSION`
+### 4.1 缺陷发现：discovery 异常会被误判为 `REGRESSION`（**已修**）
+
+> 标题原为「新发现：discovery 异常**当前**被误判」。该缺口已由 Phase 2 的 G2
+> 修复，因此「当前」不再成立；下文的实测与其判定过程作为**发现时的记录**保留。
 
 实测（一个正常模块 + 一个 `import nonexistent` 的模块）：
 
@@ -200,8 +219,9 @@ ERROR: test_broken          ← traceback 含 unittest.loader / _FailedTest
 **MUST**：分类器读取 **error/FAIL 的身份**，不只读计数。
 **MUST NOT** 仅凭 `errors>=1` 判为 `REGRESSION`。
 
-> **归属**：这是对**已交付** `release_gate.py` 的缺陷发现。
-> **本阶段不修**（Phase 2 范围）；记录于此，供 Phase 2 纳入。
+> **归属**：这是对**已交付** `release_gate.py` 的缺陷发现，
+> 记录于本阶段并**已由 Phase 2 的 G2 修复** —— 分类器现读取 error/FAIL 的身份，
+> 不再只凭计数。上文 §4.1 的实测与「判为 `REGRESSION`」的结论描述的是修复**之前**的行为。
 
 ---
 
@@ -209,8 +229,8 @@ ERROR: test_broken          ← traceback 含 unittest.loader / _FailedTest
 
 | 类别 | 成员 | 裁决权 |
 | --- | --- | --- |
-| **release-blocking** | §4 门 1（unit / transport / integration）<br>§4 门 2（boundary audit）<br>§4 门 5（fork integrity） | 可阻断 |
-| **不可 blocking（但必须可见）** | §4 门 3（`NOT_IMPLEMENTED`）<br>§4 门 4（`PROCESS_ONLY`） | 不可阻断 —— **无可执行物**；但贡献 `UNKNOWN` 使总体无法 `PASS` |
+| **release-blocking** | §4 门 1（unit / transport / integration）<br>§4 门 2（boundary audit）<br>§4 门 3（cold==warm 等价）<br>§4 门 5（fork integrity） | 可阻断 |
+| **不可 blocking（但必须可见）** | §4 门 4（`PROCESS_ONLY`） | 不可阻断 —— **无可执行物**；但贡献 `UNKNOWN` 使总体无法 `PASS` |
 | **diagnostic（不在 gate 集合）** | `bench.py` / `bench_transport.py` / `session_bench.py`<br>`mcp_smoke.py` / `mcp_call.py` / `ide_smoke.py`<br>`workload_run.py` / `workload_corpus.py`<br>`d4_evidence_probe.py` / `reasoning_bench.py` / `diff_closure.py` | 不参与裁决 |
 
 **判据**（与 Q1 认可项一致）：**会因机器差异而非缺陷失败的，一律不是门禁。**
