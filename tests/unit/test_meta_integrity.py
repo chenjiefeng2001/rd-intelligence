@@ -194,8 +194,8 @@ class TestStatusSubstantiveClaimsMatchReality(unittest.TestCase):
             # integrity` in the same block contains the id as a substring and
             # satisfied it. Same class of defect as the two prose checks
             # earlier -- a near-miss accepted as the thing itself.
-            token = re.compile(r"(?<![A-Za-z0-9_])%s(?![A-Za-z0-9_])"
-                               % re.escape(gate["id"]))
+            token = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(gate['id'])}"
+                               r"(?![A-Za-z0-9_])")
             self.assertRegex(
                 block, token,
                 f"gate {gate['id']} is missing from the freeze document's "

@@ -323,7 +323,7 @@ class TestHarnessWiringIsEvidenceBased(TerminationTestBase):
 
     def test_reliability_stays_flat_while_terminations_nests(self):
         self.assertIsInstance(self.harness.REPORT["terminations"], dict)
-        for key, value in self.harness.REPORT["reliability"].items():
+        for value in self.harness.REPORT["reliability"].values():
             self.assertIsInstance(value, int)
 
     def test_workload_run_gate_expression_still_holds(self):

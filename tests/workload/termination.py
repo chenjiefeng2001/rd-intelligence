@@ -139,13 +139,13 @@ def summarise(observation):
     evidence = observation["evidence"]
     bits = [observation["termination_observation"]["class"]]
     if result["returncode_present"]:
-        bits.append("returncode=%d" % result["process_returncode"])
+        bits.append(f"returncode={result['process_returncode']}")
     else:
         bits.append("returncode=<absent>")
     if evidence["signal_number"] is not None:
-        bits.append("signal=%d" % evidence["signal_number"])
+        bits.append(f"signal={evidence['signal_number']}")
     if evidence["ntstatus"] is not None:
-        bits.append("ntstatus=0x%08X" % evidence["ntstatus"])
+        bits.append(f"ntstatus=0x{evidence['ntstatus']:08X}")
     if evidence["traceback_present"]:
         bits.append("traceback")
     if evidence["completion_sentinel_present"]:
