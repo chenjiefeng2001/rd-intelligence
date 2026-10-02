@@ -127,11 +127,23 @@ class TestStatusSubstantiveClaimsMatchReality(unittest.TestCase):
             cls.pipeline = json.load(handle)
 
     def test_every_gate_id_appears_in_the_freeze_document(self):
+        """Scoped to the canonical status block, not the whole file.
+
+        Found by mutation: deleting a gate id from that block passed, because
+        the same id still occurred elsewhere in the document. A reader looks at
+        the status block, so that is the place the id has to be present.
+        """
         text = _read(FREEZE)
+        fence = chr(96) * 3
+        start = text.index("§2.1 fork integrity")
+        block_start = text.rindex(fence, 0, start)
+        block_end = text.index(fence, start)
+        block = text[block_start:block_end]
         for gate in self.gates:
-            self.assertIn(gate["id"], text,
-                          f"gate {gate['id']} is missing from the freeze "
-                          "document, so a reader cannot see its current state")
+            self.assertIn(
+                gate["id"], block,
+                f"gate {gate['id']} is missing from the freeze document's "
+                "status block, so a reader cannot see its current state")
 
     def test_process_only_gate_is_described_as_process_only(self):
         text = _read(FREEZE)
@@ -213,12 +225,28 @@ class TestRealProcessEvidenceIsSubstantive(unittest.TestCase):
                 "process ran")
 
     def test_the_native_av_case_still_requires_a_compiled_binary(self):
-        """The crash case must still come from a real compiler, not a literal."""
+        """The crash must still come from a real compiler, not a literal.
+
+        Found by mutation: replacing the null-dereference C source with
+        `int main(void){return 3221225477;}` passed, because the control only
+        looked for the strings "gcc" and "int main(void)" and both survived.
+        A program that returns the AV status is not an access violation, and it
+        would make the whole cross-platform matrix meaningless.
+        """
         source = _read(EVIDENCE)
         self.assertIn("gcc", source)
-        self.assertIn("int main(void)", source,
-                      "the native access violation must still be a compiled C "
-                      "program, not a hard-coded return code")
+        bodies = re.findall(r"fh\.write\(\s*\"(.*?)\"", source, re.DOTALL)
+        snippet = " ".join(bodies)
+        dense = snippet.replace(" ", "")
+        self.assertIn("intmain(void)", dense,
+                      "the native case must compile a real C program")
+        self.assertIn(
+            "(int*)0", dense,
+            "the compiled program must actually dereference a null pointer; a "
+            "literal return of the AV status would fake the measurement")
+        self.assertIn(
+            "return*p", dense,
+            "the null dereference must be reached, not merely prepared")
 
 
 class TestBoundaryDeviationNoteIsCurrent(unittest.TestCase):
