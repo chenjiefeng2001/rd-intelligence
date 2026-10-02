@@ -188,6 +188,71 @@ preamble living，`### 真实状态` 从历史父节提升，**未分类 section
 
 **living 不继承导致规范内容被判为历史。** 见 §4.3，由覆盖报告发现。
 
+## 9. F3 / F4 裁决（已定义，可实施）
+
+本节记录两项裁决及其依据。裁决不等于实现 —— 实施按 defect-version →
+revert-only → restore → real validation → freeze 流程进行。
+
+### 9.1 F3 — 正文散文 `status:` 不受 schema 约束
+
+**RESOLVED — NOT A SCHEMA CONFLICT**
+
+* schema 约束的是**已声明的 machine-readable classification metadata**，
+  即 front matter 中的键。
+* 正文中的 `status: ...` 是**散文治理状态**，不是 schema field。
+* 因此不得由 `freshness_policy: living` 与正文 `status: FROZEN` 同时出现
+  推导出 schema 矛盾。
+* **规则**：`status:` 出现在正文时，除非被明确纳入 schema，否则
+  **不得被 classification controls 当作 machine-readable metadata**。
+  未来若需机器约束正文 status，应另行定义 canonical status 字段与语法。
+
+这也解释了为何其余四份文档的 `proposed` / `active` / `implemented`
+不与 `living` / `mixed` 冲突：它们描述**治理进度**，不是文本时效。
+
+### 9.2 F4 — 状态文档按 milestone 刷新
+
+**RESOLVED — milestone / authorized workstream state change refresh**
+
+**不是每个 commit 刷新。** 「milestone」定义为：产生需要成为当前状态事实的
+已授权工作流变化，即
+
+* 已授权 workstream 完成并冻结；
+* 实现状态从 `proposed` → `implemented` / `verified`；
+* 已有 OPEN 项得到正式裁决；
+* 冻结状态发生实质变化。
+
+普通实现 commit、控制修复 commit、纯测试或文档内部修正，
+**若未改变当前状态事实，不触发状态刷新**。
+
+### 9.3 初始 calibration
+
+```
+MAX_DRIFT = 19 commits
+```
+
+依据实测的刷新间隔分布（`CURRENT-EVIDENCE-FREEZE.md` 相邻两次刷新的提交间隔）：
+
+```
+[1, 1, 1, 2, 1, 1, 3, 3, 3, 2, 2, 1, 19, 9, 1, 1, 3]
+median 2   max 19   17 个间隔
+```
+
+19 **不是「永远正确」**，而是以当前真实 milestone cadence 校准出的初始窗口。
+
+**改阈值来消除报警：否。** 若 milestone 节奏改变，F4 重新进入 calibration，
+不得静默调整数值。
+
+### 9.4 与之相适应的漂移不变式
+
+在 milestone 节奏下，文档声明的 `baseline_drift` 在两次刷新之间**必然落后于**
+实际值 —— 普通 commit 不触发刷新。因此「声明值 ≈ 实际值」不可强制，
+它编码的是被本裁决取代的每提交节奏。可强制的只有两条：
+
+* **`baseline_drift` 不得高于实际值** —— 文档永不声称自己比实际更新；
+* **实际 drift 不得超过 `MAX_DRIFT`** —— 陈旧度有界。
+
+「声明值至少接近实际值」这一检查随每提交节奏一并移除。
+
 ## 8. 与已冻结决策的关系
 
 * 未迁移其余 37 份文档；未标记的文档**不受本 schema 约束**，
