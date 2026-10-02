@@ -319,16 +319,36 @@ G1（二值）+ G2（discovery 强制）同时失效   8 FAIL
 
 ### 真实状态
 
+事实源：`ci_pipeline_report.json`（本轮实测）。
+本节会随实现推进而过期；其陈旧度由 `docs/CURRENT-EVIDENCE-FREEZE.md` 的
+`baseline_drift` 与状态层控制共同约束。
+
 ```
-unit 195 / transport 58 / integration 63 / boundary_audit / fork_integrity  全 PASS
-cold_warm_equivalence  UNKNOWN (NOT_IMPLEMENTED)
-benchmark_archive      UNKNOWN (PROCESS_ONLY)
-RESULT: NEEDS_REVIEW (exit 4)
+unit                    IMPLEMENTED / PASS                        402 executed
+transport               IMPLEMENTED / PASS                         58 executed
+integration             IMPLEMENTED / INFRASTRUCTURE_FAILURE        63 executed
+                        （63 项测试报 OK，但进程 exit 3221225477 / 0xC0000005）
+boundary_audit          IMPLEMENTED / PASS                         exit 0
+cold_warm_equivalence   IMPLEMENTED / PASS（bounded coverage）
+fork_integrity          IMPLEMENTED / PASS                         exit 0
+benchmark_archive       PROCESS_ONLY / UNKNOWN / 不 blocking         0 executed
+------------------------------------------------------------------
+RESULT: BLOCKED_INFRA (exit 3, conclusion failure)
+release blocking enabled: False        accounting_consistent: True
 ```
 
-> **5 个可执行检查全通过，总体仍非 PASS** —— 因门 3/门 4 没有可执行物。
-> 这满足验收条件：编排层不再把 regression / infrastructure / unknown
-> 压成同一个 exit 1，且门 3/门 4 仍使总体保持非 PASS。
+> **总体非 PASS 的原因已经变了。** 早前此处记为 `NEEDS_REVIEW (exit 4)`，
+> 理由是门 3 / 门 4 无可执行物。门 3 现已实现并 `PASS`，门 4 仍为
+> `PROCESS_ONLY`。当前非 `PASS` 的原因是 **integration 门进程未干净退出**，
+> 按四态映射归为 `BLOCKED_INFRA (3)`，**不是** `NEEDS_REVIEW`。
+>
+> 该门 63 项测试**报告 OK**，与进程 exit `3221225477` 是两个独立事实，
+> 二者同时成立并都如实记录。这正是执行记账分离的用途：
+> **不得因测试全绿而把该门改写为 `PASS`。**
+>
+> 四态判别仍然成立：退出码互不相同（`PASS` 0、`FAIL_REGRESSION` 2、
+> `BLOCKED_INFRA` 3、`NEEDS_REVIEW` 4），regression / infrastructure /
+> unknown 不再压成同一个 exit。
 
 ### Phase 2 未做
 
