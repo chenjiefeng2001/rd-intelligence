@@ -406,5 +406,72 @@ class TestBoundaryDeviationNoteIsCurrent(unittest.TestCase):
                       "the deliberate removal must stay documented")
 
 
+class TestFreezeDocDescribesItsOwnDriftRule(unittest.TestCase):
+    """ARTIFACT: the prose must agree with the rule the code enforces.
+
+    Ruling F4 moved MAX_DRIFT to 19 and inverted the rule from 'understating is
+    forbidden' to 'overstating is forbidden'. The freeze document kept both the
+    old number and the old direction, so it described a rule the code no longer
+    implements -- in the one place a reader goes to learn what the declared
+    drift means.
+
+    Nothing caught it because the existing controls read the machine-readable
+    line, which was correct, and the paragraph was prose. Same gap as a fact
+    being produced but not flowing: here the fact is enforced and the statement
+    about it never followed.
+    """
+
+    def _paragraph(self):
+        text = _read(FREEZE)
+        start = text.find("`baseline_drift` 是本文档自陈的陈旧度")
+        self.assertNotEqual(start, -1,
+                            "the freeze document no longer explains what "
+                            "baseline_drift means to a reader")
+        return text[start:start + 420]
+
+    def test_the_stated_bound_matches_the_enforced_bound(self):
+        paragraph = self._paragraph()
+        # Either phrasing. The first version of this control matched only
+        # "上界 N" and reported no bound against text that plainly states one as
+        # "**19 commits**" -- a check that fails on correct prose is worse than
+        # no check, because it gets "fixed" by weakening the text.
+        numbers = ([int(n) for n in re.findall(r"上界\s*(\d+)", paragraph)]
+                   + [int(n) for n in
+                      re.findall(r"\*\*(\d+)\s+commits\*\*", paragraph)])
+        self.assertTrue(numbers, "the paragraph states no bound at all")
+        for number in numbers:
+            self.assertEqual(
+                number, MAX_DRIFT,
+                f"the freeze document states a bound of {number} while the "
+                f"controls enforce {MAX_DRIFT}. A reader would calibrate "
+                "against a number nothing enforces.")
+
+    def test_the_stated_direction_matches_the_enforced_direction(self):
+        paragraph = self._paragraph()
+        self.assertNotIn(
+            "低报陈旧度，超过上界则控制失败", paragraph,
+            "the paragraph still forbids understating staleness")
+        self.assertNotIn(
+            "不允许低报", paragraph,
+            "the paragraph forbids understating. The enforced rule is the "
+            "opposite: understating is expected between milestone refreshes, "
+            "and overstating is what makes a reader trust a stale document.")
+        self.assertIn(
+            "高报", paragraph,
+            "the paragraph must name overstating as the violation, not only "
+            "imply it by negation")
+        self.assertTrue(
+            "低报" in paragraph or "落后于" in paragraph,
+            "the paragraph must say that understating is the expected state "
+            "between milestone refreshes, otherwise a reader takes the bound "
+            "as something to keep clear by refreshing constantly")
+
+    def test_the_paragraph_states_the_refresh_cadence(self):
+        self.assertIn(
+            "milestone", self._paragraph().lower(),
+            "the bound is calibrated against a refresh cadence, so the "
+            "paragraph must name it or the number is unjustifiable")
+
+
 if __name__ == "__main__":
     unittest.main()
