@@ -608,3 +608,44 @@ is untouched and the pipeline correctly reports `BLOCKED_INFRA / exit 3`.
 root cause**。
 
 按 scope decision：**未修改 RenderDoc、未启用 WER、未采集 dump、未进行代码修复。**
+
+## 12. 只读调试器观测尝试（2026-10，无结果）
+
+**status: `ATTEMPTED / NO ACCESS-VIOLATION EVENT OBSERVED / rbx AND [rbx] NOT OBSERVED`**
+
+范围：按 B 路径授权，仅尝试在故障时刻读取 `rbx`、`[rbx]`、`rax`、`rcx`、
+`rip` 与模块上下文。**未修改** RenderDoc、worker、teardown 路径或 CI
+accounting；**未修改故障形状**。
+
+方法：本机无 `cdb` / `windbg` / `ntsd` / `procdump`，改以 `ctypes` 直接调用
+Windows debug API（`CreateProcess` + `DEBUG_ONLY_THIS_PROCESS` +
+`WaitForDebugEvent`）自建只读观测器，子进程为三模块最小复现集
+（`test_ide_ci_workflow`、`test_ide_ownership`、`test_real_replay`）。
+
+观测结果（事实）：
+
+- 子进程稳定跑完 `Ran 19 tests / OK`，与无调试器时一致。
+- 调试事件循环**确实在接收事件**：观测到大量 `EXCEPTION_DEBUG_EVENT`
+  （code=1）。
+- **自始至终未出现 `EXCEPTION_ACCESS_VIOLATION`（`0xC0000005`）**；捕获分支
+  一次都未触发。
+
+因此 **`rbx` 与 `[rbx]` 仍为未观测（NOT OBSERVED）**，本轮未取得任何故障时刻
+寄存器值。
+
+未确立（不得推断）：
+
+- **不能**据此断定故障在调试器下不复现 —— 该结论未经验证。调试器附着会改变
+  `BeingDebugged`、未处理异常过滤器与 CRT 故障处理路径；这只是**候选解释**，
+  不是证据。
+- 异常洪水中是否包含目标违例 —— 未判定。
+- 不能从本轮推断任何关于 vtable 为零之成因的信息；第 9 节的
+  `ROOT CAUSE OPEN` 不变。
+
+工程结论：在本环境下，同类手段（同环境自建观测器、更换采集工具）已连续失败，
+**边际收益低于成本**。有差异的下一通道是**真实调试器或 dump 采集器**
+（WinDbg / cdb / procdump）；带符号的 dump 可同时给出 `rbx`、对象来源与
+函数级归因。该路径需要安装，本环境未确认网络与管理员权限。
+
+本节不计为根因证据，不改变任何门禁状态：pipeline 仍为
+`BLOCKED_INFRA / exit 3`，teardown 修复仍 **UNAUTHORIZED and NOT STARTED**。
