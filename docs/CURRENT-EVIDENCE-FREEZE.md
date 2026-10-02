@@ -1,8 +1,16 @@
+---
+document_role: evidence_record
+freshness_policy: point_in_time
+as_of_commit: 8679553
+document_point_in_time_note: >-
+  本文档是冻结证据，不追随 HEAD。其中的测量结果（如 unit 计数）
+  属于某一时点，按裁决不做自动数值校验；身份事实与语义事实仍受控。
+---
 # CURRENT EVIDENCE FREEZE
 
 冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
 前一刷新基线为 `a81600e`）
-baseline_commit: 1209478
+baseline_commit: 8679553
 baseline_drift: 1
 冻结点 commit：`a898381`（90 commits）
 

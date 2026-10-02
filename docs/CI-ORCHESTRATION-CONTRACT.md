@@ -1,3 +1,17 @@
+---
+document_role: contract
+freshness_policy: mixed
+document_living_anchors:
+  - "## 1. "
+  - "## 2. "
+  - "### 2.2 "
+  - "### 真实状态"
+document_mixed_note: >-
+  本文档同时承担规范契约与阶段历史记录。上述 anchor
+  之外的段落（含开篇摘要、§9/§10 的“未做”清单与回退验证）未被声明
+  为 living，因此本 schema 不会将其判为 stale。这是已知漏洞，见
+  DOCUMENT-CLASSIFICATION-CONTRACT.md §7。
+---
 # CI integration Phase 1：orchestration Contract
 
 日期：2026-09-29

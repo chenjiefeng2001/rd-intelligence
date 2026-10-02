@@ -1,3 +1,10 @@
+---
+document_role: contract
+freshness_policy: living
+document_living_note: >-
+  本文档是当前生效的契约，其约束已由 readiness 与 pipeline 强制，因此
+  其一致性属于可校验的语义事实。
+---
 # Capture Corpus Contract
 
 Date: 2026-10-02
