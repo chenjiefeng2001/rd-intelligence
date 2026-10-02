@@ -1,7 +1,7 @@
 # DOCUMENT CLASSIFICATION CONTRACT
 
 status: proposed
-schema_version: 1
+schema_version: 1.1
 scope: 4 sample documents only
 migrated_documents: 4 / 41
 gate: none (controls live in the existing `unit` gate; no new gate added)
@@ -50,22 +50,69 @@ freshness_policy: living | point_in_time | mixed
 | --- | --- |
 | `living` | **必须**与当前状态一致；陈旧即为缺陷 |
 | `point_in_time` | **不得**与 HEAD 比较；须声明 `as_of_commit` |
-| `mixed` | 混合型；须用 `document_living_anchors` 声明哪部分是 living |
+| `mixed` | 混合型；须声明 living 区域与默认策略（见 §4） |
 
 `living` 与 `point_in_time` 是本 schema 的核心区分。已裁决：**测量结果
 （`unit=402`）属 `point_in_time`，不自动校验**；身份事实（commit、日期、
 gate 名）与语义事实（exit 定义、流程约束）属 `living`，可校验。
 
-## 4. 条件字段
+## 4. v1.1：`mixed` 的全覆盖
+
+### 4.1 v1 的漏洞
+
+v1 的 `mixed` 只能声明「本文档**含有** living 区域」，不能声明「**哪些**区域是
+living」。于是存在这样的内容：
+
+* 不在任何 anchor 内；
+* 也不受任何默认覆盖；
+* 无声明、无归属、无控制可见。
+
+`CI-ORCHESTRATION-CONTRACT.md` 的开篇摘要（L5：未接线 / 未实现门 3 /
+release blocking）正落在这里。这不是控制失败，而是**表达能力不足**。
+
+### 4.2 v1.1 的修法：region 级声明 + 全覆盖
 
 ```yaml
-as_of_commit: <sha>            # freshness_policy: point_in_time 时必填
-document_living_anchors: [...] # freshness_policy: mixed 时必填，非空
+document_role: contract
+freshness_policy: mixed
+
+document_living_preamble: true      # 首个 section 之前的内容是否 living
+document_default_policy: historical # 未声明 section 的默认处置
+
+document_living_sections:
+  - "0. 本阶段确立的 Contract 基础"
+  - "真实状态"
 ```
 
-`as_of_commit` 使「这份记录截至何时」永远可回答。
-`document_living_anchors` 使混合文档无需拆文件也能声明哪部分受 living 约束 ——
-每个 anchor 是正文中必须存在的字面串。
+三个字段合起来保证**全覆盖**：preamble 有策略，未声明 section 有默认，
+声明的 section 精确到标题。修好之后，文档的每一行要么显式 living，
+要么显式 historical —— **不存在无归属区域**。
+
+### 4.3 继承与提升
+
+**living 按结构向下继承。** 子节位于父节体内，因此继承属于文档结构，
+不是对措辞的判断 —— 而措辞判断是本 schema 明确拒绝做的。
+
+没有继承时模型恰好是反的：声明 `## 2.` 为 living，反而让它下面的
+`### 2.2 当前实际结果` 落到 historical，文档中最规范的内容被排除在
+living 之外。
+
+**显式声明可以提升历史父节内的子节。** 这是同一规则的另一半，且必需：
+`### 真实状态` 位于阶段历史段落 `## 10.` 之下，正是这种情况。
+
+**已在 living 祖先之下的 living 声明是冗余**，会被控制拒绝 —— 不增加任何
+覆盖，却读起来像「该区域已被审阅且确认无需归属」。
+
+### 4.4 不做的事
+
+**不扫描未声明 section 并判断其是否 stale。** 文本语义判断不是可靠控制：
+
+```
+历史记录：「Phase 2 未实现 Gate 3」   ← 正确历史
+当前契约：「Gate 3 未实现」            ← 错误
+```
+
+没有关键词测试能区分二者，因此不做此类测试。
 
 ## 5. 第一批四个样本文档
 
@@ -76,37 +123,46 @@ document_living_anchors: [...] # freshness_policy: mixed 时必填，非空
 | `docs/AUDIT-2026-10-02-B.md` | `audit_record` | `point_in_time` | 审计记录不被要求匹配 HEAD |
 | `docs/CAPTURE-CORPUS-CONTRACT.md` | `contract` | `living` | 默认行为（living） |
 
-## 6. 第一阶段控制范围
+`CI-ORCHESTRATION-CONTRACT.md` 的解析结果：26 个 section 中 16 个 living，
+preamble living，`### 真实状态` 从历史父节提升，**未分类 section 为 0**。
 
-`tests/unit/test_document_classification.py`，只做四件事：
+## 6. 控制范围
 
-1. `document_role` 存在且取值合法；
-2. `freshness_policy` 存在且取值合法；
-3. `living` 文档**不得**携带点时锚点（`as_of_commit`）—— 不得自称是记录；
-4. `point_in_time` 文档**必须**携带 `as_of_commit`，且本模块**不得**把
-   点时文档与 HEAD 比较。
+`tests/unit/test_document_classification.py`，12 项，全部位于既有 `unit` 门内。
+**不新增 gate**，不改门数、exit 映射或 readiness 组合。
 
-外加一条支撑 `mixed` 的检查：`document_living_anchors` 非空，且每个 anchor
-确实存在于正文中。
+1. `document_role` 存在且取值合法
+2. `freshness_policy` 存在且取值合法
+3. `living` 文档不得携带点时锚点（`as_of_commit`）
+4. `point_in_time` 文档必须携带 hash 形态的 `as_of_commit`
+5. `point_in_time` 文档不得声明 living section（否则应声明为 `mixed`）
+6. 本模块**不得读取仓库状态** —— 使「记录不与 HEAD 比较」成为结构性质而非承诺
+7. 四份样本未被取消标记
+8. `mixed` 必须声明 preamble 与默认策略（v1 洞口的直接修复）
+9. 每个 living section 必须解析到**真实标题**（拒绝 `Gate` 这类模糊定位）
+10. 不得重复声明；不得在 living 祖先之下冗余声明；living section 不得为空
+11. **每个 region 都必须解析出策略**（计算得出，不是检查字段存在的代理）
+12. front matter 内不得出现 markdown 标题
 
 **明确不做**：数字同步检查、全文时态检查、自动改写建议。
-**明确不做**：新增 gate。控制位于既有 `unit` 门内，不改变门数、exit 映射
-或 readiness 组合。
 
-## 7. 已知弱点（不掩饰）
+## 7. 实施过程中暴露的两个缺陷（记录在案）
 
-**`mixed` + anchors 无法覆盖 anchor 之外的正文。**
-`CI-ORCHESTRATION-CONTRACT.md` 的开篇摘要（L5：未接线 / 未实现门 3）
-位于任何 anchor 之外，因此本 schema **不会**把它判为 stale ——
-它既不在声明为 living 的段落内，也没有被声明为历史。
+**front matter 吞掉正文。** 写入 front matter 时结尾 `---` 少了换行，
+与紧随的 H1 粘连成 `---# CI integration...`。闭合分隔符于是不成其为分隔符，
+非贪婪的 front matter 正则一路吃到下一条水平分隔线，把标题、日期、授权范围
+和整个开篇摘要当成了元数据吞掉。
 
-这是本设计已知的漏洞，而不是已解决的问题。修法有两条，都需要先拆文件
-或引入段落级标记，属于结构变更，超出本阶段授权。**因此 L5 仍是未决项**，
-不能因为「已分类」就认为它已被处理。
+**当时 7 项控制全部通过** —— 因为一份把自身一大块塞进 front matter 的文档
+依然解析得出来。这正是新增控制 12 的理由：front matter 里出现标题永远是
+这个 bug，永远不会是意图。
+
+**living 不继承导致规范内容被判为历史。** 见 §4.3，由覆盖报告发现。
 
 ## 8. 与已冻结决策的关系
 
 * 未迁移其余 37 份文档；未标记的文档**不受本 schema 约束**，
   控制不要求它们声明分类（否则会一次性产生 37 个失败）。
 * `historical_note` 已定义但第一批未使用 —— 如实记录，不为凑齐而误标。
-* 不改变任何现有事实文本；本阶段只新增 front matter 与本文件。
+* 不改变任何现有事实文本；本阶段只新增 front matter、修复一处
+  front matter 粘连，并新增本文件。

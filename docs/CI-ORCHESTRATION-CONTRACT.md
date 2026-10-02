@@ -1,16 +1,26 @@
 ---
 document_role: contract
 freshness_policy: mixed
-document_living_anchors:
-  - "## 1. "
-  - "## 2. "
-  - "### 2.2 "
-  - "### 真实状态"
+document_living_preamble: true
+document_default_policy: historical
+document_living_sections:
+  - "0. 本阶段确立的 Contract 基础"
+  - "1. 问 1：五个 §4 Gate 的执行入口与当前状态"
+  - "2. 问 2：四态 → 总体 CI 状态"
+  - "3. 问 3：未实现的 Gate 3 如何显示"
+  - "4. 问 4：execution accounting 的四种情形"
+  - "5. 问 5：release-blocking vs diagnostic"
+  - "6. 问 6：报告必须能证明每个要求执行的 gate **实际执行过**"
+  - "7. 问 7：fork-integrity audit 如何被消费（不复制逻辑）"
+  - "真实状态"
 document_mixed_note: >-
-  本文档同时承担规范契约与阶段历史记录。上述 anchor
-  之外的段落（含开篇摘要、§9/§10 的“未做”清单与回退验证）未被声明
-  为 living，因此本 schema 不会将其判为 stale。这是已知漏洞，见
-  DOCUMENT-CLASSIFICATION-CONTRACT.md §7。
+  本文档同时承担规范契约与阶段历史记录。上述 section 为 living
+  区域；其余 section（§8/§9/§10 及其子节）按
+  document_default_policy 为 historical。开篇摘要按
+  document_living_preamble: true 属于 living，其中 L5 的三处错误
+  断言因此已进入待修正范围，本阶段不动文案。
+  注：§4 声明为 living 后，其子节「4.1 · 新发现：discovery
+  异常当前被误判」一并落入 living（该缺口已修，标题过时）。
 ---
 # CI integration Phase 1：orchestration Contract
 
