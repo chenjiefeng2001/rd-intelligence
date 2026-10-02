@@ -38,7 +38,7 @@ import os
 import subprocess
 import sys
 
-SCHEMA = "rdebug-ci-pipeline/2"
+SCHEMA = "rdebug-ci-pipeline/3"
 
 PASS_EXIT = 0
 REGRESSION_EXIT = 2

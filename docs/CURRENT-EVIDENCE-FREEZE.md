@@ -16,7 +16,10 @@ CURRENT EVIDENCE FREEZE
                               provenance 绑定、被 F1–F4 强制
   └ audit_fork_integrity exit 0（本轮实测）
   └ git status --porcelain 仍**非空**（2 行），本冻结不宣称其为空
-14 frozen artifacts      ⚠️ 本轮**未复验**（无复验脚本可用；旧值 14/14 不作为本轮证据）
+14 frozen artifacts      14/14 hash MATCH（本轮实测，见下）
+  └ 验证机制 = `pipeline_readiness._probe_corpus` 的 `manifest_match`
+    （对 `rdebug-validation/reports/n3/N3-05A-freeze-manifest.json` 所列
+    14 项逐项 sha256 比对）
 §4 automation            RESOLVED WITH OBSERVED CONSEQUENCE (A2) → 门禁已接线并可运行
 context_eid             FIXED / VERIFIED（real capture confirmation 仍 pending）
 CI gate verdict (§4.1)   DEFINED / FROZEN
@@ -66,7 +69,7 @@ RenderDoc 归属 scope     RULED / FROZEN
 | workload 全量 | **16 tests OK / exit 0**（上版为 10 tests 含 1 失败） |
 | ruff | clean |
 | fork | 1 tracked / 1 declared；`audit_fork_integrity` exit 0 |
-| 14 冻结物 | ⚠️ **本轮未复验** |
+| 14 冻结物 | **14/14 hash MATCH（本轮实测）** |
 
 ## 本轮两处必须点明的状态变化
 

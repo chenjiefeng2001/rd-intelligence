@@ -348,7 +348,7 @@ class TestShippedDeclarations(unittest.TestCase):
     def test_pipeline_spec_declares_the_four_outcomes(self):
         with open(PIPELINE_SPEC, encoding="utf-8") as fh:
             spec = json.load(fh)
-        self.assertEqual(spec["schema"], "rdebug-ci-pipeline/2")
+        self.assertEqual(spec["schema"], "rdebug-ci-pipeline/3")
         self.assertEqual(sorted(spec["conclusion_mapping"]), ["0", "2", "3", "4"])
         self.assertEqual(spec["conclusion_mapping"]["4"]["conclusion"],
                          "neutral")

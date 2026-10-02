@@ -162,7 +162,15 @@ def _probe_corpus(repo_root, env):
         except Exception:  # noqa: BLE001
             manifest_match = None
     return {"captures_present": bool(present), "capture_count": count,
-            "tracked_captures": tracked, "manifest_match": manifest_match}
+            "tracked_captures": tracked, "manifest_match": manifest_match,
+            # Declarations, not observations. These do not change with the
+            # machine; they state what the corpus IS, so that its presence is
+            # never mistaken for a repository guarantee. See
+            # docs/CAPTURE-CORPUS-CONTRACT.md.
+            "required": True,
+            "source": "external",
+            "tracked": bool(tracked),
+            "provenance_required": True}
 
 
 def _probe_runtime(repo_root, env):
