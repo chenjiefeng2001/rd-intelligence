@@ -83,14 +83,34 @@ def _read(path):
         return handle.read()
 
 
+def _documents():
+    """Documents to check, and only those that exist.
+
+    CURRENT-EVIDENCE-FREEZE.md is inside the repository, so it is always
+    present. STATUS.md is a cross-repository report that lives outside this
+    repository and is therefore legitimately absent from a fresh clone. An
+    earlier version listed it unconditionally and raised FileNotFoundError,
+    which a gate counts as an ERROR, i.e. INFRASTRUCTURE_FAILURE: a clean
+    clone could not pass its own unit gate. The corpus contract already
+    established that a clean clone cannot run the executable suites; it must
+    not also be unable to run the status controls.
+
+    Absence is a skip, not a pass, and never silently removes coverage: the
+    in-repo document is required to be present by its own control below.
+    """
+    present = []
+    if os.path.exists(FREEZE):
+        present.append((FREEZE, "CURRENT-EVIDENCE-FREEZE.md"))
+    if os.path.exists(STATUS):
+        present.append((STATUS, "STATUS.md"))
+    return tuple(present)
+
 class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
     """N1. A status document must state how far behind it is."""
 
-    def _documents(self):
-        return ((STATUS, "STATUS.md"), (FREEZE, "CURRENT-EVIDENCE-FREEZE.md"))
 
     def test_both_documents_declare_a_machine_readable_baseline(self):
-        for path, label in self._documents():
+        for path, label in _documents():
             self.assertTrue(os.path.isfile(path), f"missing {path}")
             text = _read(path)
             self.assertIsNotNone(
@@ -102,8 +122,34 @@ class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
                 "behind HEAD it is; a document cannot stay current by hand, so "
                 "it has to be honest about being stale")
 
+    def test_the_in_repo_document_is_always_checked(self):
+        """Guards against the degradation above silently becoming coverage 0.
+
+        If both documents were absent these controls would pass vacuously,
+        which is the failure mode every "skip when missing" control has.
+        """
+        self.assertTrue(
+            os.path.exists(FREEZE),
+            "CURRENT-EVIDENCE-FREEZE.md is inside the repository and must "
+            "always exist; if it does not, the status controls below are "
+            "checking nothing and reporting success")
+
+    def test_the_cross_repo_report_is_absent_by_design(self):
+        """The STATUS.md dependency is outside version control, on purpose.
+
+        Asserted rather than left implicit so that a future move of the file
+        into the repository is a deliberate change to this contract instead of
+        an accident that quietly stops exercising the cross-repository half.
+        """
+        self.assertFalse(
+            STATUS.startswith(REPO_ROOT + os.sep),
+            "STATUS.md is expected outside this repository; if it has moved "
+            "inside, update this control rather than leaving it misleading")
+        labels = [label for _, label in _documents()]
+        self.assertIn("CURRENT-EVIDENCE-FREEZE.md", labels)
+
     def test_declared_baseline_is_a_real_ancestor_of_head(self):
-        for path, label in self._documents():
+        for path, label in _documents():
             declared = BASELINE_PATTERN.search(_read(path)).group(1)
             kind = subprocess.run(
                 ["git", "cat-file", "-t", declared], cwd=REPO_ROOT,
@@ -145,7 +191,7 @@ class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
         """
         head = _git("rev-parse", "HEAD")
         count = int(_git("rev-list", "--count", "HEAD"))
-        for path, label in self._documents():
+        for path, label in _documents():
             text = _read(path)
             declared = BASELINE_PATTERN.search(text).group(1)
             stated = int(DRIFT_PATTERN.search(text).group(1))
