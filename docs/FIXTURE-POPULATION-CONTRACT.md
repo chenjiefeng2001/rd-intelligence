@@ -113,7 +113,7 @@ document_living_note: >-
 
 | 方案 | Layer A 成员资格 | Layer B 内容身份 | 依赖确定性验证 | 能处理替换 | 能处理额外文件 |
 | --- | --- | --- | --- | --- | --- |
-| producer declaration（`DRAWS`） | ✓ **但当前声明不成立**（§6.5） | ✗ | 否 | 部分 / 需定义 | ✓ |
+| producer declaration（`DRAWS`） | ✓ —— 缺陷已修，producer 现在是权威声明来源（§6.5-1） | ✗ | 否 | 部分 / 需定义 | ✓ |
 | filename set | ✓ | ✗ | 否 | ✗ | ✓ |
 | filename + SHA-256 | ✓ | ✓ | **是** | ✓ | ✓ |
 | manifest | 取决于 manifest schema | 取决于是否含 hash | **若含 hash，则是** | 可 | 可 |
@@ -134,20 +134,31 @@ fixture deterministic verification
 **不能反推**：不能因为「某个方案需要 hash」就断定「确定性验证已被裁决」。
 `fixture 确定性 / 完整性验证` 仍是独立 OPEN 项；**Layer A 的选择不依赖它**。
 
-### 6.5 三项实测前置缺陷（会影响方案可行性）
+### 6.5 三项实测前置缺陷 —— 两项已修，一项仍开放
 
-1. **producer 的声明与写出不一致。** `workload_corpus.py:61-62` 以
-   `w{draws:05d}_frame11.rdc` 判存在（与磁盘一致），`:68` 却写出
-   `w{draws:05d}.rdc`（无 `_frame11`），docstring 亦写 `w00001.rdc … w20000.rdc`。
-   **今天运行它会因文件已存在而全部跳过，输出 `corpus ready: 14`，却从未产出其
-   声明的名字。** 故producer 目前**不是**权威声明来源，任何 producer-declaration
-   方案都需先修此项。
-2. **producer 内部有更弱的注入面。** `:72` 的 `w{draws:05d}*.rdc` 前缀 glob 会把
-   `w00001_evil.rdc` 也计为该档capture。
-3. **仓库内唯一的 sha256 验证覆盖的是另一个 population。**
-   `_probe_corpus` 统计 `tests/workload/corpus/*.rdc`，但其 `manifest_match` 校验的
-   是 `N3-05A-freeze-manifest.json` 中的 `n3-corpus/captures/*` 与 reports —— 即
-   **门禁不消费的那批 capture**。现有内容验证机制与门禁实际输入不对齐。
+1. **producer 的声明与写出不一致 —— 已修。** `workload_corpus.py:61-62` 曾以
+   `w{draws:05d}_frame11.rdc` 判存在，而 `:68` 写出 `w{draws:05d}.rdc`，
+   docstring 亦写后者；**旧代码运行时会因文件已存在而全部跳过，输出
+   `corpus ready: 14`，却从未产出其声明的名字**，故 producer 当时不是权威声明
+   来源。现引入单一 `canonical_name(draws) = w{draws:05d}_frame11.rdc`，
+   存在性检查、日志、计数与文档全部使用它；生成后若 canonical 文件未出现即
+   `SystemExit`，不再以循环计数器冒充 population 数量。
+   canonical 取带 `_frame11` 的名称，依据是该名称被 README、DESIGN_SPEC、
+   D4-EVIDENCE、F12、GATE3 与多份 freeze 记录引用；app 接收
+   `w00001.rdc` 作为 stem 后自行产出 `_frame11` 文件。
+2. **producer 内部的宽前缀注入面 —— 已修。** 原 `:72` 的 `w{draws:05d}*.rdc`
+   会把 `w00001_evil.rdc` 计为该档；现为精确文件名判断，并有负向控制覆盖。
+   **注意这只消除了 producer 自身的错误成员发现，并不表示 drop-in gate 漏洞
+   已解决** —— integration gate 消费的是 env 单路径，与 producer 是不同消费者。
+3. **仓库内唯一的 sha256 验证覆盖的是另一个 population —— 仍开放，独立项。**
+   `_probe_corpus` 统计 `tests/workload/corpus/*.rdc`，但其 `manifest_match`
+   校验的是 `N3-05A-freeze-manifest.json` 中的 `n3-corpus/captures/*` 与 reports
+   —— 即**门禁不消费的那批 capture**。本轮**未**修复或重定义该错位。
+
+另有已记录但**不在本轮范围**的观察：`tests/workload/harness.py` 的
+`discover_corpus()` 同样以 `glob("*.rdc")` 加 `w(\d+)` 正则匹配 stem，因此也接受
+`w00001_evil.rdc`。它是 workload runner 的消费者，**不是门禁裁决入口**，本轮
+未改动。
 
 ### 6.6 failure semantics 必须拆出
 

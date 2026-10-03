@@ -1,9 +1,16 @@
 """Generate the workload capture corpus from the triangle fixture.
 
-Produces one .rdc per draw-count in tests/workload/corpus/:
-  w00001.rdc ... w20000.rdc   (S/M/L tiers by event count)
-XL tier (>100k events) requires a real game capture — place any *.rdc into
-the corpus directory and it will be discovered automatically."""
+Produces one canonical capture per draw-count in tests/workload/corpus/:
+  w00001_frame11.rdc ... w20000_frame11.rdc   (S/M/L tiers by event count)
+
+The app is handed the stem `w00001.rdc` and emits `w00001_frame11.rdc`. The
+canonical name is the emitted one, and every existence check, log line and
+count in this file uses that single name. Membership is exact: a wide prefix
+match would let `w00001_evil.rdc` satisfy the 1-draw tier.
+
+XL tier (>100k events) requires a real game capture. Such a file is NOT part
+of the canonical population and this script neither verifies nor counts it.
+"""
 
 import os
 import subprocess
@@ -47,32 +54,60 @@ def find_exe():
     return exe
 
 
+def canonical_name(draws):
+    """The one canonical fixture filename for a draw tier."""
+    return f"w{draws:05d}_frame11.rdc"
+
+
+def canonical_path(draws, corpus_dir=None):
+    """The canonical fixture path for a draw tier."""
+    return Path(corpus_dir or CORPUS) / canonical_name(draws)
+
+
+def population(draws=None, corpus_dir=None):
+    """The declared population: one canonical path per draw tier."""
+    return [canonical_path(d, corpus_dir) for d in (draws or DRAWS)]
+
+
+def missing_draws(draws=None, corpus_dir=None):
+    """Draw tiers whose canonical fixture is absent.
+
+    Membership is an exact filename test. The previous check globbed
+    `w00001*.rdc`, which accepted any file carrying the tier's prefix.
+    """
+    return [d for d in (draws or DRAWS)
+            if not canonical_path(d, corpus_dir).is_file()]
+
+
 def main():
     WORKDIR.mkdir(parents=True, exist_ok=True)
     CORPUS.mkdir(parents=True, exist_ok=True)
+    todo = missing_draws()
+    if not todo:
+        print(f"corpus ready: {len(population())} captures in {CORPUS}",
+              flush=True)
+        return 0
     exe = find_exe()
     env = dict(os.environ)
     env["RDEBUG_RENDERDOC_PATH"] = os.environ.get(
         "RDEBUG_RENDERDOC_PATH",
         r"D:\renderdoc_no_mcp\renderdoc\x64\Release\pymodules")
-
-    generated = 0
-    for draws in DRAWS:
-        stem = CORPUS / f"w{draws:05d}"
-        rdc = Path(str(stem) + "_frame11.rdc")
-        if rdc.exists():
-            generated += 1
-            continue
+    for draws in todo:
         print("capturing", draws, "draws/frame ...", flush=True)
         subprocess.run(
             [str(exe), "30", str(CORPUS / f"w{draws:05d}.rdc"), RDOC_DLL,
              str(draws)],
             check=True, capture_output=True, text=True, timeout=300,
         )
-        for _p in CORPUS.glob(f"w{draws:05d}*.rdc"):
-            generated += 1
-    print(f"corpus ready: {generated} captures in {CORPUS}")
+        produced = canonical_path(draws)
+        if not produced.is_file():
+            raise SystemExit(
+                "producer stem was accepted but the canonical fixture did "
+                f"not appear: expected {produced}")
+    print(f"corpus ready: {len(population())} captures in {CORPUS}",
+          flush=True)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
