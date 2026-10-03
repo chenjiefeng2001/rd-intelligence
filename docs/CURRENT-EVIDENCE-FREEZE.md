@@ -68,13 +68,16 @@ Pipeline Phase 1         COMPLETE / FROZEN
 Pipeline readiness      COMPLETE / VERIFIED / FROZEN
 Execution accounting    COMPLETE / VERIFIED / FROZEN
 Teardown crash          REPRODUCED / FAULTING BYTES ESTABLISHED
-  previous interp       SUPERSEDED -- mov rbx,[rax] is not present at the
-                        recorded offset; see TEARDOWN-CRASH-INVESTIGATION 4
-  faulting instruction  indirect virtual call through the qword at [rbx]
-  instruction start     0x4A0A4D (the record said 0x4A0A4E, one byte late)
-  vtable pointer        zero at the fault
-  root cause            OPEN -- zeroed, lifecycle, or incomplete construction
-                        cannot be separated on current evidence
+  previous interp       SUPERSEDED -- see TEARDOWN-CRASH-INVESTIGATION 13
+  faulting instruction  mov rbx, qword ptr [rax]  (48 8b 18)
+  instruction start     0x4A0A4E  (runtime-measured fault address)
+  faulting register     RAX == 0 at the fault; it is the dereferenced pointer
+  rbx / [rbx]           RBX = 00007ffb`0c1edc80 (non-null);
+                         [rbx] = 0x1, readable -- EXCLUDED as fault source
+  prior byte claim      SUPERSEDED -- "ff 50 virtual call / vtable pointer zero"
+                         refuted by runtime measurement (TEARDOWN 9 and 13)
+  root cause            OPEN -- which global [rip+...] is, which static owns
+                         it, and why it is zero are all unestablished
   module                renderdoc.dll（非 renderdoc.pyd）
   access                read of address 0 (c0000005)
   function attribution  NOT_ESTABLISHED（PDB 未提供该地址私有符号）

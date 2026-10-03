@@ -590,37 +590,47 @@ Teardown fix remains **UNAUTHORIZED and NOT STARTED**. Exit-code masking,
 `os._exit`, and exit-path workarounds remain forbidden. The accounting Contract
 is untouched and the pipeline correctly reports `BLOCKED_INFRA / exit 3`.
 
-## 9. 状态更新（2026-10）
+## 9. 状态更新（2026-10，结论已被 §13 实测推翻）
 
 **status: `REPRODUCED / FAULTING BYTES ESTABLISHED / PREVIOUS INSTRUCTION INTERPRETATION SUPERSEDED / ROOT CAUSE OPEN / SYMBOLIC ATTRIBUTION NOT ESTABLISHED`**
 
-此前记录的故障形状 —— `mov rbx,[rax]`，`rax == 0`，即从空指针**读取** ——
-**已从当前事实中撤下，标记为 superseded observation**。该指令的字节
-（`48 8b 18`）在故障地址 ±96 字节内出现 0 次；实际字节是经 vtable 的虚调用，
-指令首字节为 `0x4A0A4D`，而记录写的是 `0x4A0A4E`。
+> **本节此前提出的「当前更准确的事实」已被 §13 的直接 CDB 测量推翻。**
+> 本节保留仅作为错误记录。冻结记录不是证据本身；直接测量优先于既有文档结论。
 
-**当前更准确的事实**：
+本节当时声称以下三条，**三条均已被实测推翻**：
 
-> 故障指令是经从 `[rbx]` 载入的 qword 的间接虚调用；故障时该 vtable 指针为零。
+1. 「指令字节 `48 8b 18` 在故障地址 ±96 字节内出现 0 次」——
+   实测：该字节序列就在 `0x4A0A4E`，即故障指令处。
+2. 「指令首字节为 `0x4A0A4D`，实际字节是 `ff 50` 的间接虚调用」——
+   实测：`0x4A0A4E` 处字节为 `48 8b 18`；`0x4A0A4D` 是
+   `0x4A0A49` 处 `mov qword ptr [rsp+20h],rdi` 的末位立即数字节，
+   **不是指令起点**。（本节未做 ±96 字节全扫描，故此处不主张该范围内
+   `ff 50` 的出现次数 —— 未测量即不记录。）
+3. 「故障时 vtable 指针为零」——
+   实测：为零的寄存器是 `rax`；`rbx` 非空，`[rbx]` 可读且非零。
 
-**根因仍未确立。** vtable 或对象状态为何为零尚不能选定：可能来自清零、
-生命周期错误或未完成构造，证据不足以在三者间判定。因此本更新**不写成
-root cause**。
+本节的 `ROOT CAUSE OPEN` 与 `SYMBOLIC ATTRIBUTION NOT ESTABLISHED`
+**不受本次推翻影响**，见 §13。
 
 按 scope decision：**未修改 RenderDoc、未启用 WER、未采集 dump、未进行代码修复。**
 
 ## 12. 只读调试器观测尝试（2026-10，无结果）
 
-**status: `ATTEMPTED / NO ACCESS-VIOLATION EVENT OBSERVED / rbx AND [rbx] NOT OBSERVED`**
+**status: `ATTEMPTED / SUPERSEDED BY §13 / HARNESS INSUFFICIENT`**
+
+> 本节结论**已被 §13 取代**：`rbx` 与 `[rbx]` 实际已由真实 CDB 观测取得。
+> 本节保留作为「自建 ctypes 观测器不足以停在该 AV 上」的 harness 记录。
 
 范围：按 B 路径授权，仅尝试在故障时刻读取 `rbx`、`[rbx]`、`rax`、`rcx`、
 `rip` 与模块上下文。**未修改** RenderDoc、worker、teardown 路径或 CI
 accounting；**未修改故障形状**。
 
-方法：本机无 `cdb` / `windbg` / `ntsd` / `procdump`，改以 `ctypes` 直接调用
-Windows debug API（`CreateProcess` + `DEBUG_ONLY_THIS_PROCESS` +
-`WaitForDebugEvent`）自建只读观测器，子进程为三模块最小复现集
-（`test_ide_ci_workflow`、`test_ide_ownership`、`test_real_replay`）。
+方法：**误判工具缺失** —— 仅检查 `PATH`，未检查磁盘。`cdb.exe` 实际一直存在于
+`C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe`。据此错误地
+改以 `ctypes` 直接调用 Windows debug API（`CreateProcess` +
+`DEBUG_ONLY_THIS_PROCESS` + `WaitForDebugEvent`）自建只读观测器，子进程为
+三模块最小复现集（`test_ide_ci_workflow`、`test_ide_ownership`、
+`test_real_replay`）。
 
 观测结果（事实）：
 
@@ -648,4 +658,89 @@ Windows debug API（`CreateProcess` + `DEBUG_ONLY_THIS_PROCESS` +
 函数级归因。该路径需要安装，本环境未确认网络与管理员权限。
 
 本节不计为根因证据，不改变任何门禁状态：pipeline 仍为
+`BLOCKED_INFRA / exit 3`，teardown 修复仍 **UNAUTHORIZED and NOT STARTED**。
+
+## 13. 故障源直接 CDB 观测（B 路径完成，2026-10）
+
+**status: `B COMPLETE / FAULT SOURCE ESTABLISHED BY DIRECT OBSERVATION / rbx AND [rbx] EXCLUDED AS FAULT SOURCE / FUNCTION AND SOURCE ATTRIBUTION NOT ESTABLISHED / ROOT CAUSE OPEN`**
+
+取代 §12。裁决 B 的问题**已回答**。
+
+方法（只读）：`cdb.exe -g`，脚本文件逐行执行，符号路径
+`D:\renderdoc_no_mcp\renderdoc\x64\Release\pymodules;srv*https://msdl.microsoft.com/download/symbols`，
+目标为三模块最小复现集。未附加 `.ecxr`（在本机报 `0x8000FFFF`），改为在
+AV 停点上直接读寄存器。**未修改** RenderDoc、worker、teardown 路径或 CI
+accounting；**未修改故障形状**。
+
+### 13.1 故障时刻寄存器（实测）
+
+| 寄存器 | 值 | 读数 |
+| --- | --- | --- |
+| `RIP` | `00007ffb\`0af50a4e` | 模块基址 `00007ffb\`0aab0000`，image offset **`0x4A0A4E`** |
+| `RAX` | `0000000000000000` | **为空 —— 故障解引用源** |
+| `RBX` | `00007ffb\`0c1edc80` | **非空**（有效栈地址） |
+| `RCX` | `00007ffb\`0c2aa495` | 有效地址 |
+| `RDX` = `RDI` | `00000080\`01577dc0` | 有效地址 |
+| `RSP` | `00000080\`006df770` | 有效地址 |
+
+`[RBX]` 经 `dq @rbx L1` 实测为 `00000000\`00000001` —— **可读，值为 1，非零**。
+
+> **裁决 B 的结论：`rbx` 非空、`[rbx]` 可读且非零；两者均不是故障源。**
+> 故障源是 `rax == 0` 被解引用。
+
+### 13.2 故障点反汇编与字节（观测记录）
+
+```
+00007ffb`0af50a3e  8b053c8d2701  mov     eax,dword ptr [rip+...]
+00007ffb`0af50a44  48895c2430    mov     qword ptr [rsp+30h],rbx
+00007ffb`0af50a49  48897c2420    mov     qword ptr [rsp+20h],rdi
+00007ffb`0af50a4e  488b18        mov     rbx,qword ptr [rax]      <== 故障指令
+00007ffb`0af50a51  4885db        test    rbx,rbx
+00007ffb`0af50a54  7428          je      +0x28
+```
+
+`db` 原始字节（`db @rip-10 L26`），故障地址 `0x4A0A4E` 起：
+
+```
+00007ffb`0af50a4e  48 8b 18 48 85 db 74 28-48 8b 40 10 48 8d 3c c3  H..H..t(H.@.H.<.
+```
+
+即故障地址处字节为 **`48 8b 18`**，且 `0x4A0A4E` **就是故障指令地址**。
+`0x4A0A4D` 是 `0x4A0A49` 处 `mov qword ptr [rsp+20h],rdi` 的末位立即数字节，
+**不是指令起点**。
+
+空检查（`test`/`je`）位于解引用**之后**，因此该路径允许 NULL 抵达读取 ——
+这是指令序列的可测属性，非归因。
+
+### 13.3 关于 `0x4A0A3E` 的表述边界
+
+前置指令 `mov eax,dword ptr [rip+...]` 是一次 **32 位** 写入，因此
+`0x4A0A3E` 处的这条指令执行后 `RAX` 的高 32 位被清零。这是**反汇编观察与
+寄存器状态的直接事实**。
+
+**仅止于此。** `[rip+...]` 对应哪个符号、哪个对象、哪个 static，以及它为何
+为零，均**未确立**，属下一层归因，需独立授权。本节**不命名该全局量**，也
+**不把它记述为「某个全局变量已被识别」**。
+
+### 13.4 归因边界（不变）
+
+`ln @rip` 在本地 PDB 与符号服务器路径下仍只给出**最近导出符号**
+（`RENDERDOC_EndProfileRegion+0x2a6eee`），**无私有符号解析**。因此
+**函数级与源码级归因仍 NOT_ESTABLISHED**；导出名不得读作函数身份（§11.1）。
+
+栈回溯维持既有结论：AV 发生在 **CRT onexit / C++ 静态析构** 阶段
+（`ucrtbase!execute_onexit_table` → `LdrShutdownProcess` → `RtlExitUserProcess`），
+在测试体完成、`OK` 打印之后，主线程。
+
+### 13.5 冻结裁决
+
+> **B 已完成。故障源已由直接 CDB 观测定位为 `rax == 0` 对 `mov rbx,[rax]`
+> 的解引用；`rbx` 及 `[rbx]` 均非故障源。函数级及更高层归因仍
+> NOT_ESTABLISHED，ROOT CAUSE OPEN。**
+
+以下**未授权**，作为后续独立授权项：追查 `[rip+...]` 对应的具体全局量、判定
+所属 static、解释该值为零的原因、函数/源码级归因、teardown 修复。
+
+`EXCEPTION_ACCESS_VIOLATION` 为 `0xC0000005`，读地址 `0x0`；故障每次复现均
+落在同一 offset `0x4A0A4E`。门禁状态不变：pipeline 仍为
 `BLOCKED_INFRA / exit 3`，teardown 修复仍 **UNAUTHORIZED and NOT STARTED**。
