@@ -10,7 +10,7 @@ document_point_in_time_note: >-
 
 冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
 前一刷新基线为 `a81600e`）
-baseline_commit: 6f82f82
+baseline_commit: 5f42113
 baseline_drift: 1
 冻结点 commit：`a898381`（116 commits）
 
