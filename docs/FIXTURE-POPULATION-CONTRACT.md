@@ -166,7 +166,69 @@ fixture deterministic verification
 若任一方案会改变 `UNKNOWN` / `INFRASTRUCTURE_FAILURE` / `REGRESSION` 的归类，
 按约束 10 **必须另立治理决策并单独授权**，不得隐含在 identity 修复内。
 
-## 7. 本 population 的未决项
+## 7. Layer A 可行性对比（producer 修复后；不选、不实现）
+
+### 7.1 强制点的两个既有机制（实测）
+
+权威 gate spec 是 **`release-gates.json`**（`ci-pipeline.json` 的
+`environment_requirements` 只是描述性文档）。其中存在**两条**输入通道：
+
+| 通道 | 机制 | 现状覆盖 |
+| --- | --- | --- |
+| **spec 声明通道** | `release-gates.json` 顶层 `captures`（gate id → capture 路径），由 `release_gate.py:146,438-449` 的 `_substitute_capture` 把 `{capture}` 代入门禁命令 | **仅 `cold_warm_equivalence` 有条目**：`tests/workload/corpus/w00001_frame11.rdc`。`integration` **无条目** |
+| **env 通道** | `RDEBUG_INTEGRATION_CAPTURE`，经 `check_requires` 的 `capture` 分支（`:123-126`）校验 `os.path.isfile` | `integration` 的**唯一**输入路径；`cold_warm` 的前置检查也读这个变量 |
+
+两点实测结论：
+
+- `requires.capture = true` 在两个门上都在，因此 **`isfile` 检查是活的**；不存在的
+  路径会被判为缺失前置。
+- `cold_warm` 的**前置检查**读 `RDEBUG_INTEGRATION_CAPTURE`，而它**实际执行**的
+  命令用的是 spec `captures` 里那条路径。二者可以不一致。
+- spec 里那条路径是 `w00001_frame11.rdc` —— **canonical 命名的独立旁证**。
+
+### 7.2 可行性对比（不选）
+
+| 方案 | population source | 成员资格 | 内容一致性 | 依赖 deterministic verification | 需触及的机制 |
+| --- | --- | --- | --- | --- | --- |
+| **Producer declaration** | producer 声明的 14 个 canonical names（已权威，`§6.5-1`） | 精确名称 | **不解决** | 无 | 需把 producer 的声明引入强制点；gate 进程需能取到该集合 |
+| **Filename set** | 冻结的 14 名称集合 | 精确名称集合 | **不解决** | 无 | 与上同，另需一份独立冻结副本（与 producer 存在漂移风险） |
+| **Filename + SHA** | 名称 + 内容 identity | 名称与 hash 双重匹配 | **部分进入 Layer B** | **有** | 同上 + 内容校验 |
+| **Manifest** | manifest 定义成员及 identity | manifest membership | 取决于 schema | 若含 hash，则有 | 新增 manifest 载体 + 强制点消费 |
+| **Producer-side check** | producer 自证 population 完整 | producer assertion | **不解决** | 取决于证明内容 | producer 输出需被 gate 信任并传递 |
+
+按约束 6 的四项区分：Layer A 各方案最多满足**存在**与**属于声明 population**，
+**不得**被表述为满足「内容与声明一致」。
+
+### 7.3 关键可行性结论：Layer A 无法完全脱离 failure semantics
+
+每个方案一旦在强制点实施，都会遇到同一个岔路口：**当提供的路径不属于声明
+population 时，门禁应如何裁决**。无论把它记作缺失前置（→ 现有语义给出
+`INFRASTRUCTURE_FAILURE`）还是新增一种前置种类，**都是在改变可观测的裁决
+行为**。按约束 10，这必须拆成独立治理决策。
+
+因此可分离的范围是：
+
+- **正向情形**（提供的是声明内的 canonical fixture）：任何 Layer A 方案都**不需要**
+  语义变更即可通过。
+- **负向情形**（额外、替换、非 population 路径）：**必然**触及 failure semantics，
+  必须另行授权，不得隐含在 identity 修复内。
+
+### 7.4 两个门的可行性不对称
+
+`cold_warm_equivalence` 已有 spec 声明通道，其条目是**单个硬编码路径**——它选中
+population 的一个成员，却**没有断言成员资格或 population 完整性**。`integration`
+则完全没有声明通道，输入只能来自 env。
+
+因此「用哪一种 population source」对两个门不是同一个问题；若只对
+`integration` 实施，`cold_warm` 的声明仍是单点选择而非 population 定义。
+
+### 7.5 本节不做的事
+
+不选方案、不改代码、不改 `release_gate.py` / `check_requires`、不改 spec、不改四状态
+语义与优先级、不动 `manifest_match`、不把 readiness / workload 的 glob 当作强制点。
+`manifest_match` 的 population 错位仍是独立 OPEN 项，不在本节处理。
+
+## 8. 本 population 的未决项
 
 见 `docs/OPEN-DECISIONS.md`：
 
