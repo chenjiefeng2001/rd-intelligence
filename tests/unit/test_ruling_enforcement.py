@@ -300,6 +300,28 @@ class TestOpenDecisionsCarriesOnlyOpenItems(unittest.TestCase):
             "section 2 must state that decided items move out rather than "
             "being edited in place, or this cleanup happens again by default")
 
+    def test_the_move_out_pointer_names_the_table_that_exists(self):
+        """Anchored on both halves: the pointer and the heading it must reach.
+
+        Section 2 promises that a decided item moves to a named section. It
+        pointed at the frozen-items section while the decided-items table sits
+        one section earlier, so following the pointer landed a reader on a
+        table that lists no moved item. A prose cross-reference is the kind
+        that rots silently: nothing else reads it.
+        """
+        text = self._text()
+        target = re.search(r"已裁决项移入 §(\d+)", text)
+        self.assertIsNotNone(
+            target, "section 2 must say where a decided item goes")
+        decided = re.search(r"^## (\d+)\. 已移出本节的已裁决项", text,
+                            re.MULTILINE)
+        self.assertIsNotNone(
+            decided, "the decided-items table must still exist")
+        self.assertEqual(
+            target.group(1), decided.group(1),
+            "section 2 points at the wrong section. Following the pointer must "
+            "land on the decided-items table.")
+
 
 class TestTeardownFaultShapeRuling(unittest.TestCase):
     """The measured fault shape stands, and the retracted one cannot return."""
