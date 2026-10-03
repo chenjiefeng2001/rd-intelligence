@@ -67,30 +67,94 @@ manifest/provenance。
 move-out 规则移入 §4，规则落在 `FIXTURE-POPULATION-CONTRACT.md`。本节保留为该裁决
 的依据，不因此成为已决项。
 
-### 2.2 `unit` 门禁裁决的环境敏感性（2026-10 实测）
+### 2.2 `unit` 门禁裁决的环境敏感性
 
 同一份代码、两次真实 pipeline 运行，因环境变量不同而得到不同 `unit` 裁决。
 **行为本身已定义且 fail-closed；未裁决的是它是否为期望语义。**
 
-机制：`tests/unit/test_cold_warm_gate.py` 第 387 / 396 / 411 三项在
-`renderdoc module not importable` 时 `skip`。
+证据问题：在不同 RenderDoc 可用性/环境条件下，unit gate 的
+`executed/skipped → gate outcome → overall exit` 是否形成明确、可解释且不会被
+误读为 replay 语义结论的行为边界？**本节为取证/决策材料，不含实现。**
 
-| 运行条件 | unit 实测 |
+#### 2.2.1 现状行为（实测）
+
+| 条件 | executed | skipped | failures | process exit | unit outcome |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 无 `RDEBUG_RENDERDOC_PATH` | 475 | 3 / 478 | 0 | 0 | **`UNKNOWN`** |
+| 有可用 RenderDoc 环境 | 478 | 0 | 0 | 0 | **`PASS`** |
+
+`UNKNOWN` 的 `detail` 原文：`3 of 478 tests skipped; no content conclusion for the
+skipped part`。两次运行的 `overall` 均为 `BLOCKED_INFRA / exit 3`。
+
+#### 2.2.2 跳过条件
+
+- 跳过项为 `tests/unit/test_cold_warm_gate.py` 的三项，触发条件是
+  `skipTest("renderdoc module not importable")`；同文件另有一处
+  `skipTest("capture not present")`。
+- 跳过**不会**形成 PASS：`skipped > 0` 落在 `UNKNOWN`
+  （`release_gate.py:393-397`），`UNKNOWN ∈ BLOCKING`，而 `PASS` 分支仅在
+  `skipped == 0` 时可达（`:398-400`）。
+- **不存在「测试未执行但 gate 看起来成功」的路径**（见 2.2.5）。
+
+#### 2.2.3 四状态归约（只记录，不修改）
+
+unittest 类门的判定顺序（`release_gate.py:343-400`）：
+
+| 次序 | 条件 | 裁决 |
+| --- | --- | --- |
+| 1 | 输出无法解析 | `INFRASTRUCTURE_FAILURE`（`executed=0`） |
+| 2 | `executed == 0` | `INFRASTRUCTURE_FAILURE`（"a gate that verified nothing is not a pass"） |
+| 3 | `executed < min_executed`（unit 声明 `100`） | `INFRASTRUCTURE_FAILURE` |
+| 4 | 发现异常 | `INFRASTRUCTURE_FAILURE` |
+| 5 | 有 failures / errors | `REGRESSION` |
+| 6 | 非零退出且无 failures | `INFRASTRUCTURE_FAILURE` |
+| 7 | **`skipped > 0`** | **`UNKNOWN`** |
+| 8 | 其余 | `PASS` |
+
+skip 只会落到 `UNKNOWN`，前提是已执行数 > 0、满足 floor、无发现异常、无内容失败、
+干净退出——与实测吻合。
+
+总体 precedence `REGRESSION > INFRASTRUCTURE_FAILURE > UNKNOWN`（`:523-528`），
+故 `UNKNOWN → NEEDS_REVIEW / exit 4`。
+
+**已实测**：无环境那次运行中 `unit = UNKNOWN` 与 `integration =
+INFRASTRUCTURE_FAILURE` 并存，`overall = exit 3` ——即 **`UNKNOWN` 在 overall 中被
+`INFRA` 掩盖**，只留在门禁行。
+
+**仅为推导、未测量**：`unit = UNKNOWN` 且 `integration = PASS` 时 overall 为
+`exit 4`。**不得**写成一次真实运行结果。
+
+#### 2.2.4 环境与内容结论的边界
+
+- 「RenderDoc 不可用」只证明**环境/执行能力不足**，不构成任何 semantic 结论。
+- **不能**从 skipped 得出 semantic PASS 或 FAIL。
+- **不能**把环境敏感性与当前 teardown crash 混为同一故障：后者是 `integration`
+  门在 onexit 阶段的 `0xC0000005`，与 unit 的 skip 无关。
+
+#### 2.2.5 完整性风险评估：**未发现**
+
+| 担心的路径 | 源码结论 |
 | --- | --- |
-| 未设 `RDEBUG_RENDERDOC_PATH` | `executed=475`、3 skipped、0 failed、exit 0 → outcome **`UNKNOWN`**，`detail` 原文 `3 of 478 tests skipped; no content conclusion for the skipped part` |
-| 设 `RDEBUG_RENDERDOC_PATH` | `executed=478` → outcome **`PASS`** |
+| required unit gate 在环境缺失时被误判 PASS | **不可能**：`executed == 0` 在第 2 步即判 `INFRASTRUCTURE_FAILURE`；`skipped > 0` 判 `UNKNOWN`；`PASS` 仅在 `skipped == 0` 且 `executed > 0` 时可达 |
+| 门禁行显示 PASS 但实际未执行 | **不可能**（第 2 步先于 PASS 分支） |
 
-已定义的部分（`scripts/release_gate.py`）：`UNKNOWN ∈ BLOCKING`；总体优先级
-`REGRESSION > INFRASTRUCTURE_FAILURE > UNKNOWN`；`UNKNOWN` 归约到
-`NEEDS_REVIEW / exit 4`；`PASS` 仅当每个 required 门**既执行又通过**。因此
-`UNKNOWN` 不是通过，缺环境也不会被读成绿。
+因此当前行为是**既有设计行为**，不自动认定为 defect。真正存在的弱点是
+**可解释性**：在 `INFRA` 并存时 `UNKNOWN` 在 overall 中被掩盖，只看 overall 的读者
+会漏掉身份信号。
 
-**未测量**：上述「`unit = UNKNOWN` 且 `integration` 通过时总体为 exit 4」未做真实
-运行验证，只是由归约顺序推导，不得当作实测事实。
+#### 2.2.6 决策分支（只比较，不选择）
 
-未裁决：缺少 RenderDoc 的 CI 环境**是否应当**得到 `UNKNOWN`（进而把总体压到
-exit 4），还是应把「跳过」与「门禁裁决」解耦。**任何改动都是门禁语义变更，
-NOT AUTHORIZED**；本节只记录，不改行为。
+| 分支 | 做法 | 后果 |
+| --- | --- | --- |
+| **U1 维持现状 + 文档化** | 把环境 prerequisite 显式写入文档或既有 accounting 措辞，语义零改动 | 不改 gate；可解释性提升；掩盖风险仍在 |
+| **U2 把环境 prerequisite 纳入现有 accounting** | 让「因环境不可用而 skip」成为门禁行的一等事实 | 需改报告字段或 detail 措辞；属 accounting 变更，不改四状态 |
+| **U3 改变 gate semantics** | 例如把 skip 从 `UNKNOWN` 重新归类 | 会改变四状态归类，属独立授权范围；本轮不比较实施 |
+
+#### 2.2.7 本节不做
+
+不改 `release_gate.py`、不改四状态或 precedence、不新增 gate、不改 release
+blocking、不修 RenderDoc、不改 skip 条件、不把 `UNKNOWN` 强转成 PASS/INFRA、
+不重跑 pipeline 作为「解决方案验证」。
 
 与 §2 的 N4 项相邻但不同：N4 是 capture 的**治理归属**，本项是**门禁对环境的依赖**。
 本仓库无 remote、`ci.yml` 从未执行，故该路径至今未被任何真实 CI 验证。
