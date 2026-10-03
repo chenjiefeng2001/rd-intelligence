@@ -412,7 +412,63 @@ Step A 的实施对象是 integration-only Layer A，但**声明本身的来源�
 不改四状态与 precedence、不碰 `manifest_match` 与 `harness`。R2 与 deterministic
 verification 保持 OPEN。
 
-## 12. 本 population 的未决项
+## 12. Step A —— source 裁决、实施与验收
+
+**source 裁决：Producer declaration**（Step A 前置已定）。理由：producer 已有唯一
+canonical population，`population()` 可无副作用导入，其命名/成员逻辑刚经 7 项
+defect controls、revert-only 与真实 corpus 验证；冻结副本反而需要额外的一致性证明，
+否则会与 producer 静默分叉；manifest 会额外引入载体与生命周期问题。
+
+### 12.1 实施范围（严格按冻结边界）
+
+**已做：**
+
+1. `release_gate.check_requires` 的 capture 分支对 `integration` 增加成员判断。
+2. `_declared_population()` 从 producer 的 `population()` 取 canonical 名称集合
+   （**只算名字，不触碰文件系统**，因此 clean clone 上仍可读）。
+3. `_capture_in_declared_population()` 为精确路径判断（`normcase` + `abspath`）。
+4. 非成员 → 既有 `INFRASTRUCTURE_FAILURE`，独立 reason
+   `capture-not-in-population:RDEBUG_INTEGRATION_CAPTURE`。
+5. **生成路径绝不触碰**：producer 经 `_PRODUCER` 只读取用 `population()`，由 tripwire
+   控制钉住——门禁不得因前置检查而生成 capture。
+
+**未做（逐条守住）：** 未改四状态与 precedence；未改 `check_requires` 的其他语义；
+未改 `cold_warm`；未引入 SHA / manifest / content identity；**未做 R2 检测**；
+未做 deterministic verification；未改 `harness` glob；未改 `CAPTURE-CORPUS`；
+未改 release blocking。
+
+**额外的 fail-closed 分支**：若声明本身不可读（producer 无法加载），不静默放行，
+而是产生独立 reason `capture-population-unavailable:...`，裁决仍为既有
+`INFRASTRUCTURE_FAILURE`，未新增状态。
+
+### 12.2 控制与变异
+
+- **11 项控制**，defect-version 下 **8 项先失败**；既有语义类 3 项修复前后均通过。
+- **revert-only 3 项变异全部被捕获**：范围扩大到 `cold_warm`、非成员改用既有 absence
+  reason、membership 判定恒真。
+
+### 12.3 真实集成验收（两次真实 pipeline 运行）
+
+| 运行 | capture | integration | overall |
+| --- | --- | --- | --- |
+| 非成员 | `N3-05A1.rdc`（真实文件、population 外） | `INFRASTRUCTURE_FAILURE`、`executed=0`、`missing_prerequisites = ["capture-not-in-population:RDEBUG_INTEGRATION_CAPTURE"]` | `BLOCKED_INFRA / exit 3`；**`cold_warm` 仍 PASS**（未被波及） |
+| canonical member | `w00016_frame11.rdc` | `executed=63`、`tests_failed=0`、`OK`、`process_exit_code=3221225477`、`missing_prerequisites` 为空 | `BLOCKED_INFRA / exit 3`、`accounting_consistent=True` |
+
+unit 在带环境下 `PASS 496`。
+
+### 12.4 Step A 关闭了什么、没有关闭什么
+
+**已关闭**：integration 通过 env 路径注入一个非声明 capture 的通道。门禁不再对该
+capture 执行。
+
+**仍未关闭**：
+
+- **R2**（保留 canonical 名、内容换成另一 capture）——**Layer A 无法检出**，OPEN，
+  留给 Layer B / deterministic verification。
+- `cold_warm` 的单点声明与「前置路径 ≠ 执行路径」——记录在案的缺口。
+- `manifest_match` 的 population 错位、`harness.discover_corpus` 的 glob —— 独立项。
+
+## 13. 本 population 的未决项
 
 见 `docs/OPEN-DECISIONS.md`：
 

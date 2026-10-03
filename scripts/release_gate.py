@@ -100,6 +100,42 @@ def _parse_unittest(stream):
     }
 
 
+#: The fixture producer, loaded once. The gate reads its declared population
+#: and must never reach its generation path; that separation is pinned by
+#: tests/unit/test_integration_capture_membership.py.
+_PRODUCER = None
+
+
+def _fixture_producer():
+    global _PRODUCER
+    if _PRODUCER is None:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "workload_corpus.py")
+        spec = importlib.util.spec_from_file_location(
+            "_rdebug_fixture_producer", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _PRODUCER = module
+    return _PRODUCER
+
+
+def _declared_population():
+    """The declared canonical fixture set.
+
+    Names only: the producer's `population()` computes paths from its DRAWS
+    and does not touch the filesystem, so this stays readable on a clean clone
+    where no capture is present.
+    """
+    return {os.path.normcase(os.path.abspath(p))
+            for p in _fixture_producer().population()}
+
+
+def _capture_in_declared_population(capture, declared):
+    """Exact path membership. A longer or differently named file is not one."""
+    return os.path.normcase(os.path.abspath(capture)) in declared
+
+
 def check_requires(gate, repo_root, env):
     """Report declared-but-missing prerequisites as an infrastructure failure.
 
@@ -124,6 +160,22 @@ def check_requires(gate, repo_root, env):
         cap = env.get("RDEBUG_INTEGRATION_CAPTURE")
         if not cap or not os.path.isfile(cap):
             missing.append("capture:RDEBUG_INTEGRATION_CAPTURE")
+        elif gate.get("id") == "integration":
+            # Layer A: integration only (Step C / C1), producer declaration as
+            # the source, adjudicated before the gate runs (Step S / S1). A
+            # non-member resolves to the existing INFRASTRUCTURE_FAILURE with
+            # its own reason; it is not a content REGRESSION. Content identity
+            # is Layer B and is deliberately not attempted here.
+            try:
+                declared = _declared_population()
+            except Exception:  # noqa: BLE001 - an unreadable declaration cannot be treated as a satisfied prerequisite
+                declared = None
+            if declared is None:
+                missing.append("capture-population-unavailable:"
+                               "RDEBUG_INTEGRATION_CAPTURE")
+            elif not _capture_in_declared_population(cap, declared):
+                missing.append("capture-not-in-population:"
+                               "RDEBUG_INTEGRATION_CAPTURE")
     if req.get("sibling_fork"):
         fork = os.path.normpath(os.path.join(repo_root, "..", "renderdoc"))
         if not os.path.isdir(os.path.join(fork, ".git")):
