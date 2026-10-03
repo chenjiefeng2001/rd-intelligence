@@ -468,7 +468,109 @@ capture 执行。
 - `cold_warm` 的单点声明与「前置路径 ≠ 执行路径」——记录在案的缺口。
 - `manifest_match` 的 population 错位、`harness.discover_corpus` 的 glob —— 独立项。
 
-## 13. 本 population 的未决项
+## 14. Determinism Feasibility Evidence
+
+**NOT A VERIFICATION / NOT A LAYER-B DECISION。** 只读取证；未冻结任何判据、
+阈值、重复次数或 hash 方案。
+
+证据问题：现有 fixture 生成/获取路径是否具有足够的可重复性，使「内容确定性」
+成为一个可执行、可判定、成本可接受的 Layer B 前置条件？
+
+### 14.1 对象：三个不同对象，不可混为一谈
+
+| 对象 | 含义 |
+| --- | --- |
+| **O1 生成产物字节** | `.rdc` 文件本身 —— Layer B 若要冻结内容身份，指的是这个 |
+| **O2 replay 输出** | 门禁产出的 verdict JSON / 测试结果 —— 与 O1 是**不同**对象 |
+| **O3 `.rdc` 内结构化内容** | event / action 图 —— 是 O1 的一个**粒度**，不是同一件事 |
+
+把 O2 的可重复性当作 O1 的证据是错误推理。本节全程分开记录。
+
+### 14.2 重复性：**未测量**
+
+仓库证据中**不存在任何重复生成记录**。静态观察仅有：对 `w00001_frame11.rdc`
+的 1438 个 ≥6 字符 ASCII 串做扫描，**未发现**日期/时间、盘符路径或 GUID 样式
+内容。这是对**一个文件**的弱正面证据，**不是重复性证据**。
+
+### 14.3 跨运行边界：**未测量，且现有路径本身已固定了一种边界**
+
+producer 对每个 draw 档位启动**独立的 `triangle.exe` 子进程**，因此现有生成路径
+**从未覆盖「同一进程内重复」**这一边界；fresh worker / recycle 属 replay 侧
+（O2），与生成（O1）无边界共享。
+
+### 14.4 比较粒度：静态证据不足以判定
+
+- 14 个 fixture 的**前 16 字节完全一致**：`52444f43 00000000 02010000 b23b0000`
+  （`RDOC` + `1.46 b7f155`），其后为内嵌 JFIF 缩略图。
+- 体积随 draws **单调递增**：403,973 B（1 draw）→ 544,897 B（20,000 draws）。
+- 因此**「头部 + 体积」可被证明不足以判别内容身份**：头部无区分度，体积只反映
+  draws。整文件 digest 是否可用**取决于重复生成的结果**，而该结果未测量。
+
+### 14.5 覆盖范围：单个 `w00016` 不能支撑任何 population 级结论
+
+- 面向门禁的 fixture 只有两个已知成员：`w00001_frame11.rdc`（`cold_warm` 的 spec
+  声明路径）与 integration 经 env 提供的路径（本次运行为 `w00016`）。
+- 要判断「population 级内容判据是否可行」，最少需要：**≥2 个跨 draws 端点的
+  fixture**（如 `w00001` 与 `w20000`）× **≥2 次重复**，且需在**已验证可重新生成**
+  的宿主上进行。**此处只给形状，不冻结数量。**
+
+### 14.6 成本与可执行性（本机实测）
+
+| 项 | 实测 |
+| --- | --- |
+| corpus 现有总体积 | 14 个合计约 **5.62 MB**（5,895,427 B） |
+| app 编译 | `triangle_app.cpp`（8,352 B）+ renderdoc app 头**存在**；`triangle.exe`（WORKDIR 与 prebuilt 回退）**均不存在**，需编译一次并被 WORKDIR 缓存 |
+| **`VCTOOLS_VCVARS` 默认值错误** | producer 默认指向含 `(x86)` 的路径（**不存在**）；正确路径在 `C:\Program Files\Microsoft Visual Studio\2022\...`。**需一次环境覆盖** |
+| `RDOC_DLL` | 默认解析到 `x64\Release\renderdoc.dll`（25,465,856 B）；另有 pymodules 副本（25,465,344 B），**两者大小不同** |
+| 生成用 RenderDoc 构建**未确立** | 机器记录 `Chenjiefeng-NVIDIA/environment.json` 固定的是 **pymodules** 路径的 `renderdoc_dll_sha256`，而 producer 默认用**非 pymodules** 那份 |
+| 单档捕获耗时 | **未测量** |
+| GPU / 驱动 | 本机未验证 |
+
+结论：重新生成在本机**可能可行**（需 `VCTOOLS_VCVARS` 覆盖 + 一次编译 + GPU
+replay），但**本轮未尝试**，故耗时与可行性**均未测量**。
+
+### 14.7 非确定性来源（只记录现象，不认定 root cause）
+
+已观察到的现象：
+
+1. 静态扫描未发现 ASCII 可见的时间戳/路径/GUID（单个文件）。
+2. **二进制层面的非确定性未被排除**：未初始化的填充、指针值、以整数而非 ASCII
+   存储的时间信息、驱动与线程状态，均不在 ASCII 扫描覆盖范围内。
+3. 按代码路径可知的依赖项：GPU 与驱动版本、RenderDoc 构建（两份大小不同的
+   `renderdoc.dll`）、MSVC 编译出的 app 二进制、RenderDoc 内部捕获线程调度。
+
+**目前既没有观察到差异，也没有观察到一致性——重复生成不存在，故经验证据为零。**
+
+### 14.8 判据候选（比较，不冻结）
+
+| 候选 | 优点 | 缺点 |
+| --- | --- | --- |
+| 整文件 digest（如 SHA-256） | 成本最低 | 对任何非语义字节敏感；本机当前无法验证 |
+| 头部 + 体积 | 极低成本 | **已被证明不足以判别内容身份**（§14.4） |
+| 结构化内容比较（event/action 图） | 最贴近 replay 使用的「内容身份」 | 成本未知，需要解析器 |
+| replay 输出确定性 | 直接对应门禁可见行为 | 属 **O2**，**不能**用来固定 O1 的字节身份 |
+
+**本轮不引入其中任何一项**；采用 digest 作为内容身份正是 Layer B 的裁决内容，
+未授权。R2 裁决不变。
+
+### 14.9 可行性结论
+
+**Determinism feasibility = NOT ESTABLISHED。** 决定性证据需要**实际重复生成**，
+而本轮未授权尝试；且已确立：**一次 `w00016` 重跑只提供一个观测**，不足以支撑
+population 级内容身份冻结。
+
+两条可能的前进路径，均需另行授权：
+
+- **(a)** 在已验证可重新生成的宿主上执行授权的重复生成取证；
+- **(b)** 将其正式声明为外部前置条件（与 corpus 的处理方式一致）。
+
+### 14.10 本节明确未做
+
+未改 producer、未改 gate、未引入 SHA/manifest、未把 `.rdc` hash 定义为内容身份、
+未改 R2 裁决、未改四状态、未改 `cold_warm`、未修 `manifest_match` 或 harness glob、
+未以任何单次重跑宣称 determinism 已证明。
+
+## 15. 本 population 的未决项
 
 见 `docs/OPEN-DECISIONS.md`：
 
