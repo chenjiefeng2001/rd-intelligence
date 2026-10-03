@@ -27,7 +27,43 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 | **Release blocking** | FROZEN / NOT AUTHORIZED | 授权。技术前置是 teardown：required gate 每次通过测试却无法干净退出，会**永久阻断** |
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
-| **Corpus manifest（N4）** | NOT DECIDED | 语料入版本控制，还是正式声明为外部前置条件。G4 已裁定为外部前置，manifest 本身未决 |
+| **rd-intelligence 门禁依赖的未登记 captures（N4）** | OPEN / NOT DECIDED | 14 个被 rd-intelligence 门禁实际依赖、但未被 Git 跟踪且没有本仓库侧 provenance/manifest 登记的 capture，其治理归属、来源契约及门禁依赖方式尚未裁决 |
+
+### 2.1 N4 的事实基线（2026-10 复核）
+
+**先更正一处已过时的表述。** N4 的未决事项**不是** N3 corpus manifest 的 schema：
+
+- N3 corpus manifest **已存在**：`rdebug-validation/n3-corpus/manifest.json`，`schema: 1`，2026-08-28 冻结。
+- 其登记的 4 个 capture 的 manifest / metadata / provenance 状态**已有独立证据**
+  （`reports/n3/N3-provenance-verify.json`、`reports/n3/N3-pilot.json`），并带
+  `known_issues` 与 `do-not-backfill` 政策。
+- 因此 N3 corpus manifest **不是**本文档的 OPEN 项。`CAPTURE-CORPUS-CONTRACT.md` §7
+  所说「不在此处授权」指的是该契约自身的 scope（`rd-intelligence` 侧），不是
+  「manifest 尚不存在」。
+
+**已决、不再重开：** 本 milestone 是否要求 external corpus → **required**
+（`CAPTURE-CORPUS-CONTRACT.md` §4 的 `required / source: external / tracked: false /
+provenance_required: true`，以及 G4 裁定）。
+
+**N4 的实际问题：** 以下只有「观察」成立，**归属与定性均不成立**：
+
+- `rd-intelligence/tests/workload/corpus/` 下有 **14 个 `.rdc`**，`git ls-files`
+  为 **0**，**无本仓库侧 manifest / sha256 / provenance 登记**。
+- 至少一条门禁路径**实际读取**其中 capture（`RDEBUG_INTEGRATION_CAPTURE`）。
+
+`tracked_captures = 0` 与「工作树里存在 14 个 untracked captures」**并不矛盾**：
+前者是 Git tracking 的计数，后者是文件存在与门禁依赖的事实。真正未决的是——
+**这批未跟踪文件是否属于 `CAPTURE-CORPUS-CONTRACT` 所定义的 corpus population，
+当前没有契约规则回答。**
+
+未决且**不推定**：治理归属、来源契约、门禁依赖方式、是否需要本仓库侧
+manifest/provenance。
+
+故本项作为**治理分类缺口**保持 OPEN —— 既不称为「corpus 的未登记部分」，也不称为
+「独立于 corpus 的本地工作输入」，更不由契约写了 `external` 反推其来源、许可或
+治理身份。
+
+**本节不作定性、不补 manifest、不补 provenance、不改门禁行为。**
 
 ## 3. 与 verdict 上限的关系
 
