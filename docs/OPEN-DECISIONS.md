@@ -28,7 +28,6 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
 | **Layer B / R2（内容身份与替换检测）** | OPEN / **阻塞于外部前置条件** | R2 = 保留 canonical 名而替换其内容。Layer A **结构上无法检出**，不得声称已解决。关闭它需要足以证明 O1 重复生成确定性的**外部证据**；本项目当前**不产生**该证据。见 `FIXTURE-POPULATION-CONTRACT.md` §14.9、§14.4 |
-| **`unit` 门禁裁决的环境敏感性** | OPEN / NOT DECIDED | 期望语义裁决。现状行为已定义且 fail-closed，但「合法缺少 RenderDoc 的 CI 环境是否应当得到 `UNKNOWN`」未裁决；改动即改门禁语义，NOT AUTHORIZED |
 
 ### 2.1 N4 的事实基线（2026-10 复核）
 
@@ -152,9 +151,12 @@ INFRASTRUCTURE_FAILURE` 并存，`overall = exit 3` ——即 **`UNKNOWN` 在 ov
 
 #### 2.2.7 本节不做
 
-不改 `release_gate.py`、不改四状态或 precedence、不新增 gate、不改 release
-blocking、不修 RenderDoc、不改 skip 条件、不把 `UNKNOWN` 强转成 PASS/INFRA、
-不重跑 pipeline 作为「解决方案验证」。
+不改 `release_gate.py`、不改四状态或 precedence、不改 report schema、不新增 gate、
+不改 release blocking、不修 RenderDoc、不改 skip 条件、不把 `UNKNOWN` 强转成
+PASS/INFRA、不把 `UNKNOWN` 从 `overall` 中提出。
+
+**后续**：本节材料是 U1 裁决的依据，该项已按 move-out 规则移入 §4。本节保留为证据，
+不因此成为未决项。
 
 与 §2 的 N4 项相邻但不同：N4 是 capture 的**治理归属**，本项是**门禁对环境的依赖**。
 本仓库无 remote、`ci.yml` 从未执行，故该路径至今未被任何真实 CI 验证。
@@ -231,6 +233,7 @@ N4 已按 move-out 规则移入 §4。**注意**：A **不豁免**下面这条 d
 | N4 fixture population 归属 | 选项 **A** — `tests/workload/corpus/` 下 14 个 capture 定为**仓库自生成的参数化 replay fixtures**，属 corpus-contract 范围外的独立 fixture population；不改 external corpus 定义、不加 redistribution/provenance、不声明为 tracked。`FIXTURE-POPULATION-CONTRACT.md` §2–3 |
 | fixture drop-in 输入身份（Layer A 部分） | 已关闭 — 范围 **C1 仅 integration**、裁决 **S1 pre-run INFRA**、source **producer declaration**。`integration` 只接受 producer 声明的 canonical 路径；非成员在运行前归入既有 `INFRASTRUCTURE_FAILURE` 并带独立 reason。`FIXTURE-POPULATION-CONTRACT.md` §8–13 |
 | fixture 确定性 / 完整性验证 | **EXTERNAL PREREQUISITE / NOT ESTABLISHED / NOT IMPLEMENTED** — 本项目**不具备**该能力且**不产生**该证据；关闭 R2 / 实施 Layer B 前必须先由外部提供足以证明 O1 重复生成确定性的证据。`FIXTURE-POPULATION-CONTRACT.md` §14.9 |
+| `unit` 门禁裁决的环境敏感性 | **DOCUMENTED / VERIFIED INVARIANT / FROZEN** — 裁决 **U1：维持现状 + 文档化**。实测与源码均证明 `executed == 0`、低于 `min_executed`、`skipped > 0` 均**不可能**产生 `PASS`，属既有设计行为而非 defect。环境 prerequisite 已写入 `CI-ORCHESTRATION-CONTRACT.md` §6.1；三条不变量由 §6.2 与真实 unittest 运行（非 mock）回归钉住。`overall` 中 `UNKNOWN` 被更高优先级 `INFRA` 掩盖，记为**已知可解释性边界**，非当前 defect。证据材料见本文档 §2.2 |
 
 ## 5. 已冻结项（不在本文档内裁决）
 
