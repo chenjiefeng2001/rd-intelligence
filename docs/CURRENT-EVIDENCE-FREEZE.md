@@ -271,3 +271,35 @@ N3-05B / D5 / D7                                 NOT AUTHORIZED
 把 workload 纳入 gate                             RULED AGAINST
 把 diagnostic 结论升级为 crash 断言               RULED AGAINST（is_crash 恒 False）
 ```
+
+## 当前阻塞边界（2026-10；「双重边界」）
+
+**这是当前证据的结论，不是进度落后。** 技术路径已耗尽；治理与外部输入成为前置条件。
+
+| 项 | 状态 | 阻塞类型 |
+| --- | --- | --- |
+| teardown | **OPEN / BLOCKED_BY_ATTRIBUTION** | 无可执行修复路径 |
+| attribution（函数级） | **OPEN / BLOCKED_BY_EXTERNAL_INPUT** | 本地 PDB 属 `6A8B9BFE`，故障映像为 `6A8B9BA9`，**已测定不可行** |
+| R2 / Layer B | **OPEN / BLOCKED_BY_EXTERNAL_DETERMINISM_EVIDENCE** | 需外部提供 O1 重复生成确定性证据 |
+| release blocking | **OPEN / NOT AUTHORIZED** | 现启用会**永久阻断** CI |
+| RenderDoc fork 修复 | **OPEN / NOT_EXECUTABLE UNDER CURRENT EVIDENCE** | 归因不可得 → 无法写出正确修复 |
+
+**以上均为 OPEN，不是 CLOSED。** 开放项可以已被充分测定，却仍未满足关闭条件；把
+「已解释为什么不能推进」写成「问题已解决」是错误记录。
+
+### 明确禁止的绕过方式
+
+不得通过退出码掩码、子进程 wrapper、`os._exit`、排除门禁、扩大 replay 排除面
+来绕过上述边界。
+
+### 重新开启本工作流所需的事件（任一）
+
+1. 与 **`6A8B9BA9`** 完全匹配的 PDB / 可符号化构建进入 → 重新进入 attribution；
+   第一步不是改代码，而是重跑 `fault → function → source → ownership →
+   permitted modification scope`，链条闭合才产生修复可执行性。
+2. 上游修复或替换 RenderDoc 构建进入 → 重新进入修复验证。
+3. O1 确定性证据进入 → Layer B 具备评估前提。
+4. 出现一份**独立于 teardown 崩溃推断**的正式治理提案 → 可决定是否改变治理边界。
+
+在四者皆未发生前，**不得**把 `teardown crash → 怀疑 replay → 扩大 replay 排除面`
+当作新的证据链 —— 该链已被明确排除。
