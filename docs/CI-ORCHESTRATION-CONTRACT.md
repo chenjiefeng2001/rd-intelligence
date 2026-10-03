@@ -302,6 +302,45 @@ D6 的「measured / NOT A GATE」由此机械化（已有对照
 **MUST NOT**：任何 gate 的 `executed` 缺失或不可解析时**默认按 0 处理**，
 不得「解析失败即视为通过」。
 
+### 6.1 unit gate 的环境 prerequisite（U1 裁决）
+
+`unit` 是 required 且 blocking 的门。它在**两类**环境条件下得不到内容结论，
+二者都**不是** semantic failure：
+
+| 环境条件 | 机制 | 实测结果 |
+| --- | --- | --- |
+| RenderDoc 模块不可导入 | `tests/unit/test_cold_warm_gate.py` 的三项 `skipTest("renderdoc module not importable")` | 有环境：`executed=478` → `PASS`；无环境：`executed=475`、3 skipped → **`UNKNOWN`** |
+| capture 不存在 | 同文件 `skipTest("capture not present")` | 计入 skipped，效果同上 |
+
+`UNKNOWN` 的 detail 为 `N of M tests skipped; no content conclusion for the
+skipped part`。
+
+**MUST NOT** 把「环境不可用」读成 semantic PASS 或 FAIL；**MUST NOT** 把它与
+`integration` 门 onexit 阶段的 `0xC0000005`（teardown 缺陷）混为同一故障 ——
+后者是独立工作流。
+
+### 6.2 unit verdict 不变量（回归钉子）
+
+以下三条是**不变量**，由 `tests/unit/test_unit_gate_verdict_invariants.py` 以
+**真实 unittest 运行**（非 mock）钉住：
+
+1. **`executed == 0` 绝不判 `PASS`** —— 该检查先于任何可达 `PASS` 的分支。
+2. **`executed < min_executed` 判 `INFRASTRUCTURE_FAILURE`**（`unit` 声明 floor
+   为 100），fail-closed。
+3. **`skipped > 0` 判 `UNKNOWN` 而非 `PASS`**，且 `UNKNOWN ∈ BLOCKING`。
+
+由此：**required 门在环境缺失、或整个 suite 被跳过时，都不可能被读成通过。**
+这是既有设计行为，**不是** defect。
+
+**已知可解释性边界**：总体 precedence 为
+`REGRESSION > INFRASTRUCTURE_FAILURE > UNKNOWN`，故当 `integration` 同时为
+`INFRASTRUCTURE_FAILURE` 时，`unit` 的 `UNKNOWN` 在 `overall` 中被掩盖，仅保留在门禁行。
+该组合**已实测**；「`unit = UNKNOWN` 且 `integration = PASS` → `exit 4`」
+**仅为归约推导，未测量**，不得写成真实运行结果。
+
+本节裁决为 **U1：维持现状 + 文档化**。不改 accounting 表达、不改四状态、不把
+`UNKNOWN` 从 `overall` 中提出、不改 skip 条件、不新增 gate。
+
 ---
 
 ## 7. 问 7：fork-integrity audit 如何被消费（不复制逻辑）
