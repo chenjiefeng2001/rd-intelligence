@@ -257,6 +257,15 @@ population 的一个成员，却**没有断言成员资格或 population 完整�
 
 ### 8.2 三个候选范围
 
+**已裁决：C1 —— 仅 integration。** 理由：只有 integration 存在真实的外部输入
+注入口（`RDEBUG_INTEGRATION_CAPTURE` → 测试模块 → gate）；`cold_warm` 的 capture
+来自 spec 固定 argv，其「前置检查路径 ≠ 实际执行路径」的一致性问题**不是**当前
+Layer A 要解决的外部 population 注入问题；C2 会把两种不同机制强行纳入同一
+population governance；C3 会增加第二份 membership 定义并扩大已有分歧面。
+
+**保留的已知缺口（不由 Layer A 顺带修复或重新定义）**：`cold_warm` 的 spec capture
+仍是**单点选择**，其前置检查路径与实际执行路径可能不一致。
+
 | 范围 | 做法 | 后果 |
 | --- | --- | --- |
 | **C1 仅 integration** | 只为 `integration` 建立 population 定义与成员资格 | 直接覆盖当前唯一真正存在的 env 注入入口。`cold_warm` 的单点声明保持原样，其「选一成员」性质**不被解决**，成为已记录的已知缺口 |
@@ -282,7 +291,67 @@ C（适用范围，本节）
 顺序不可颠倒：先写 membership check 再被迫反向定义其 failure semantics，正是
 需要避免的路径。
 
-## 9. 本 population 的未决项
+## 9. Step S —— 负向情形裁决归属（decision-ready，不选）
+
+范围已定为 **integration only（Step C / C1）**。本节只决定：**当 integration
+提供的 capture 不属于已声明 population 时，落在四状态中的哪一个裁决，以及该裁决
+如何进入现有 precedence。** 不决定 producer / SHA / manifest / deterministic
+verification。
+
+### 9.1 已冻结的前提（不重复论证）
+
+| 状态 | 定义（`release-gates.json` `classification`） | exit |
+| --- | --- | ---: |
+| `PASS` | checks executed and all of them passed | 0 |
+| `REGRESSION` | checks executed and at least one found a content difference | 2 |
+| `UNKNOWN` | the gate could not form a content conclusion; not a pass, needs a human | 4 |
+| `INFRASTRUCTURE_FAILURE` | the gate itself could not execute; blocks, and is never reported as a regression | 3 |
+
+precedence 实测为 `REGRESSION > INFRASTRUCTURE_FAILURE > UNKNOWN`
+（`release_gate.py:523-528`）。缺失前置的既有路径是 `check_requires` →
+`missing` → 记录 `executed=0, missing_prerequisites=[...]`（`:232,236`）→ 门禁不执行。
+
+### 9.2 四类情形，及其真实可检测性
+
+对 integration 而言，注入口是**路径选择**而非目录污染：它只消费一条 env 路径，
+所以目录里多放 `.rdc` 对该门**无影响**（只影响 readiness / workload，二者非门禁
+裁决）。
+
+| 情形 | 现有行为 | Layer A 能否检出 |
+| --- | --- | --- |
+| **declared canonical fixture** | 正常路径 | 正向，无需新裁决 |
+| **missing** | env 未设 → `env:RDEBUG_INTEGRATION_CAPTURE`；设了但非文件 → `capture:RDEBUG_INTEGRATION_CAPTURE` → `INFRASTRUCTURE_FAILURE`，`executed=0` | 已覆盖，**无需新裁决**（沿用契约 §5：缺失在门禁运行前判定，绝不 → REGRESSION/PASS） |
+| **non-population path** | **无任何检查** —— 只要求 `isfile` | **可检出**（需 Layer A） |
+| **replacement**（拆两个子类） | 无检查 | R1 改名替换（原文件被换成非 canonical 名）→ 可检出为 missing + non-population；**R2 保留 canonical 名、内容换成另一 capture → Layer A 完全无法检出**，需 Layer B / deterministic verification |
+
+> **诚实边界：在 Layer A 之下，R2 不可检出。** 任何声称「Layer A 解决了替换」的
+> 表述都是错的。它只能检出「路径不属于声明集合」。
+
+### 9.3 候选裁决（不选）
+
+| 候选 | 做法 | 后果 |
+| --- | --- | --- |
+| **S1 归入缺失前置** | 新增一个 reason（如 `capture-not-in-population`），仍走 `INFRASTRUCTURE_FAILURE` | 不新增状态、不改 precedence，符合约束 3；门禁**不执行**，因此未验证的 capture 不会影响任何结果；代价是注入路径与「环境缺失」**同裁决**，只能靠 reason 区分 |
+| **S2 判 `UNKNOWN`** | 作为「无法形成内容结论」 | 符合该状态定义，且 exit 4 需人工；但 `INFRA` 优先级更高，而**今天 integration 已是 `INFRA`**（teardown），所以身份信号在 `overall` 里会被掩盖，仅留在门禁行 |
+| **S3 判 `REGRESSION`** | 视为强失败 | 与定义冲突（`REGRESSION` 指内容差异，身份违规不是内容差异）；且会因优先级最高而**改变整体裁决效果**；建议排除，但列出以示已考虑 |
+| **S4 新增第五状态** | 专用 identity 违规状态 | **违反约束 3**（不得改变四状态裁决与 precedence）；排除 |
+
+### 9.4 判定时点也会影响结果
+
+- **运行前（作为 prerequisite）**：门禁不对未验证的 capture 执行。这与契约 §5
+  「缺失在门禁运行前判定」一致，且避免注入的 capture 参与任何判定。
+- **运行中（门禁内）**：门禁先对未验证输入执行再报身份问题，等于让被注入的
+  capture 实际参与了判定。
+
+该选择与 9.3 正交，但同样属于 Step S。
+
+### 9.5 与约束的兼容性小结
+
+约束 3（不改四状态与 precedence）已排除 S4，并在效果上排除 S3。**S1 与 S2 均在
+约束内**，差别在于：是否接受「注入 = 缺失」同裁决，以及是否接受身份信号在当前
+`INFRA` 环境下被 `overall` 掩盖。
+
+## 10. 本 population 的未决项
 
 见 `docs/OPEN-DECISIONS.md`：
 
