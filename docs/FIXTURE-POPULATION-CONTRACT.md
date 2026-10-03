@@ -351,7 +351,68 @@ precedence 实测为 `REGRESSION > INFRASTRUCTURE_FAILURE > UNKNOWN`
 约束内**，差别在于：是否接受「注入 = 缺失」同裁决，以及是否接受身份信号在当前
 `INFRA` 环境下被 `overall` 掩盖。
 
-## 10. 本 population 的未决项
+## 10. Step S —— 冻结裁决
+
+**S1 + 运行前判定。COMPLETE / DECIDED / FROZEN。**
+
+- **S1**：非声明成员路径归入现有 `missing_prerequisites`，最终为
+  `INFRASTRUCTURE_FAILURE`。不新增状态、不改变 precedence，也不把身份不合法
+  错误定义为内容 `REGRESSION`。
+- **运行前判定**：membership 必须在 gate 执行前完成。**非成员 capture 不得进入
+  replay / content comparison** —— 否则身份约束只是事后报告，不能保护 gate verdict。
+- **reason 字段区分原因**：verdict 统一为 `INFRA`，但 reason 必须能区分
+  「环境/文件不存在」与「capture 不属于声明 population」。诊断信息不丢失。
+- **S2 排除**：`UNKNOWN` 语义虽可解释「未形成内容结论」，但此处已存在可验证的
+  prerequisite 条件；且当前 precedence 下 integration 已有 `INFRA`，`UNKNOWN` 在
+  overall verdict 中会被遮蔽。
+- **S3 / S4 排除**：S3 会把身份问题错误提升为内容 regression；S4 违反四状态 Contract。
+
+### 10.1 冻结后的边界
+
+| 情形 | Layer A / S1 |
+| --- | --- |
+| canonical member，内容正常 | 进入 gate |
+| canonical member 缺失 | 现有 prerequisite → `INFRA` |
+| **非声明成员路径** | **运行前 prerequisite → `INFRA`** |
+| canonical 名存在但内容被替换（R2） | **Layer A 无法检测 → OPEN，留给 Layer B** |
+| 目录额外 `.rdc` | 对 integration **无影响** |
+
+**S1 不关闭 R2。** 即使 Step A 完成，「保留 canonical 名而替换内容」仍然敞开。
+
+## 11. Step A 前置：population source 决策（decision-ready，不选）
+
+Step A 的实施对象是 integration-only Layer A，但**声明本身的来源尚未裁决**。
+实施前必须先选定 source。S1 只决定裁决归属，不决定声明从哪来。
+
+### 11.1 已确立的可行性事实
+
+- `scripts/workload_corpus.py` **可无副作用导入**（实测：导入后 `population()` 返回
+  14 个 canonical 路径，无生成动作），因此 producer declaration 在强制点技术上可行。
+- 权威 spec `release-gates.json` 当前 `schema = rdebug-release-gates/6`，
+  `schema_history` 记录 `/1`–`/6`，且**有活跃控制强制其历史一致性**
+  （`tests/unit/test_report_schema.py`，此前正是它发现 release-gates 到了 `/6`
+  却只记录到 `/5`）。**因此把声明写进 spec 需要 schema bump + 历史条目。**
+
+### 11.2 候选与两个正交维度
+
+|候选 source | 声明落在哪里 | 与 producer 的漂移风险 | 需触及 spec |
+| --- | --- | --- | --- |
+| **Producer declaration** | 强制点运行时从 producer 导入 | 无 —— 单一真源 | 否 |
+| **Filename set（冻结副本）** | 需另存一份 14 名称 | **有** —— producer 改 `DRAWS` 而副本未改则静默分歧 | 否 |
+| **Manifest** | 新增 manifest 载体 | 取决于是否由 producer 生成 | 否（或仅描述性登记） |
+| **Producer-side check** | producer 输出被 gate 信任并传递 | 取决于证明内容 | 可能 |
+
+第二维度是**判定强度**：所有 Layer A 方案只覆盖「存在」与「属于声明 population」，
+**均不覆盖内容替换（R2）**；后者只由 Layer B / deterministic verification 覆盖。
+任何方案都不得被表述为解决 R2。
+
+### 11.3 本节不决定
+
+不决定 source、不实施、不碰 `release_gate.py` / `check_requires`、不改 spec、
+不改四状态与 precedence、不碰 `manifest_match` 与 `harness`。R2 与 deterministic
+verification 保持 OPEN。
+
+## 12. 本 population 的未决项
 
 见 `docs/OPEN-DECISIONS.md`：
 
