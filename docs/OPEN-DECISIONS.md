@@ -94,6 +94,46 @@ NOT AUTHORIZED**；本节只记录，不改行为。
 与 §2 的 N4 项相邻但不同：N4 是 capture 的**治理归属**，本项是**门禁对环境的依赖**。
 本仓库无 remote、`ci.yml` 从未执行，故该路径至今未被任何真实 CI 验证。
 
+### 2.3 N4 的新增观测与可裁决选项（2026-10；选项，非裁决）
+
+§2.1 之后补得的事实，改变了这个问题的性质。
+
+**新增观测（均为观察，不含定性）：**
+
+1. 这 14 个 `.rdc` 由**仓库内脚本生成**：`scripts/workload_corpus.py` 从
+   `tests/integration/fixtures/triangle_app.cpp` 按
+   `DRAWS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 10000, 20000]`
+   每档生成一个 —— 与目录中 14 个文件的数量和命名（`w00001`…`w20000`）逐一对应。
+2. 生成需要**真实 GPU replay**（`renderdoccmd.exe` + `RDOC_DLL` + MSVC 工具链），
+   因此**在缺少该栈的机器上不可复现**。这是它们 untracked 但存在于工作树的原因。
+3. **同一目录同时是 drop-in 位置。** 该脚本 docstring 写明：XL 档需要真实游戏
+   capture，「place any `*.rdc` into the corpus directory and it will be
+   discovered automatically」，而 `_probe_corpus` 与 workload harness 均按
+   `*.rdc` glob 发现。**即：外部提供的 capture 放入该目录会被门禁采用，且无
+   manifest / sha256 / provenance 校验。**
+4. 它们**不是** N3 外部 corpus（那是 Vulkan / D3D12 真实应用 capture，带独立
+   provenance 记录）；这里是参数化 triangle 扫描。
+
+因此「这些 capture 是否属于 corpus population」的答案很可能是「否」——但**归属
+本身仍需裁决**，不由本节推定。
+
+**可裁决的选项（后果列出，不选）：**
+
+| 选项 | 做法 | 后果 |
+| --- | --- | --- |
+| **A** | 宣布其为 corpus 契约**范围外**的仓库自生成 fixture，并另立规则（按需生成 + gitignore，生成确定性需验证） | 不触碰 §6；需新规则与确定性验证。仍不解决第 3 条 drop-in |
+| **B** | 纳入 corpus 契约作为 declared population | 需**修改契约**（§6 目前禁止把 capture 纳入版本控制），需受限例外 + redistribution 裁决；由仓库 fixture 生成，可能无第三方许可 |
+| **C** | 解除门禁对该目录的依赖，由门禁**自行生成**所需输入 | 需 GPU + 工具链，且是**行为变更**；需授权；生成时间进入门禁 |
+| **D** | 本 milestone **接受现状**，关闭 N4 | 成本最低；但第 3 条 drop-in 通道保留，等于接受「可被未校验 capture 替换」 |
+
+**第 3 条 drop-in 通道单独值得裁决**：`CAPTURE-CORPUS-CONTRACT.md` §6 禁止
+「生成、合成或替换 capture 使门禁运行」，理由是「替换让缺失变得不可见」。若该
+目录视为 corpus 范围，则当前按 glob 自动发现外部 capture 与该禁止项**存在张力**；
+若视为范围外，则需要一个规则说明为何门禁可依赖一个可被任意文件注入的位置。
+
+**未裁决，且不由本节合并**：把「已提供的外部 corpus 只能被计数、无法被验证」
+（`AUDIT-2026-10-02-B.md` §257）单独立项，还是并入 N4。
+
 ## 3. 与 verdict 上限的关系
 
 `benchmark_archive` 为 `PROCESS_ONLY` / `UNKNOWN`，按 G4 裁决贡献 `UNKNOWN`，
