@@ -182,7 +182,57 @@ which has not been reached.
 - An explicit governance proposal, taken as its own act rather than inferred
   from a crash.
 
-### 6.5 Isolation note
+### 6.4.1 Trigger status against current evidence (2026-10, read-only)
+
+| 触发条件 | 状态 | 依据 |
+| --- | --- | --- |
+| 归因确立于当前假设之外 | **未达成，且已测定受阻** | 故障形状已直接确证（`mov rbx,[rax]` @ `0x4A0A4E`，`RAX == 0`），但**函数/源码归因未确立**；且本地 PDB 与故障映像**不同构建**（`6A8B9BFE` vs `6A8B9BA9`），已**测定不可行**。见 `PDB-ATTRIBUTION-RESULT.md` §5 |
+| 上游提供修复或替换构建 | **外部输入，未获得** | 无 |
+| 显式治理提案，作为其自身行为而非从崩溃推断 | **唯一当前可内部推进的路径** | 不依赖归因，也不依赖上游 |
+
+§6.3 的可接受链条以「归因确立」为首项，因此在触发条件 1 / 2 下**均被阻断**。
+条件 3 是一条独立路径：它必须以自身理由成立，**不得**由崩溃反推。
+
+### 6.5 当前不存在任何可执行的修复路径（枚举证明）
+
+| 可能的修复路线 | 当前可行性 | 依据 |
+| --- | --- | --- |
+| 在 RenderDoc 内修缺陷 | **不可执行** | 需要知道改哪里；归因未确立且已测定不可行 → 即使授权也写不出正确修复 |
+| 退出码掩码 / `os._exit` / 子进程 wrapper / 改退出路径 | **明文禁止** | teardown 调查 §5、§11.5；掩盖缺陷即等于把数字刷绿而不移除缺陷 |
+| 把门禁排除 / 把缺失当作通过 | **禁止** | `CAPTURE-CORPUS-CONTRACT.md` §6；execution accounting Contract 已冻结 |
+| 扩大 replay 排除面 | **链条不被允许** | §6.3：唯一可得链条是 `crash -> suspect replay -> widen the replay exception` |
+
+结论：**scope 重开目前没有可执行内容**。这不是「尚未推进」，而是**在现有材料下
+无处可推进**；记录这一点比制造选项更诚实。
+
+### 6.6 若走触发条件 3，blast radius 需重证的范围（草案，不实施）
+
+当前实测基线（只读 audit，`exit 0`）：fork = `D:\renderdoc_no_mcp\renderdoc`，
+声明 = `fork-exception.json`，**PASS：1 项 tracked 改动 / 1 项声明例外**
+（`n3-headless-capture-trigger` → `renderdoc/core/core.cpp`）；F1–F4 均 not present。
+工作树实际为 2 项（`M renderdoc/core/core.cpp`、未跟踪的
+`docs/code_completion_report.md`）。
+
+若任一修复落在 RenderDoc，则需重证：
+
+1. `DESIGN_SPEC.md` §2.1.1 的**允许文件/作用域**与**排除面**判定（`replay` 在排除
+   列表内）。
+2. `audit_fork_integrity` 重新通过，且 F1（未声明改动）、F2（声明但缺失）、
+   F3（provenance 绑定）、F4（越出 blast radius）四项**均需成立**。
+3. 新的例外条目需绑定 provenance；既有例外**不向后延续**，不得被新例外隐式覆盖。
+4. tracked / declared 计数从当前 **1 / 1** 发生位移，且位移必须被显式声明而非
+   被审计吸收。
+
+以上为**重证范围草案**，不构成提案，也不授权任何改动。
+
+### 6.7 使其可执行所需的外部输入
+
+- 与 **`6A8B9BA9`** 构建匹配的 PDB，或可符号化的 RenderDoc 构建（关闭归因缺口）；
+- 或上游直接提供修复 / 替换构建。
+
+二者均**不在本仓库内**，也不是本工作流可自行产生的。
+
+### 6.8 Isolation note
 
 The two pre-existing N3 patch entries in the sibling RenderDoc checkout are
 outside this decision. They are not part of this round's diff, audit or
