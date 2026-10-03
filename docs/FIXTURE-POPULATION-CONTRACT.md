@@ -553,22 +553,53 @@ replay），但**本轮未尝试**，故耗时与可行性**均未测量**。
 **本轮不引入其中任何一项**；采用 digest 作为内容身份正是 Layer B 的裁决内容，
 未授权。R2 裁决不变。
 
-### 14.9 可行性结论
+### 14.9 冻结裁决：外部前置条件
 
-**Determinism feasibility = NOT ESTABLISHED。** 决定性证据需要**实际重复生成**，
-而本轮未授权尝试；且已确立：**一次 `w00016` 重跑只提供一个观测**，不足以支撑
-population 级内容身份冻结。
+**Deterministic verification = EXTERNAL PREREQUISITE / NOT ESTABLISHED /
+NOT IMPLEMENTED。**
 
-两条可能的前进路径，均需另行授权：
+`NOT ESTABLISHED` 保持不变，且该限定必须原样保留：**本项目当前不具备内容确定性
+验证能力，本项目也不产生该证据。**「外部前置条件」**不得**被写成已经存在的验证
+能力。
 
-- **(a)** 在已验证可重新生成的宿主上执行授权的重复生成取证；
-- **(b)** 将其正式声明为外部前置条件（与 corpus 的处理方式一致）。
+其含义被严格限定为：
+
+> 在未来需要关闭 R2 / 实施 Layer B 时，**必须先提供足以证明 O1（`.rdc` 生成产物
+> 字节）重复生成确定性的外部证据**；在此之前该能力视为不存在。
+
+未选择 (a) 授权重复生成取证，理由：现有证据已足以说明**不能安全地把它当作已具备
+能力**，但不足以证明本工作流需要立即承担生成 / 编译 / GPU 成本；且覆盖式生成现有
+fixture 会引入真实 corpus 变更风险，在宿主、备份/恢复与生成对象范围冻结之前不宜
+隐含进取证。
 
 ### 14.10 本节明确未做
 
 未改 producer、未改 gate、未引入 SHA/manifest、未把 `.rdc` hash 定义为内容身份、
 未改 R2 裁决、未改四状态、未改 `cold_warm`、未修 `manifest_match` 或 harness glob、
 未以任何单次重跑宣称 determinism 已证明。
+
+### 14.11 取证方法纠正记录
+
+本节记录一次**取证方法错误**，它**不是**可行性失败证据。
+
+曾有一次环境探测报告 `renderdoc.dll`、`renderdoccmd.exe` 与 renderdoc app 头
+「缺失」。该结论**错误**：复核确认三者**均存在**。原因有二——
+
+1. 该次探测的输出经由控制台渲染，中文状态标签不可判读；
+2. 复核改用 ASCII 标签后，结论反转。
+
+**真实的环境事实只有两项：**
+
+| 事实 | 状态 |
+| --- | --- |
+| `triangle.exe`（WORKDIR 与 prebuilt 回退） | **不存在**，需编译 |
+| producer 的 `VCTOOLS_VCVARS` 默认路径（含 `(x86)`） | **不存在**，正确路径在 `C:\Program Files\Microsoft Visual Studio\2022\...`，需一次环境覆盖 |
+
+其余（两份 `renderdoc.dll`、app 头、`triangle_app.cpp`、`renderdoccmd.exe`）
+**均存在**。
+
+教训：环境前提必须以可判读标签复核，**不得据不可判读的输出写下结论**。
+本记录保留，以免后续读者把被推翻的「缺失」当作事实。
 
 ## 15. 本 population 的未决项
 

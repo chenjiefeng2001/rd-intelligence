@@ -27,8 +27,7 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 | **Release blocking** | FROZEN / NOT AUTHORIZED | 授权。技术前置是 teardown：required gate 每次通过测试却无法干净退出，会**永久阻断** |
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
-| **fixture population 的 discovery / drop-in 输入身份** | OPEN / NOT DECIDED | 证据问题、10 条约束、消费者拓扑、两层拆分、依赖矩阵、Layer A 可行性对比与**适用范围决策材料**已界定：`FIXTURE-POPULATION-CONTRACT.md` §5–8。**约束对象是 env `RDEBUG_INTEGRATION_CAPTURE` 单路径**（`check_requires` 仅 `isfile`，readiness / workload 的 glob 非门禁入口）。Layer A 不需要确定性验证；Layer B 才需要。实测：权威 spec 是 `release-gates.json`，其 `captures` 声明通道**仅覆盖 cold_warm**（单个硬编码路径，无成员资格断言），**integration 无声明通道**且机制不同（env vs `CAPTURE_PLACEHOLDER`）。**§7.3 可行性结论**：Layer A 仅在正向情形可无语义变更实施，负向情形必然触及 failure semantics。**§8 范围已裁决 C1（仅 integration）**；`cold_warm` 的单点声明作为已知缺口保留。**§9–10 Step S 已裁决 S1 + 运行前判定**：非声明成员路径归入现有 `missing_prerequisites` → `INFRASTRUCTURE_FAILURE`，reason 字段区分「不存在」与「非成员」；门禁**不执行**，非成员 capture 不得进入 replay/content comparison。S2/S3/S4 已排除。**S1 不关闭 R2**（保留 canonical 名替换内容 Layer A 无法检出，留给 Layer B）。**§11 Step A 前置待裁决：population source**（producer declaration / 冻结 filename 副本 / manifest / producer-side check，以及声明落点是否写入 spec——写入需 schema bump + 历史条目）。顺序 C ✅ → S ✅ → source ✅ → A ✅。**Step A 已实施并验收**：`integration` 现在只接受 producer 声明的 canonical 路径，非成员在**运行前**归入既有 `INFRASTRUCTURE_FAILURE` 并带独立 reason `capture-not-in-population`；声明不可读时也不静默放行（`capture-population-unavailable`）。11 项控制、3 项 revert-only、两次真实 pipeline 验收（非成员 `executed=0` / canonical `executed=63`）均通过。**R2 仍 OPEN（Layer A 无法检出）**；`cold_warm` 单点声明、`manifest_match` 错位、`harness` glob 均未动 |
-| **fixture 确定性 / 完整性验证** | OPEN / 可行性取证完成，**NOT ESTABLISHED** | 可行性已取证：`FIXTURE-POPULATION-CONTRACT.md` §14。**决定性证据需实际重复生成，本轮未授权**。已确立：仓库内**不存在任何重复生成记录**（经验证据为零）；「头部+体积」**已被证明不足以**判别内容身份；静态扫描未见 ASCII 时间戳/路径/GUID，但**二进制层面非确定性未排除**；生成用 RenderDoc 构建**未确立**（两份 `renderdoc.dll` 大小不同，机器记录固定的是 pymodules 那份）；producer 的 `VCTOOLS_VCVARS` 默认路径**有误**，需环境覆盖。两条前进路径均需另行授权：(a) 在已验证可重新生成的宿主上执行重复生成取证；(b) 声明为外部前置条件 |
+| **Layer B / R2（内容身份与替换检测）** | OPEN / **阻塞于外部前置条件** | R2 = 保留 canonical 名而替换其内容。Layer A **结构上无法检出**，不得声称已解决。关闭它需要足以证明 O1 重复生成确定性的**外部证据**；本项目当前**不产生**该证据。见 `FIXTURE-POPULATION-CONTRACT.md` §14.9、§14.4 |
 | **`unit` 门禁裁决的环境敏感性** | OPEN / NOT DECIDED | 期望语义裁决。现状行为已定义且 fail-closed，但「合法缺少 RenderDoc 的 CI 环境是否应当得到 `UNKNOWN`」未裁决；改动即改门禁语义，NOT AUTHORIZED |
 
 ### 2.1 N4 的事实基线（2026-10 复核）
@@ -166,6 +165,8 @@ N4 已按 move-out 规则移入 §4。**注意**：A **不豁免**下面这条 d
 | `noqa` 到期检查 | DEFINED — 日期必须**解析并与运行时日期比较**；缺失或过期即 REGRESSION |
 | 其余 41 份文档分类 | 范围已定为**治理边界**而非 rollout 进度；义务移到依赖发生的那一刻。`DOCUMENT-CLASSIFICATION-CONTRACT.md` §8 |
 | N4 fixture population 归属 | 选项 **A** — `tests/workload/corpus/` 下 14 个 capture 定为**仓库自生成的参数化 replay fixtures**，属 corpus-contract 范围外的独立 fixture population；不改 external corpus 定义、不加 redistribution/provenance、不声明为 tracked。`FIXTURE-POPULATION-CONTRACT.md` §2–3 |
+| fixture drop-in 输入身份（Layer A 部分） | 已关闭 — 范围 **C1 仅 integration**、裁决 **S1 pre-run INFRA**、source **producer declaration**。`integration` 只接受 producer 声明的 canonical 路径；非成员在运行前归入既有 `INFRASTRUCTURE_FAILURE` 并带独立 reason。`FIXTURE-POPULATION-CONTRACT.md` §8–13 |
+| fixture 确定性 / 完整性验证 | **EXTERNAL PREREQUISITE / NOT ESTABLISHED / NOT IMPLEMENTED** — 本项目**不具备**该能力且**不产生**该证据；关闭 R2 / 实施 Layer B 前必须先由外部提供足以证明 O1 重复生成确定性的证据。`FIXTURE-POPULATION-CONTRACT.md` §14.9 |
 
 ## 5. 已冻结项（不在本文档内裁决）
 
