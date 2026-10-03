@@ -207,3 +207,39 @@ function attribution 仍为 **NOT_ESTABLISHED**。`ln @rip` 在本地 PDB 与符
 
 按 scope decision，**未修改 RenderDoc、未启用 WER、未采集 dump**。本节为
 只读观测结果。
+
+## 5. 本地 PDB 覆盖性：已测定为否（2026-10，只读）
+
+§10.2 曾把「本地 PDB 是否覆盖故障偏移」记为 **untested**。现已测定，结论是
+**否**，且原因明确。
+
+方法：真实 cdb 运行，符号路径**只指向**本地目录
+`D:\renderdoc_no_mcp\renderdoc\x64\Release\pymodules`（不接入符号服务器），
+执行 `.reload /f` 后读 `lm m renderdoc` 与 `ln @rip`。
+
+实测：
+
+```
+00007ffe`22200000 00007ffe`23a7d000  renderdoc_...  C (export symbols)
+    Image path: ...\pymodules\renderdoc.dll
+    Timestamp:  Mon Aug 24 09:17:29 2026 (6A8B9BA9)
+00007ffe`b7f00000 00007ffe`b8536000  renderdoc      (deferred)
+    Image path: ...\pymodules\renderdoc.pyd
+    Timestamp:  Mon Aug 24 09:18:54 2026 (6A8B9BFE)
+```
+
+`ln @rip` 仍只解析到最近导出符号
+（`RENDERDOC_EndProfileRegion+0x2a6eee`），**无私有符号解析**。
+
+**原因（决定性）**：故障模块是 `renderdoc.dll`，时间戳 **`6A8B9BA9`**；而同目录
+的 `renderdoc.pdb` 与 `renderdoc.pyd` 属**另一个构建**（**`6A8B9BFE`**，时间相差
+约 86 秒）。因此该 PDB **不匹配**故障映像，调试器把它关联到 `.pyd` 而不是 `.dll`。
+先前 §11.4 记录的 CODEVIEW GUID 与此一致：那份符号属于 `.pyd`，不是故障映像。
+
+**因此**：函数级与源码级归因在当前材料下**无法达成**，且不再是「未测试」而是
+**已测定不可行**。缺口不是「缺一份符号包」，而是**缺与 `6A8B9BA9` 构建匹配的
+PDB / 可符号化构建**。§11.5 的结论与停止边界**不变且已被加强**。
+
+不得由「同目录存在一个 PDB」推断符号覆盖 —— 这正是本节推翻的推断形态。
+
+未修改任何代码、RendDoc、gate 或 CI accounting；未安装或下载任何符号包。
