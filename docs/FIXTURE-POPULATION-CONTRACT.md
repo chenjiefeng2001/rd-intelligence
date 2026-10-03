@@ -42,14 +42,52 @@ document_living_note: >-
 **授权范围**：可以为该 fixture population 定义确定性 / 完整性规则。
 **尚未实施** —— 作为独立验证项保留，见 §6。
 
-## 5. 未裁决：发现通道的输入身份
+## 5. 未裁决：门禁消费的 capture 输入身份
 
-`tests/workload/corpus/` 目前按 `*.rdc` glob 被发现（`_probe_corpus` 与 workload
-harness），而 `workload_corpus.py` 的 docstring 写明 XL 档可「place any `*.rdc`
-into the corpus directory and it will be discovered automatically」。
+### 5.1 证据问题（已界定）
 
-即：**一个自生成 fixture 目录接受任意 `.rdc` 并自动进入门禁 population。**
-目标是禁止未声明 capture 通过目录注入改变门禁 population；**实现方式未授权**。
+> 在不改变现有 fixture population 定义和门禁语义的前提下，确定如何保证门禁
+> 实际消费的 `.rdc` **只能来自已声明的 fixture population**，而不能被目录中的
+> 任意未声明 `.rdc`（或指向别处的路径）注入改变。
+
+### 5.2 实测的消费者拓扑 —— 风险落在哪一条
+
+三种消费者取输入的方式不同，**只有第一种影响门禁裁决**：
+
+| 消费者 | 取输入方式 | 是否影响门禁裁决 |
+| --- | --- | --- |
+| `integration` 门禁 | env `RDEBUG_INTEGRATION_CAPTURE` **单条路径**；`release_gate.check_requires` 只校验 `os.path.isfile` | **是** |
+| readiness 探针 | glob `tests/workload/corpus/*.rdc`（`_probe_corpus`） | 否 —— `capability only, nothing executed; not a gate verdict` |
+| workload suite | glob，且**空则自动调用** `scripts/workload_corpus.py` 生成（`workload_run.py:18-22`） | 否 —— workload 纳入 gate 已 RULED AGAINST |
+
+因此对**门禁裁决**的注入面是 env 提供的**单条路径**：其成员资格与内容**均无约束**，
+且路径可指向 corpus 目录之外。14 文件 glob 影响的是 readiness 报告与 workload 运行，
+不是门禁裁决。**约束必须区分这两条面，否则会修错对象。**
+
+### 5.3 约束（本轮不实现、不选择）
+
+1. **不得修改** `CAPTURE-CORPUS-CONTRACT` 的 external corpus 定义。
+2. **不得**把 14 个 fixture 转成 tracked corpus。
+3. **不得**改变四状态裁决或 release-gate 优先级。
+4. **不得**通过删除或禁用门禁来消除问题。
+5. **不得**接受「文件存在即可」作为身份验证。
+6. 必须区分四件事：fixture **是否存在**；fixture **是否属于声明 population**；
+   fixture **内容是否与声明身份一致**；**缺失 / 替换 / 额外 `.rdc`** 时门禁应如何裁决。
+7. 候选实现可以比较，但**本轮不选、不改代码**：固定 filename + SHA-256；
+   fixture manifest；生成脚本作为唯一 producer；discovery 只接受 producer 声明的集合；
+   producer-side identity check。
+8. 必须覆盖至少三个**负向**情况：删除一个声明 fixture；替换一个 fixture；
+   增加一个未声明 `.rdc`。
+9. 需要一个**正向控制**：当前合法 14-file population 必须继续被正确发现。
+10. 若某方案改变了「缺 capture 时是 `UNKNOWN` / `INFRA` / 其他」的门禁语义，
+    **必须拆成另一个治理决策**，不得偷偷包含在 identity 修复里。
+
+### 5.4 后续顺序
+
+证据问题 / 约束清单（本节）→ 方案比较 → 明确授权 → 最小实现 → 负向 / 正向控制
+→ real pipeline 验证 → milestone refresh / freeze。
+
+当前**不需要**重跑 pipeline。
 
 ## 6. 本 population 的未决项
 
