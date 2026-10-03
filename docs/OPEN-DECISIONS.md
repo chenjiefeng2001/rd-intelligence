@@ -27,7 +27,7 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 | **Release blocking** | FROZEN / NOT AUTHORIZED | 授权。技术前置是 teardown：required gate 每次通过测试却无法干净退出，会**永久阻断** |
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
-| **fixture population 的 discovery / drop-in 输入身份** | OPEN / NOT DECIDED | 证据问题与 10 条约束已界定：`FIXTURE-POPULATION-CONTRACT.md` §5。实测拓扑：对门禁裁决的注入面是 env `RDEBUG_INTEGRATION_CAPTURE` **单条路径**（仅校验 `isfile`，无成员资格/内容约束，路径可指向目录外）；目录 glob 只影响 readiness 报告与 workload 运行（均非门禁裁决）。目标：**禁止未声明 capture 注入改变门禁实际消费的集合**。实现方式未授权 |
+| **fixture population 的 discovery / drop-in 输入身份** | OPEN / NOT DECIDED | 证据问题、10 条约束、实测消费者拓扑、两层拆分与依赖矩阵已界定：`FIXTURE-POPULATION-CONTRACT.md` §5–6。**约束对象是 env `RDEBUG_INTEGRATION_CAPTURE` 单路径**（`check_requires` 仅 `isfile`，readiness / workload 的 glob 非门禁入口）。Layer A（成员资格）不需要确定性验证；Layer B（内容身份）才需要。另记录三项实测前置缺陷：producer 声明与写出名字不一致、producer 内部前缀 glob、`manifest_match` 校验的是门禁不消费的那批 capture。方案比较已列，**未选、未实现** |
 | **fixture 确定性 / 完整性验证** | OPEN / 已授权未实施 | 已授权为独立验证项；验证对象、方法与判据未裁决 |
 | **`unit` 门禁裁决的环境敏感性** | OPEN / NOT DECIDED | 期望语义裁决。现状行为已定义且 fail-closed，但「合法缺少 RenderDoc 的 CI 环境是否应当得到 `UNKNOWN`」未裁决；改动即改门禁语义，NOT AUTHORIZED |
 
