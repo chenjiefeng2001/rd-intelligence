@@ -28,6 +28,7 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
 | **rd-intelligence 门禁依赖的未登记 captures（N4）** | OPEN / NOT DECIDED | 14 个被 rd-intelligence 门禁实际依赖、但未被 Git 跟踪且没有本仓库侧 provenance/manifest 登记的 capture，其治理归属、来源契约及门禁依赖方式尚未裁决 |
+| **`unit` 门禁裁决的环境敏感性** | OPEN / NOT DECIDED | 期望语义裁决。现状行为已定义且 fail-closed，但「合法缺少 RenderDoc 的 CI 环境是否应当得到 `UNKNOWN`」未裁决；改动即改门禁语义，NOT AUTHORIZED |
 
 ### 2.1 N4 的事实基线（2026-10 复核）
 
@@ -64,6 +65,34 @@ manifest/provenance。
 治理身份。
 
 **本节不作定性、不补 manifest、不补 provenance、不改门禁行为。**
+
+### 2.2 `unit` 门禁裁决的环境敏感性（2026-10 实测）
+
+同一份代码、两次真实 pipeline 运行，因环境变量不同而得到不同 `unit` 裁决。
+**行为本身已定义且 fail-closed；未裁决的是它是否为期望语义。**
+
+机制：`tests/unit/test_cold_warm_gate.py` 第 387 / 396 / 411 三项在
+`renderdoc module not importable` 时 `skip`。
+
+| 运行条件 | unit 实测 |
+| --- | --- |
+| 未设 `RDEBUG_RENDERDOC_PATH` | `executed=475`、3 skipped、0 failed、exit 0 → outcome **`UNKNOWN`**，`detail` 原文 `3 of 478 tests skipped; no content conclusion for the skipped part` |
+| 设 `RDEBUG_RENDERDOC_PATH` | `executed=478` → outcome **`PASS`** |
+
+已定义的部分（`scripts/release_gate.py`）：`UNKNOWN ∈ BLOCKING`；总体优先级
+`REGRESSION > INFRASTRUCTURE_FAILURE > UNKNOWN`；`UNKNOWN` 归约到
+`NEEDS_REVIEW / exit 4`；`PASS` 仅当每个 required 门**既执行又通过**。因此
+`UNKNOWN` 不是通过，缺环境也不会被读成绿。
+
+**未测量**：上述「`unit = UNKNOWN` 且 `integration` 通过时总体为 exit 4」未做真实
+运行验证，只是由归约顺序推导，不得当作实测事实。
+
+未裁决：缺少 RenderDoc 的 CI 环境**是否应当**得到 `UNKNOWN`（进而把总体压到
+exit 4），还是应把「跳过」与「门禁裁决」解耦。**任何改动都是门禁语义变更，
+NOT AUTHORIZED**；本节只记录，不改行为。
+
+与 §2 的 N4 项相邻但不同：N4 是 capture 的**治理归属**，本项是**门禁对环境的依赖**。
+本仓库无 remote、`ci.yml` 从未执行，故该路径至今未被任何真实 CI 验证。
 
 ## 3. 与 verdict 上限的关系
 
