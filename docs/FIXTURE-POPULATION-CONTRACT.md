@@ -175,7 +175,7 @@ fixture deterministic verification
 
 | 通道 | 机制 | 现状覆盖 |
 | --- | --- | --- |
-| **spec 声明通道** | `release-gates.json` 顶层 `captures`（gate id → capture 路径），由 `release_gate.py:146,438-449` 的 `_substitute_capture` 把 `{capture}` 代入门禁命令 | **仅 `cold_warm_equivalence` 有条目**：`tests/workload/corpus/w00001_frame11.rdc`。`integration` **无条目** |
+| **spec 声明通道** | `release-gates.json` 顶层 `captures`（gate id → capture 路径），由 `release_gate.py:146-150` 的 `_substitute_capture` 把命令中的字面占位符 **`CAPTURE_PLACEHOLDER`** 替换为该路径（无条目则返回 `None`） | **仅 `cold_warm_equivalence` 有条目**：`tests/workload/corpus/w00001_frame11.rdc`。`integration` **无条目**，且其命令不含该占位符 |
 | **env 通道** | `RDEBUG_INTEGRATION_CAPTURE`，经 `check_requires` 的 `capture` 分支（`:123-126`）校验 `os.path.isfile` | `integration` 的**唯一**输入路径；`cold_warm` 的前置检查也读这个变量 |
 
 两点实测结论：
@@ -185,6 +185,15 @@ fixture deterministic verification
 - `cold_warm` 的**前置检查**读 `RDEBUG_INTEGRATION_CAPTURE`，而它**实际执行**的
   命令用的是 spec `captures` 里那条路径。二者可以不一致。
 - spec 里那条路径是 `w00001_frame11.rdc` —— **canonical 命名的独立旁证**。
+- 两条通道的**机制不同**：`integration` 的命令是
+  `python -m unittest discover -s tests/integration -t .`，不含占位符，其 capture
+  由四个测试模块（`test_context_eid_contract`、`test_real_replay`、
+  `test_reflection_reachability`、`test_runtime_isolation`）各自读
+  `RDEBUG_INTEGRATION_CAPTURE`；`cold_warm_equivalence` 的命令是
+  `python scripts/cold_warm_gate.py CAPTURE_PLACEHOLDER --json ...`，capture
+  作为 argv 传入。
+- `spec_captures` **只**用于 `_substitute_capture` 与其调用点，**没有任何地方**
+  把 spec 的 capture 与 producer 的 population 交叉校验。
 
 ### 7.2 可行性对比（不选）
 
@@ -228,7 +237,52 @@ population 的一个成员，却**没有断言成员资格或 population 完整�
 语义与优先级、不动 `manifest_match`、不把 readiness / workload 的 glob 当作强制点。
 `manifest_match` 的 population 错位仍是独立 OPEN 项，不在本节处理。
 
-## 8. 本 population 的未决项
+## 8. Step C —— 适用范围决策（decision-ready，不选、不改 gate 行为）
+
+本节只回答一个问题：**Layer A 的 population governance 适用于哪些门。**
+不选择 producer / SHA / manifest，不决定负向裁决，不改任何 gate 行为。
+
+### 8.1 已确立的、不再重复的事实
+
+- 权威 spec 是 `release-gates.json`；`ci-pipeline.json` 的
+  `environment_requirements` 只是描述性文档。
+- `cold_warm_equivalence` 有静态 capture 声明，但它只是**一个具体 fixture 路径**，
+  **不是 population 声明**——它选中一个成员，未断言成员资格或 population 完整性。
+- `integration` **没有** declaration channel，输入只能来自 `RDEBUG_INTEGRATION_CAPTURE`。
+- 两者**不能**共享同一个「Layer A 已存在 / 未存在」的结论。
+- `requires.capture = true` 的 `isfile` 前置检查**有效**；此前「不存在路径可能漏检」
+  的疑虑**已关闭**。
+- `cold_warm` 的前置检查路径与实际执行路径**可以不一致**。这是应保留的边界事实，
+  **但不能据此推出必须修改**。
+
+### 8.2 三个候选范围
+
+| 范围 | 做法 | 后果 |
+| --- | --- | --- |
+| **C1 仅 integration** | 只为 `integration` 建立 population 定义与成员资格 | 直接覆盖当前唯一真正存在的 env 注入入口。`cold_warm` 的单点声明保持原样，其「选一成员」性质**不被解决**，成为已记录的已知缺口 |
+| **C2 两个门统一** | `integration` 与 `cold_warm` 纳入**同一** population 定义 | 定义唯一、一致；但两门**机制不同**（env vs `CAPTURE_PLACEHOLDER`），统一的是 population 而非输入机制；改动面同时覆盖两门，风险与授权范围都更大 |
+| **C3 两个门分别治理** | 各自保留输入机制，membership 分别定义 | 尊重机制差异；但可能产生**两份 membership 定义**，而 `cold_warm` 的前置路径与执行路径已经可能不一致 —— 再加一份定义会扩大而非收敛分歧面 |
+
+### 8.3 该决策不能单独决定什么
+
+- **不能**决定 population source（producer declaration / filename set / manifest）——
+  那是 Layer A 的下一步，且与范围决策正交。
+- **不能**决定负向情形裁决。按 `§7.3`，这必然触及 failure semantics，属 **Step S**，
+  须独立授权。
+- **不能**借范围决策顺带修 `manifest_match` 错位或 `harness.discover_corpus` 的 glob。
+
+### 8.4 与后续步骤的关系
+
+```
+C（适用范围，本节）
+  → S（failure semantics 归属：extra / replacement / non-population path）
+    → A（Layer A 实施）
+```
+
+顺序不可颠倒：先写 membership check 再被迫反向定义其 failure semantics，正是
+需要避免的路径。
+
+## 9. 本 population 的未决项
 
 见 `docs/OPEN-DECISIONS.md`：
 

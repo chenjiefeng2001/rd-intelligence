@@ -27,7 +27,7 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 | **Release blocking** | FROZEN / NOT AUTHORIZED | 授权。技术前置是 teardown：required gate 每次通过测试却无法干净退出，会**永久阻断** |
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
-| **fixture population 的 discovery / drop-in 输入身份** | OPEN / NOT DECIDED | 证据问题、10 条约束、消费者拓扑、两层拆分、依赖矩阵与 Layer A 可行性对比已界定：`FIXTURE-POPULATION-CONTRACT.md` §5–7。**约束对象是 env `RDEBUG_INTEGRATION_CAPTURE` 单路径**（`check_requires` 仅 `isfile`，readiness / workload 的 glob 非门禁入口）。Layer A 不需要确定性验证；Layer B 才需要。实测：权威 spec 是 `release-gates.json`，其顶层 `captures` 声明通道**仅覆盖 cold_warm**（单个硬编码路径，无成员资格断言），**integration 无声明通道**。可行性结论：Layer A 只在**正向情形**可无语义变更实施，**负向情形必然触及 failure semantics，须按约束 10 拆出另行授权**。方案**未选、未实现** |
+| **fixture population 的 discovery / drop-in 输入身份** | OPEN / NOT DECIDED | 证据问题、10 条约束、消费者拓扑、两层拆分、依赖矩阵、Layer A 可行性对比与**适用范围决策材料**已界定：`FIXTURE-POPULATION-CONTRACT.md` §5–8。**约束对象是 env `RDEBUG_INTEGRATION_CAPTURE` 单路径**（`check_requires` 仅 `isfile`，readiness / workload 的 glob 非门禁入口）。Layer A 不需要确定性验证；Layer B 才需要。实测：权威 spec 是 `release-gates.json`，其 `captures` 声明通道**仅覆盖 cold_warm**（单个硬编码路径，无成员资格断言），**integration 无声明通道**且机制不同（env vs `CAPTURE_PLACEHOLDER`）。**§7.3 可行性结论**：Layer A 仅在正向情形可无语义变更实施，负向情形必然触及 failure semantics。**§8 待裁决范围**：C1 仅 integration / C2 两门统一 / C3 分别治理。顺序 C → S（failure semantics）→ A（实施）。方案**未选、未实现** |
 | **fixture 确定性 / 完整性验证** | OPEN / 已授权未实施 | 已授权为独立验证项；验证对象、方法与判据未裁决 |
 | **`unit` 门禁裁决的环境敏感性** | OPEN / NOT DECIDED | 期望语义裁决。现状行为已定义且 fail-closed，但「合法缺少 RenderDoc 的 CI 环境是否应当得到 `UNKNOWN`」未裁决；改动即改门禁语义，NOT AUTHORIZED |
 
