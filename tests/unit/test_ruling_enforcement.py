@@ -1,4 +1,6 @@
-"""F3 / F4 ruling enforcement -- defect version, written before the change.
+"""F3 / F4 / teardown-fault-shape ruling enforcement.
+
+Defect version, written before the change.
 
 Both rulings are decided (see docs/DOCUMENT-CLASSIFICATION-CONTRACT.md §9).
 These controls exist so the implementation cannot drift from the ruling, and
@@ -13,6 +15,15 @@ calibrated to 19 from the measured interval distribution. The calibration is
 recorded in the contract and read from there, so the number in the code cannot
 diverge from the ruling. The understatement check is removed with the ruling,
 because it encodes the per-commit cadence the ruling replaced.
+
+Teardown fault shape -- ruling B, decided by direct cdb measurement at the
+access violation. Three claims recorded earlier were measured false and
+retracted: the `ff 50` indirect virtual call, the zero vtable pointer, and
+`0x4A0A4D` as the instruction start. The measured instruction is `48 8b 18`
+(`mov rbx, qword ptr [rax]`) at `0x4A0A4E`, with rax == 0 and a non-null,
+readable rbx. These controls exist because a retraction recorded only in prose
+decays: nothing stopped the superseded shape from being restated as fact, which
+is exactly what happened once already.
 """
 
 import os
@@ -27,6 +38,19 @@ CONTRACT = os.path.join(REPO_ROOT, "docs",
 OPEN_DECISIONS = os.path.join(REPO_ROOT, "docs", "OPEN-DECISIONS.md")
 FREEZE = os.path.join(REPO_ROOT, "docs", "CURRENT-EVIDENCE-FREEZE.md")
 STATUS = os.path.join(os.path.dirname(REPO_ROOT), "STATUS.md")
+TEARDOWN = os.path.join(REPO_ROOT, "docs",
+                        "TEARDOWN-CRASH-INVESTIGATION.md")
+PDB_RESULT = os.path.join(REPO_ROOT, "docs", "PDB-ATTRIBUTION-RESULT.md")
+
+#: The measured fault instruction, as recorded in TEARDOWN section 13.
+MEASURED_OFFSET = "0x4A0A4E"
+MEASURED_OPCODE = "48 8b 18"
+MEASURED_INSTRUCTION = "mov rbx, qword ptr [rax]"
+
+
+def _read(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
 
 #: The measured refresh-interval distribution the calibration came from.
 MEASURED = [1, 1, 1, 2, 1, 1, 3, 3, 3, 2, 2, 1, 19, 9, 1, 1, 3]
@@ -275,6 +299,137 @@ class TestOpenDecisionsCarriesOnlyOpenItems(unittest.TestCase):
             "移入" in rule or "移出" in rule,
             "section 2 must state that decided items move out rather than "
             "being edited in place, or this cleanup happens again by default")
+
+
+class TestTeardownFaultShapeRuling(unittest.TestCase):
+    """The measured fault shape stands, and the retracted one cannot return."""
+
+    def _teardown(self):
+        return _read(TEARDOWN)
+
+    def _flat_teardown(self):
+        """Whitespace-collapsed, so cdb's column padding cannot hide a match.
+
+        The instruction is recorded twice: once as prose and once inside the
+        verbatim transcript, where the mnemonics are column-aligned. Asserting
+        the single-spaced form against the raw text would test cdb's layout
+        rather than the record.
+        """
+        return re.sub(r"[ \t]+", " ", self._teardown())
+
+    def _freeze(self):
+        return _read(FREEZE)
+
+    def _pdb(self):
+        return _read(PDB_RESULT)
+
+    def test_the_measured_facts_are_recorded(self):
+        """FLOW: offset, opcode and disassembly come from the debugger.
+
+        Each token is one the retraction replaced, so losing any of them means
+        the record drifted back toward the shape that was measured false.
+        """
+        text = self._flat_teardown()
+        for token, what in (
+            (MEASURED_OFFSET, "the measured fault offset"),
+            (MEASURED_OPCODE, "the measured opcode"),
+            (MEASURED_INSTRUCTION, "the measured instruction"),
+            ("rax=0000000000000000", "the rax reading"),
+            ("rbx=00007ffb0c1edc80", "the rbx reading, as cdb printed it"),
+            ("00000000`00000001", "the qword at rbx"),
+        ):
+            self.assertIn(
+                token, text,
+                f"{what} is missing from the teardown record. It is the "
+                "measurement the whole ruling rests on.")
+
+    def test_the_primary_artifact_is_retained(self):
+        """FLOW: the raw debugger output stays next to the claim.
+
+        The numbers above came from one run of a one-shot command. If only the
+        interpretation is kept, the record asserts measurements whose only
+        source was a temporary log that no longer exists.
+        """
+        text = self._teardown()
+        for token, what in (
+            ("Attempt to read from address 0000000000000000",
+             "the exception record"),
+            ("0:000> dq @rbx L1", "the memory read at rbx"),
+            ("0:000> db @rip-10 L26", "the raw bytes"),
+            ("cdb version", "the debugger version"),
+        ):
+            self.assertIn(
+                token, text,
+                f"{what} is missing. The measured values need a retained "
+                "primary artifact, not an interpretation alone.")
+
+    def test_the_retired_claims_cannot_return_to_the_freeze_record(self):
+        """FLOW: the frozen summary carries the measurement, not the retraction.
+
+        Anchored on the freeze document because that is the one place a reader
+        takes the current shape from without reading the investigation.
+        """
+        text = self._freeze()
+        self.assertNotIn(
+            "0x4A0A4D", text,
+            "0x4A0A4D was measured not to be an instruction start. If it is "
+            "back in the freeze record, the retracted shape is being restated "
+            "as current.")
+        self.assertIsNone(
+            re.search(r"^\s*vtable pointer\s", text, re.MULTILINE),
+            "the freeze record used to carry a 'vtable pointer zero' field. The "
+            "null is rax; there is no such field to report. Anchored to the "
+            "start of a line so the SUPERSEDED annotation that names the old "
+            "claim does not trip it.")
+        self.assertIn(MEASURED_OFFSET, text)
+
+    def test_each_retraction_is_marked_where_it_lived(self):
+        """FLOW: each document that carried a wrong claim still marks it.
+
+        The retraction has to travel with the claim. Correcting the summary
+        while leaving the source document asserting the old shape is how the
+        two coexisted.
+        """
+        self.assertIn(
+            "已被 §13 实测推翻", self._teardown(),
+            "the teardown record must still mark its own 0x4A0A4D section as "
+            "refuted, or the retraction is lost with the edit")
+        self.assertIn(
+            "不再作为", self._pdb(),
+            "the PDB result must still mark the static decode as no longer "
+            "fact; that document is where the wrong shape originated")
+
+    def test_the_attribution_boundary_is_still_declared(self):
+        """FLOW: establishing the shape did not establish the cause.
+
+        The measurement says which instruction faults and which register is
+        null. It says nothing about which static owns it or why, so the
+        boundary has to remain on the page.
+        """
+        text = self._teardown()
+        for token in ("NOT_ESTABLISHED", "ROOT CAUSE OPEN",
+                      "UNAUTHORIZED and NOT STARTED"):
+            self.assertIn(
+                token, text,
+                f"{token} is the boundary the measurement did not cross. Its "
+                "absence would let a measured shape read as a known cause.")
+        self.assertIn(
+            "不命名该全局量", text,
+            "the rip-relative target must stay unnamed. Naming it is the next "
+            "layer of attribution and was never authorised.")
+
+    def test_the_scope_of_the_measurement_is_stated(self):
+        """FLOW: rbx is excluded, not indicted.
+
+        The whole point of ruling B was to ask about rbx. A record that only
+        says 'rax == 0' would leave the exclusion unstated, and the earlier
+        error was reading rbx as the faulting pointer.
+        """
+        text = self._teardown()
+        self.assertIn(
+            "均不是故障源", text,
+            "rbx and [rbx] were measured non-null / non-zero; that exclusion "
+            "is a result, not an omission")
 
 
 if __name__ == "__main__":

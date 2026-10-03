@@ -670,7 +670,8 @@ accounting；**未修改故障形状**。
 `D:\renderdoc_no_mcp\renderdoc\x64\Release\pymodules;srv*https://msdl.microsoft.com/download/symbols`，
 目标为三模块最小复现集。未附加 `.ecxr`（在本机报 `0x8000FFFF`），改为在
 AV 停点上直接读寄存器。**未修改** RenderDoc、worker、teardown 路径或 CI
-accounting；**未修改故障形状**。
+accounting；**未修改故障形状**。原始调试器输出逐字记录于 **§13.6**；精确可复现
+调用（含符号路径、环境变量、命令脚本与三处已踩坑的失败）见 **§13.7**。
 
 ### 13.1 故障时刻寄存器（实测）
 
@@ -744,3 +745,103 @@ accounting；**未修改故障形状**。
 `EXCEPTION_ACCESS_VIOLATION` 为 `0xC0000005`，读地址 `0x0`；故障每次复现均
 落在同一 offset `0x4A0A4E`。门禁状态不变：pipeline 仍为
 `BLOCKED_INFRA / exit 3`，teardown 修复仍 **UNAUTHORIZED and NOT STARTED**。
+
+### 13.6 原始 CDB 输出（逐字记录）
+
+以下为产出 §13.1 / §13.2 全部数值的**原始调试器输出**，逐字保留，未经改写。
+本节存在的原因是：§13 的数值是一次性运行的产物，若不留存原始出处，文档
+就成了无出处的断言。制表符与 ASCII 列按原样保留。
+
+```
+0:000> .exr -1
+ExceptionAddress: 00007ffb0af50a4e (renderdoc_7ffb0aab0000!RENDERDOC_EndProfileRegion+0x00000000002a6eee)
+   ExceptionCode: c0000005 (Access violation)
+  ExceptionFlags: 00000000
+NumberParameters: 2
+   Parameter[0]: 0000000000000000
+   Parameter[1]: 0000000000000000
+Attempt to read from address 0000000000000000
+0:000> r rax
+rax=0000000000000000
+0:000> r rbx
+rbx=00007ffb0c1edc80
+0:000> r rcx
+rcx=00007ffb0c2aa495
+0:000> r rdx
+rdx=0000008001577dc0
+0:000> r rsi
+rsi=000000800138b740
+0:000> r rdi
+rdi=0000008001577dc0
+0:000> r rsp
+rsp=00000080006df770
+0:000> r rbp
+rbp=0000d1913c888938
+0:000> dq @rbx L1
+00007ffb`0c1edc80  00000000`00000001
+0:000> db @rip-10 L26
+00007ffb`0af50a3e  8b 05 3c 8d 27 01 48 89-5c 24 30 48 89 7c 24 20  ..<.'.H.\$0H.|$ 
+00007ffb`0af50a4e  48 8b 18 48 85 db 74 28-48 8b 40 10 48 8d 3c c3  H..H..t(H.@.H.<.
+00007ffb`0af50a5e  48 3b df 74 1b 48                                H;.t.H
+0:000> u @rip-10 @rip+6
+renderdoc_7ffb0aab0000!RENDERDOC_EndProfileRegion+0x2a6dee:
+00007ffb`0af50a3e 8b053c8d2701    mov     eax,dword ptr [renderdoc_7ffb0aab0000!VK_LAYER_RENDERDOC_CaptureNegotiateLoaderLayerInterfaceVersion+0x6b88a0 (00007ffb`0c1c9780)]
+00007ffb`0af50a44 48895c2430      mov     qword ptr [rsp+30h],rbx
+00007ffb`0af50a49 48897c2420      mov     qword ptr [rsp+20h],rdi
+00007ffb`0af50a4e 488b18          mov     rbx,qword ptr [rax]
+00007ffb`0af50a51 4885db          test    rbx,rbx
+00007ffb`0af50a54 7428            je      renderdoc_7ffb0aab0000!RENDERDOC_EndProfileRegion+0x2a6f1e (00007ffb`0af50a7e)
+0:000> ln @rip
+(00007ffb`0aca9b60)   renderdoc_7ffb0aab0000!RENDERDOC_EndProfileRegion+0x2a6eee   |  (00007ffb`0bb03230)   renderdoc_7ffb0aab0000!VK_LAYER_RENDERDOC_CaptureEnumerateDeviceLayerProperties
+0:000> k
+Child-SP          RetAddr               Call Site
+00000080`006df770 00007ffb`0abbfcd7     renderdoc_7ffb0aab0000!RENDERDOC_EndProfileRegion+0x2a6eee
+00000080`006df7a0 00007ffc`77b56f45     renderdoc_7ffb0aab0000!RENDERDOC_CheckAndroidPackage+0x2df47
+00000080`006df830 00007ffc`77b56e77     ucrtbase!<lambda_f03950bc5685219e0bcd2087efbe011e>::operator()+0x95
+00000080`006df8a0 00007ffc`77b56e2d     ucrtbase!__crt_seh_guarded_call<int>::operator()<<lambda_7777bce6b2f8c936911f934f8298dc43>,<lambda_f03950bc5685219e0bcd2087efbe011e> &,<lambda_3883c3dff614d5e0c5f61bb1ac94921c> >+0x3b
+00000080`006df8d0 00007ffc`0bd4d8a5     ucrtbase!execute_onexit_table+0x3d
+00000080`006df910 00007ffc`0bd4d9c5     renderdoc_7ffb0aab0000!VK_LAYER_RENDERDOC_CaptureNegotiateLoaderLayerInterfaceVersion+0x23c9c5
+00000080`006df950 00007ffc`7a1dabda     renderdoc_7ffb0aab0000!VK_LAYER_RENDERDOC_CaptureNegotiateLoaderLayerInterfaceVersion+0x23cae5
+00000080`006df9b0 00007ffc`7a0f8c67     ntdll!LdrpCallInitRoutineInternal+0x22
+00000080`006df9e0 00007ffc`7a13996e     ntdll!LdrpCallInitRoutine+0x73
+00000080`006dfa50 00007ffc`7a138e68     ntdll!LdrShutdownProcess+0x16e
+00000080`006dfb80 00007ffc`7994f93a     ntdll!RtlExitUserProcess+0xa8
+00000080`006dfbb0 00007ffc`77b57387     KERNEL32!ExitProcessImplementation+0xa
+00000080`006dfbe0 00007ff6`0c571297     ucrtbase!common_exit+0xc7
+00000080`006dfc40 00007ffc`7993fd63     python+0x1297
+00000080`006dfc80 00007ffc`7a138d20     KERNEL32!BaseThreadInitThunk+0x13
+00000080`006dfcb0 00000000`00000000     ntdll!RtlUserThreadStart+0x20
+```
+
+回溯维持既有结论：AV 发生在 CRT onexit / C++ 静态析构阶段
+（`ucrtbase!execute_onexit_table` → `LdrShutdownProcess` → `RtlExitUserProcess`）。
+
+### 13.7 可复现调用（精确记录）
+
+使 §13 可被他人重跑，而不必重走弯路。
+
+- 调试器：`C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe`，
+  `cdb version 10.0.28000.2114`。**不在 `PATH` 上**——仅查 `PATH` 会误判为缺失。
+- 开关：`-g`（忽略初始断点，使首个停点即 AV）、`-cf <脚本文件>`（逐行执行命令）、
+  `-y <符号路径>`、`-logo <日志>`。
+- 符号路径：
+  `D:\renderdoc_no_mcp\renderdoc\x64\Release\pymodules;srv*https://msdl.microsoft.com/download/symbols`
+- 工作目录：`D:\renderdoc_no_mcp\rd-intelligence`
+- 环境变量：`PYTHONPATH=src`、`RDEBUG_RENDERDOC_PATH=D:\renderdoc_no_mcp\renderdoc\x64\Release\pymodules`、
+  `RDEBUG_INTEGRATION_CAPTURE=...\tests\workload\corpus\w00016_frame11.rdc`、
+  `RDEBUG_ISOLATION_CAPTURE_DIR=...\tests\workload\corpus`
+- 目标：`python -m unittest tests.integration.test_ide_ci_workflow
+  tests.integration.test_ide_ownership tests.integration.test_real_replay`
+  （子进程先跑完 `Ran 19 tests / OK`，随后在 onexit 阶段崩溃）
+- 命令脚本内容：`.exr -1`、逐个 `r <reg>`、`dq @rbx L1`、`db @rip-10 L26`、
+  `u @rip-10 @rip+6`、`ln @rip`、`k`、`q`。
+
+本轮实际踩到并已绕开的三处失败（记录以免重复）：
+
+1. `-noshare` **不是** cdb 的合法选项（合法的是 `-sh`），传入后 cdb 以
+   `0x80070057`（invalid argument）退出，且只写出 76 字节日志。
+2. 用 `-c` 把多条命令串成单行时，观察到 `Syntax error` 并导致该行**后续命令
+   全部未执行**——包括本应产出的寄存器读数。改用 `-cf` 脚本文件逐行执行后
+   全部命令正常执行。已废弃的尝试包含一次性列出多个寄存器的 `r` 形式。
+3. `.ecxr` 在本机返回 `Unable to get exception context, HRESULT 0x8000FFFF`，
+   因此**不**使用 `.ecxr`，改为在 AV 停点直接读寄存器。
