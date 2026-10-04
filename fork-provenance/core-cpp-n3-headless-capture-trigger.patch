@@ -1,0 +1,50 @@
+diff --git a/renderdoc/core/core.cpp b/renderdoc/core/core.cpp
+index 314744735..6b7bb2ab9 100644
+--- a/renderdoc/core/core.cpp
++++ b/renderdoc/core/core.cpp
+@@ -33,6 +33,7 @@
+ #include "hooks/hooks.h"
+ #include "jpeg-compressor/jpge.h"
+ #include "maths/formatpacking.h"
++#include "os/os_specific.h"
+ #include "replay/replay_driver.h"
+ #include "serialise/rdcfile.h"
+ #include "serialise/serialiser.h"
+@@ -1483,6 +1484,37 @@ void RenderDoc::QueueCapture(uint32_t frameNumber)
+ 
+ bool RenderDoc::ShouldTriggerCapture(uint32_t frameNumber)
+ {
++  // LOCAL PATCH (n3-corpus acquisition): headless auto-capture support.
++  // RDOC_TRIGGER_FRAMES="a,b,..." queues frame-number captures at startup
++  // so unmodified third-party apps can be captured without a GUI. See
++  // n3-corpus provenance notes. Upstream has no equivalent env control.
++  static bool s_rdocTriggerFramesQueued = false;
++  if(!s_rdocTriggerFramesQueued)
++  {
++    s_rdocTriggerFramesQueued = true;
++    rdcstr trig = Process::GetEnvVariable("RDOC_TRIGGER_FRAMES");
++    if(!trig.empty())
++    {
++      uint32_t f = 0;
++      bool any = false;
++      for(size_t i = 0; i <= trig.size(); i++)
++      {
++        char c = (i < trig.size()) ? trig[i] : ',';
++        if(c >= '0' && c <= '9')
++        {
++          f = f * 10 + uint32_t(c - '0');
++          any = true;
++        }
++        else if(any)
++        {
++          m_QueuedFrameCaptures.push_back(f);
++          f = 0;
++          any = false;
++        }
++      }
++    }
++  }
++
+   bool ret = m_Cap > 0;
+ 
+   if(m_Cap > 0)

@@ -243,3 +243,55 @@ PDB / 可符号化构建**。§11.5 的结论与停止边界**不变且已被加
 不得由「同目录存在一个 PDB」推断符号覆盖 —— 这正是本节推翻的推断形态。
 
 未修改任何代码、RendDoc、gate 或 CI accounting；未安装或下载任何符号包。
+
+## 6. 事故构建的源码 delta 已固化为可审计 artifact（2026-10，只读取证后续）
+
+§5 确立了事故映像的 **base commit**。本节固化该 commit 之上、**事故构建实际包含
+的本地 delta**，因为它是唯一现存副本。
+
+### 6.1 artifact 与身份绑定
+
+| 项 | 值 |
+| --- | --- |
+| artifact | `fork-provenance/core-cpp-n3-headless-capture-trigger.patch`（1540 字节） |
+| SHA256 | `76389727458c9a4e129ae910b5f800541dbb8e8a33a7c3a525a756999bfddd12` |
+| base / source identity | `b7f1554feb0d7d7120f2b9280364b98972ec37d3`（DLL 自内嵌完整 hash，与 checkout `HEAD` `b7f1554fe` 一致） |
+| exception | `n3-headless-capture-trigger`（`fork-exception.json`，schema `rdebug-fork-exception/1`） |
+| scope | `renderdoc/core/core.cpp`，仅 `RenderDoc::ShouldTriggerCapture`，`include_block` 范围 |
+| delta 规模 | +32 行，1 file changed |
+
+摘要算法（可复现）：`git -C <fork> diff -- renderdoc/core/core.cpp` 的输出按 **LF**
+连接、**UTF-8 无 BOM**、**无尾换行**编码后取 SHA256。
+
+### 6.2 这**不是**什么
+
+- **不是**新构建，**不是**修复授权，**不是**归因结果。
+- **不能** retroactively 证明完整 provenance chain 曾经存在。
+- **不能**宣称事故 DLL 可由当前 checkout 无条件重建。
+- 未运行 `cmake`、未编译、未修改 `core.cpp` 行为、未改动 fork exception 的允许范围、
+  未改动 `fork_integrity` 规则、未补写 N3 capture 历史上缺失的 provenance 文件。
+
+### 6.3 已声明 provenance 的断裂（保持可见）
+
+`fork-exception.json` 的 `provenance.mechanism_path = capture_mechanism.patch` 与
+`recorded_path = capture_mechanism.patch_recorded`（root `../rdebug-validation`）
+**在其声明位置均不存在**。因此该 delta 的声明 provenance 记录缺失，其内容此前
+**只存在于未跟踪的工作树**。本节 artifact 把「唯一工作树副本」转为可审计保存物，
+**但没有、也不能修复那段历史记录的缺失**。
+
+### 6.4 与未来自编译构建的区分（必须保持）
+
+| | 事故构建的已保存 delta | 未来自编译构建的源码 |
+| --- | --- | --- |
+| 来源 | 已固化的 artifact，SHA256 已记录 | 未来一次构建的输入 |
+| 身份 | base commit + 本 artifact，两段均可审计 | 需**单独记录**其 base commit、delta 与构建环境 |
+| 可否混同 | **不可**。二者是不同的源码状态，不得互相引用为「同一份」 | — |
+
+若将来执行自编译，必须**另行记录**该次构建的 base commit、delta 摘要与构建环境，
+**不得**引用本 artifact 作为其来源证明。
+
+### 6.5 状态不变
+
+方案 B 的执行前提**仍未获得**：构建可行性为 **`BUILD_PREREQUISITE_UNKNOWN`**
+（工具链、SDK、CMake、构建系统与既有中间产物均已核实存在，但外部依赖与 configure
+结果未验证，且 configure 未授权）。本节只固化证据，不改变该状态。
