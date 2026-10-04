@@ -290,8 +290,57 @@ PDB / 可符号化构建**。§11.5 的结论与停止边界**不变且已被加
 若将来执行自编译，必须**另行记录**该次构建的 base commit、delta 摘要与构建环境，
 **不得**引用本 artifact 作为其来源证明。
 
-### 6.5 状态不变
+### 6.5 状态：构建可行性已测定（CMake 路径 BLOCKED）
 
-方案 B 的执行前提**仍未获得**：构建可行性为 **`BUILD_PREREQUISITE_UNKNOWN`**
-（工具链、SDK、CMake、构建系统与既有中间产物均已核实存在，但外部依赖与 configure
-结果未验证，且 configure 未授权）。本节只固化证据，不改变该状态。
+原为 `BUILD_PREREQUISITE_UNKNOWN`。经授权的 **configure 探针**（仅 configure /
+generation，**不编译任何 target**）后：
+
+> **`BUILD_BLOCKED`（针对 CMake 路线），且真实构建机制已被识别为 Visual Studio
+> 解决方案。**
+
+**直接失败原因**（项目自身明确拒绝，非环境缺失）：
+
+```
+CMake Error at CMakeLists.txt:254 (message):
+  CMake is not needed on Windows, just open and build renderdoc.sln
+```
+
+`CMakeLists.txt:253-255` 在 `WIN32` 分支上 `message(FATAL_ERROR ...)`。因此
+**CMake 在 Windows 上不是本项目的构建方式**，configure 失败不代表环境缺依赖。
+
+### 6.6 探针记录（probe record）
+
+| 项 | 值 |
+| --- | --- |
+| checkout / base commit | `D:\renderdoc_no_mcp\renderdoc`，`b7f1554feb0d7d7120f2b9280364b98972ec37d3`（`HEAD` `b7f1554fe`，branch `v1.x`） |
+| generator | `Visual Studio 17 2022`，`-A x64` |
+| toolset / 编译器 | MSVC **19.44.35228.0**（工具集 `14.44.35207`，`cl.exe` 已定位） |
+| Windows SDK | CMake 选用 **10.0.28000.0**，target `10.0.29680` |
+| CMake | **3.30.3**（项目要求 ≥ 3.23.0） |
+| Python（探针前核实） | 3.13.1，`include/Python.h` 与 `libs/python313.lib` 均存在 |
+| 结果 | **失败**，exit 1，`Configuring incomplete, errors occurred!` |
+| 直接错误 | `CMakeLists.txt:254` 的 `FATAL_ERROR`（见 §6.5） |
+| 生成目录 | `C:\Users\14977\AppData\Local\Temp\opencode\rdcfg`（43 文件 / 0.26 MB，含 `CMakeCache.txt`） |
+
+**生成目录刻意置于两个仓库之外**，因此探针未写入 fork 树：configure 前后
+`git status --porcelain` 均为 `M renderdoc/core/core.cpp` + 未跟踪的
+`docs/code_completion_report.md`（2 项，未变），`audit_fork_integrity` 仍
+**PASS / 1 tracked / 1 declared / F1–F4 全 not present**，固化 delta 的
+SHA256 亦未变。
+
+### 6.7 真实构建机制（探针的副产品）
+
+`renderdoc.sln` 与 `renderdoc.sln.filters` **存在**，仓库含 **26 个 `.vcxproj`**。
+即 Windows 上的构建路径是 Visual Studio / MSBuild 解决方案。
+
+**该路径的可行性仍为 `UNKNOWN`**，因为验证它需要配置或生成解决方案，而那属于
+下一道门（实际编译授权），本轮未授权。**不得**由「CMake 被拒绝」推断
+「解决方案构建必然可行」，也不得反向推断。
+
+### 6.8 边界（明确未宣称）
+
+未编译任何 target；未修改 RenderDoc 源码；未改动 fork exception、
+`release-gates.json`、四状态或任何门禁语义；未安装依赖、未切换工具链、
+未为促成 `FEASIBLE` 而做任何调整；未启动事故复现；未进入 attribution。
+
+configure 成功也不会自动获得实际编译的授权——**下一道门仍是「是否授权实际编译」**。
