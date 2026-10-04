@@ -611,3 +611,61 @@ delta 摘要、toolchain 与环境。
 为何未进入可达集，仍是**未解释事实**，本次固化**不解释**它。
 完整性由既有 `tests/unit/test_build_probe_artifacts.py` 覆盖：manifest 校验每个
 文件 SHA256，且目录内不得存在 manifest 未覆盖的文件。
+
+## 11. PDB 身份只读核验：结论不变，但依据被替换
+
+**授权范围**：只读读取本机 PDB 内嵌身份。不执行 RenderDoc、不编译、不改被观测对象。
+**工具**：`llvm-pdbutil`（LLVM **19.1.5**，MSVC `Llvm\x64\bin`）。本机无 x64 版
+`cvdump.exe`，故未使用。
+
+### 11.1 本机实际存在的两个构建
+
+| 产物 | 大小 | mtime | PE TimeStamp / PDB Signature |
+| --- | ---: | --- | --- |
+| `pymodules\renderdoc.dll`（**故障映像**） | 25,465,344 | 08-24 09:17 | PE `0x6A8B9BA9` |
+| `pymodules\renderdoc.pdb` | 4,222,976 | 08-24 09:18 | PDB `0x6A8B9BFE`，age 1，GUID `{50E88A80-9646-42CB-AD98-05A8D01C46CE}` |
+| `renderdoc.dll`（另一构建） | 25,465,856 | 08-28 21:42 | PE `0x6A91903B` |
+| `renderdoc.pdb` | 153,432,064 | 08-28 21:42 | PDB `0x6A91903F` |
+
+故障映像 `sha256 = 97cad315d1af01d7bc07bb8e09c080ffa31feecdc0c1857a42a3aa0dd9435f6e`，
+machine `0x8664`，**CodeView 目录为空（无 RSDS 记录）**。
+
+### 11.2 覆盖性判定（阳性证据）
+
+| PDB | streams | 模块数 | 含 `core.obj` | 能描述 core 故障代码？ |
+| --- | ---: | ---: | --- | --- |
+| `pymodules\renderdoc.pdb` | 79 | **63** | 否——仅 `pyrenderdoc_stub.obj` / `renderdoc_module_python.obj` / `python313.dll` | **否** |
+| `renderdoc.pdb` | 502 | **484** | 是——`obj\renderdoc\core.obj` | 是，但属**另一个** DLL |
+
+### 11.3 结论
+
+`attribution = BLOCKED_BY_EXTERNAL_INPUT` **维持**，但依据由「时间戳相差约 86 秒」
+替换为**阳性证据**：本机两个 PDB 中，窄 PDB 从未覆盖 `core.obj`，全量 PDB 属于另一
+个 DLL（`0x6A91903B`）。**没有任何本机 PDB 覆盖故障映像的 core 代码。**
+
+### 11.4 方法论订正（重要）
+
+**PE `TimeDateStamp` 与 PDB `Signature` 之差不是匹配判据。** 证据：另一构建自身的
+配对为 PE `0x6A91903B` 对 PDB `0x6A91903F`，相差 **4 秒**——链接开始时写 PE 时间戳、
+结束时定稿 PDB signature，**健康配对本就有正向差值**。
+
+**正确的匹配判据是 CodeView RSDS 的 GUID + age。** 而故障映像**没有 RSDS 记录**，
+该判据**无法施加**。因此原先以时间戳差推定错配在方法上不成立；结论正确属于巧合，
+必须以 §11.2 的阳性证据为准。
+
+### 11.5 一个已证伪的假设（如实记录）
+
+本轮曾提出假设：「匹配的 PDB 或许已在本机，只是被后续链接覆盖」。**该假设被证伪。**
+旁侧 4.2 MB PDB 虽与故障映像同目录、mtime 相隔 1 分钟，但它是 **narrow PDB**，
+只含 pymodules 包装层，从未包含 `core.obj`。时间上的接近是巧合，不是同一次链接。
+
+### 11.6 对 Stage 1 的直接影响
+
+Stage 1 中「寻回 `0x6A8B9BA9` 匹配的 PDB」**无法通过索取既有文件达成**——该文件在
+本机不存在。可行路径只有两条，且**都需要新授权**：
+
+1. 从 base commit `b7f1554feb0d7d7120f2b9280364b98972ec37d3` + toolchain
+   `14.44.35207` / `cl 19.44.35228.0` **重新链接一个带 RSDS 的映像**（属 actual build）；
+2. 从构建过 `0x6A8B9BA9` 的外部构建机取回其归档 PDB。
+
+**当前状态不变**：无本机 PDB 覆盖故障映像，attribution 仍被外部输入阻塞。
