@@ -1648,3 +1648,93 @@ cdb 当时以 `sxd *` 屏蔽首现异常，而**被 harness 捕获的异常不�
 | X2 artifact | **FIXED / HASHED** |
 | `pymodules` producer | **UNKNOWN** |
 | G4 | **UNCHANGED** |
+
+## 24. 验收结果与验证能力缺口的正式记录
+
+### 24.1 验收执行（真实 integration 运行，X2 固定产物 `e1dce4d0…`）
+
+与未修复的 `pymodules` 产物在**同一 `initialise_epoch == 2` 触发条件**下对照：
+
+| | 未修复 | 修复后（X2） |
+| --- | --- | --- |
+| `tests_run` | 63 | **63** |
+| errors / failures / skipped | 0 / 0 / 0 | **0 / 0 / 0** |
+| `initialise_epoch` | 2 | **2**（触发条件复现） |
+| `initialised` / `sessions` | True / 0 | True / 0 |
+| `shutdown_error` | `<ABSENT>` | `<ABSENT>`（同条件对照） |
+| **process exit** | **`-1073741819`（0xC0000005）** | **`0`** |
+
+### 24.2 六项验收逐条裁定
+
+| # | 项 | 裁定 |
+| --- | --- | --- |
+| 1 | `initialise_epoch == 2` | **ESTABLISHED** |
+| 2 | 第二次 `Init()` 确实发生且未被原短路路径吞掉 | **ESTABLISHED**（结构性证据：`epoch==2` + exit=0） |
+| 3 | `allocatedPrograms != NULL` | **NOT_DIRECTLY_OBSERVED — CDB 寻址边界** |
+| 4 | `allocatedShaders != NULL` / `glslang_inited` 正确 | **NOT_DIRECTLY_OBSERVED — CDB 寻址边界** |
+| 5 | 正常 shutdown / process exit 无 AV | **ESTABLISHED**（exit = 0） |
+| 6 | 原有测试结果保持正常 | **ESTABLISHED**（63 / 0 / 0 / 0） |
+
+### 24.3 缺口的正式性质
+
+> **Acceptance 3/4 direct observation blocked by debugger addressing capability.**
+>
+> 固定的 X2 DLL 已由**模块范围**与**自报 commit `f4b3d4fac3412e35f472036e1a5d344c3a7e60a1`**
+> 两条独立证据识别；但可用的 CDB 调用形式无法提供可信的 **DLL 限定**内存读取：
+> * `<完整路径>+RVA` → `Syntax error at '\...\renderdoc.dll+0x1000 '`（cdb 在首个反斜杠处即停止解析）
+> * `basename+RVA`（`renderdoc+0x...`）→ **静默解析到同 basename 的 `.pyd`**（§17.1 已实证）
+> * `ba` + 完整路径 → 拒绝；`lm m <模块>` → 无输出
+>
+> **因此未从歧义地址推断任何全局值。** 本缺口是**直接观测能力缺口**，
+> 既非标准放宽，亦非实验失败，更非修复失败。
+
+`renderdoc_7ffe<base>` 这一唯一化形式理论上可用，但含 ASLR 基址、事前不可知；
+`.foreach` 捕获路径本轮**未获授权且不再尝试**——继续该方向会把「验证既有修复」
+变成「开发新的 CDB 寻址技术」，收益不匹配。
+
+### 24.4 证据强度陈述（不得弱化，也不得升格）
+
+> 在**同一 `epoch == 2` 触发条件**下，X2 修复 DLL **不再出现** exit-time `0xC0000005`，
+> 且原有 63 项测试保持正常（exit = 0）。
+
+该结论**很强**。但项目规定的最后两项内部状态未获直接观测，因此
+**不得**将 `verified repair` 升为 `ESTABLISHED / PASS`。
+
+> **`NOT_YET_ESTABLISHED` 不等于「修复可疑」。** 它只表示：行为层面已实测通过，
+> 内部状态层面因工具能力边界而未直接取证。
+
+### 24.5 最终冻结状态
+
+| 项目 | 状态 |
+| --- | --- |
+| Root cause | **ESTABLISHED — P-b′** |
+| P-b′ 因果链 | **ESTABLISHED** |
+| P-c | **REFUTED** |
+| P-d | **EXCLUDED** |
+| 「line 47 `new` 抛异常」 | **DISPROVEN** |
+| Scheme C | **ROOT-CAUSE REPAIR / IMPLEMENTED**（因果理由 **CORRECTED**） |
+| Acceptance 1 / 2 / 5 / 6 | **ESTABLISHED** |
+| Acceptance 3 / 4 | **NOT_DIRECTLY_OBSERVED — CDB 寻址边界** |
+| **verified repair** | **NOT_YET_ESTABLISHED** |
+| P1 / U1 / U2 / U2′ / S1 / S2 / shim | **DEFERRED / BLOCKED / FAILED / 失败原因已记录** |
+| X2 artifact | **FIXED / HASHED**（`e1dce4d0…`，双 SHA256 一致） |
+| `pymodules` producer | **UNKNOWN** |
+| G4 / release blocking | **UNCHANGED** |
+
+### 24.6 记录关系（防止误读为「方案 C 一开始就被证明」）
+
+```
+错误历史假设:Init() allocation failure
+              └─ 被 A1 现场证据否证（全程无 bad_alloc；63/63 OK）
+                 └─ 该错误假设曾导致 Scheme C 以「异常安全」为理由实施
+
+重新发现:    正常 Shutdown → glslang_inited 未复位 → 重新 Init 被短路
+              → 再次 Shutdown → NULL 解引用
+              └─ P-b′ ESTABLISHED（epoch==2 + shutdown_error 缺失，机械成立）
+
+既有 Scheme C:Shutdown() 末尾复位 glslang_inited
+              └─ 恰好切断链条第 7 步
+                 └─ ROOT-CAUSE REPAIR / IMPLEMENTED — 因果理由 CORRECTED
+                    └─ 行为已实测通过；内部状态因工具边界未直接取证
+                       └─ verified repair = NOT_YET_ESTABLISHED
+```
