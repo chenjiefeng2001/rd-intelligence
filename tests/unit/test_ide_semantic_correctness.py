@@ -95,7 +95,6 @@ class TestTraceAndDiffRouteThroughTheNormalisers(unittest.TestCase):
     def test_trace_scope_is_explicit_rather_than_implicitly_tight(self):
         got = {}
         self._stub_worker(got)
-        api_diff  # keep the import used
         from rdebug_ide.app import api_trace
         api_trace(q("x=1&y=2"))
         self.assertEqual(got["kwargs"]["max_draws"], MAX_DRAWS_DEFAULT)
