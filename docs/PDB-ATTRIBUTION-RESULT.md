@@ -511,3 +511,37 @@ targets；未替换 target；未进入 P1 / P2 / P3 / P4；未修改 checkout。
 | actual build | NOT AUTHORIZED |
 | reproduction | NOT AUTHORIZED |
 | attribution | NOT AUTHORIZED |
+
+## 9. 探针主工件已固化（2026-10）
+
+§7 / §8 引用的主工件原先只存在于 `%TEMP%\opencode\rdgen\`，临时目录会被清空。现已
+固化到 `build-probe/`，并由 `build-probe/MANIFEST.sha256` 逐文件登记 SHA256。
+
+### 9.1 工件与其证明力
+
+| 工件 | 字节 | 它直接证明什么 |
+| --- | ---: | --- |
+| `renderdoc_pp.xml` | 1,339,424 | MSBuild 对 `renderdoc.vcxproj`（`Release\|x64`）的求值展开结果：**320 个 `<Target>`**；且**不存在名为 `DesignTimeBuild` 的 target** |
+| `props.out` | 6,442 | `-getProperty` 对 **38 个 `*DependsOn` 属性**的求值结果（JSON） |
+| `G1.binlog` | 36,560 | G1 执行的 task 清单；`LINK`/`/c ` 均 0 |
+| `G2.binlog` | 300,698 | 同上；`cl.exe` 仅 1 次且为工具路径**定义**，`ClCompile` 8 次为**项类型** |
+| `G3.binlog` | 287,833 | 同上 |
+| `G1/G2/G3.out.txt` | 2 / 6,990 / 1,887 | exit 依据、`Build succeeded`、`MSB4057` 原文、`MSB8029` 警告原文 |
+| `pp.out` / `pp.err` / `*.err.txt` | 0 | 空；`/pp` 的成功由工件本身与 exit 0 体现 |
+
+### 9.2 边界：这是**探针工件**，不是事故构建 provenance
+
+- 绑定 base commit `b7f1554feb0d7d7120f2b9280364b98972ec37d3`。
+- 它们记录的是 **MSBuild 求值与生成探针的输出**，**不是**事故构建的输入。
+- **不得**被引用为任何未来自编译构建的 provenance；未来构建须**单独记录**其
+  base commit、delta 摘要、工具链与构建环境。
+- 生成它们**未编译、未执行 `ClCompile`/`Link`、未修改 checkout**（见 §8.6）。
+
+### 9.3 完整性控制
+
+`tests/unit/test_build_probe_artifacts.py` 校验：manifest 覆盖目录内每个文件、
+每个 SHA256 相符、**不存在未登记文件**，并从工件**重新推导**两项关键结论——
+`renderdoc_pp.xml` 的 target 数为 320 且无 `DesignTimeBuild` target；
+`props.out` 可解析且 `BuildDependsOn` 含 `BuildCompile`。
+
+因此 §8.1 / §8.3 的数字不再只有一次性出处。

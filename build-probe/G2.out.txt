@@ -1,0 +1,54 @@
+Build started 2026/10/4 13:21:07.
+
+Project "D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj" on node 1 (PrepareForBuild target(s)).
+_bakeShaders:
+  Baking DXIL Shaders with C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe
+  Creating directory "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\".
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\fixedcol.hlsl" -T ps_6_0 -DVARIANT=0 -E main -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\fixedcol_0.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\fixedcol.hlsl" -T ps_6_0 -DVARIANT=1 -E main -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\fixedcol_1.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\fixedcol.hlsl" -T ps_6_0 -DVARIANT=2 -E main -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\fixedcol_2.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\fixedcol.hlsl" -T ps_6_0 -DVARIANT=3 -E main -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\fixedcol_3.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\quadoverdraw.hlsl" -T ps_6_0 -DD3D12=1 -E RENDERDOC_QuadOverdrawPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\quadwrite.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -E RENDERDOC_PrimitiveIDPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_primitiveid.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=0 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_0.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=1 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_1.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=2 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_2.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=3 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_3.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=4 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_4.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=5 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_5.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=6 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_6.dxbc"
+  "C:\Program Files (x86)\Windows Kits\10\bin\10.0.28000.0\x64\dxc.exe" "D:\renderdoc_no_mcp\renderdoc\renderdoc\data\hlsl\d3d12_pixelhistory.hlsl" -T ps_6_0 -DRT=7 -E RENDERDOC_PixelHistoryFixedColPS -Qstrip_reflect -Fo "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\pixelhistory_fixedcol_7.dxbc"
+_jsonProcess:
+  Processing layer JSON file for RenderDoc 1.46
+C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(548,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj]
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+  Creating directory "C:\Users\14977\AppData\Local\Temp\opencode\rdgen\g2obj\renderdoc.tlog\".
+Done Building Project "D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj" (PrepareForBuild target(s)).
+Deferred Messages
+  
+  Detailed Build Summary
+  ======================
+      
+  
+  ============================== Build Hierarchy (IDs represent configurations) =====================================================
+  Id                  : Exclusive Time   Total Time   Path (Targets)
+  -----------------------------------------------------------------------------------------------------------------------------------
+  0                   : 4.953s           4.953s       D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj (PrepareForBuild) 
+  
+  ============================== Node Utilization (IDs represent configurations) ====================================================
+  Timestamp:            1        Duration   Cumulative
+  -----------------------------------------------------------------------------------------------------------------------------------
+  639266880673787499:   0        4.958s     4.958s ...................................................................................................
+  -----------------------------------------------------------------------------------------------------------------------------------
+  Utilization:          100.0    Average Utilization: 100.0
+
+Build succeeded.
+
+"D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj" (PrepareForBuild target) (1) ->
+(PrepareForBuild target) -> 
+  C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Microsoft\VC\v170\Microsoft.CppBuild.targets(548,5): warning MSB8029: The Intermediate directory or Output directory cannot reside under the Temporary directory as it could lead to issues with incremental build. [D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj]
+
+    1 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:05.29

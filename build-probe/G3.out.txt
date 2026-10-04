@@ -1,0 +1,32 @@
+Build started 2026/10/4 13:21:27.
+
+Project "D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj" on node 1 (DesignTimeBuild target(s)).
+D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj : error MSB4057: The target "DesignTimeBuild" does not exist in the project.
+Done Building Project "D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj" (DesignTimeBuild target(s)) -- FAILED.
+Deferred Messages
+  
+  Detailed Build Summary
+  ======================
+      
+  
+  ============================== Build Hierarchy (IDs represent configurations) =====================================================
+  Id                  : Exclusive Time   Total Time   Path (Targets)
+  -----------------------------------------------------------------------------------------------------------------------------------
+  0                   : 1.627s           1.627s       D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj (DesignTimeBuild) 
+  
+  ============================== Node Utilization (IDs represent configurations) ====================================================
+  Timestamp:            1        Duration   Cumulative
+  -----------------------------------------------------------------------------------------------------------------------------------
+  639266880879809495:   0        1.638s     1.638s ................................
+  -----------------------------------------------------------------------------------------------------------------------------------
+  Utilization:          100.0    Average Utilization: 100.0
+
+Build FAILED.
+
+"D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj" (DesignTimeBuild target) (1) ->
+  D:\renderdoc_no_mcp\renderdoc\renderdoc\renderdoc.vcxproj : error MSB4057: The target "DesignTimeBuild" does not exist in the project.
+
+    0 Warning(s)
+    1 Error(s)
+
+Time Elapsed 00:00:02.01
