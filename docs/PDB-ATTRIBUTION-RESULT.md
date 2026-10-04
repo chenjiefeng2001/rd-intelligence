@@ -344,3 +344,87 @@ SHA256 亦未变。
 未为促成 `FEASIBLE` 而做任何调整；未启动事故复现；未进入 attribution。
 
 configure 成功也不会自动获得实际编译的授权——**下一道门仍是「是否授权实际编译」**。
+
+## 7. MSBuild 生成探针：G1 / G2 / G3 结果（2026-10，只生成不编译）
+
+探针授权范围：仅 solution 加载、项目求值与生成类 target；**不编译任何 target**；
+输出重定向到两个仓库之外。
+
+### 7.1 原始结果
+
+| target | 范围 | exit | 耗时 | 结果 |
+| --- | --- | ---: | ---: | --- |
+| **G1** `ValidateSolutionConfiguration` | `renderdoc.sln` | **0** | 2.9 s | sln 解析成功、configuration 名合法 |
+| **G2** `PrepareForBuild` | `renderdoc.vcxproj`，`Release\|x64` | **0** | 6.7 s | `Build succeeded`，0 error，1 warning |
+| **G3** `DesignTimeBuild` | `renderdoc.vcxproj` | **1** | 4.6 s | `error MSB4057: The target "DesignTimeBuild" does not exist in the project.` |
+
+G2 的成功同时证明：`Microsoft.Cpp.props/targets` 可加载、`$(VCTargetsPath)` 解析
+正确、项目自定义的 `util\WindowsSDKTarget.props` 与 `util\WindowsSDKFix.props`
+均可解析、SDK 与工具集求值通过。
+
+**G3 无效（探针设计错误，非项目缺陷）**：该 target 属 SDK 风格项目，classic
+`.vcxproj` 不提供。未替换 target 重跑以追求绿灯，故 **G3 不提供任何证据**。
+
+### 7.2 四重「未编译」证据
+
+| 证据 | 结果 |
+| --- | --- |
+| **A. binlog 编译痕迹** | G1/G2/G3 中 `LINK` = 0、`/c ` = 0；`cl.exe` 全路径仅 1 次且为**工具路径定义**，`ClCompile` 8 次为**项类型**引用。`CommandLine` 3 条经查为 `CommandLineForReferenceDependsOn`、`ResolveReferences`、`GetClCommandLineForReferenceSupported`——**均为 MSBuild 内部任务名，非编译器命令行** |
+| **B. fork 产物清单差异** | `x64\Release` 基线 672 → 672，**新增 0 / 缺失 0**；`.obj` 仍为原有 391 |
+| **C. 探针目录产物** | `.obj` / `.lib` / `.dll` 均为 **0**；14 个文件全为 **`.dxbc`**（着色器字节码，由项目自身 shader 预编译 task 生成） |
+| **D. 时间/体积** | G2 全程 6.7 s、产物 KB 级；编译 800+ 编译单元在此时间内物理上不可能 |
+
+**结论：未发生 C++ 编译。** 同时也**获得 shader precompile / evaluation path 的正面证据**。
+
+### 7.3 基线三项（探针前后一致）
+
+fork `git status --porcelain` = **2 项未变**；`audit_fork_integrity` =
+**PASS / 1 tracked / 1 declared**；固化 delta SHA256 =
+`76389727458c9a4e129ae910b5f800541dbb8e8a33a7c3a525a756999bfddd12` 未变。
+
+### 7.4 取证方法的纠正（重要）
+
+初版硬门「`cl.exe` 进程观测」**不可用**：空闲期 20/20 样本均命中 `cl` 进程（本机
+有 3–10 个与本工作流无关的编译进程在运行），该指标统计的是环境噪音而非本次
+msbuild 的编译器调用。
+
+可归因的证据是 **binlog task 清单 + 产物清单差异**。任何后续探针必须以该二者为
+准，不得再用进程名观测。
+
+### 7.5 探针自身的环境差异（不得记为项目缺陷）
+
+`MSB8029`（Intermediate/Output 位于 TEMP 可能影响增量构建）源于本次把
+`OutDir`/`IntDir` 重定向到仓库之外，是**探针产物**。它同时意味着本次求值路径与
+真实构建路径存在该差异。
+
+### 7.6 冻结状态阶梯
+
+```
+CMake 路线                      = BUILD_BLOCKED（项目在 WIN32 上 FATAL_ERROR 拒绝）
+MSBuild solution loading        = PASS
+MSBuild project evaluation      = PASS
+shader precompile / evaluation  = PASS（正面证据）
+MSBuild generation              = UNKNOWN（G3 无效，无证据）
+actual build                    = NOT AUTHORIZED
+reproduction                    = NOT AUTHORIZED
+attribution                     = NOT AUTHORIZED
+```
+
+**判定：`BUILD_GENERATION_UNKNOWN`。** G1/G2 的成功**不得**升级为完整 generation；
+G3 的无效 target **不得**记为项目失败。这既不是失败，也不是需要凑绿的地方。
+
+方案 B 的状态：**source relation 已建立，provenance delta 已固化，构建路线已从
+CMake 收敛到 MSBuild，加载与求值已验证，完整 generation 仍 UNKNOWN。**
+
+### 7.7 继续的前置条件
+
+**不授权**继续寻找 target。若要推进，须先提出一份**新的探针定义**，回答：
+
+> classic `.vcxproj` 在此 RenderDoc checkout 中，什么机制能够证明完整 generation
+> 而不进入 C++ compilation？
+
+并重新定义验收条件，而非把原 G3 替换掉继续跑。其中
+`/p:DesignTimeBuild=true` 配合 `Build` 是否真的不编译，**需要独立证明，不得预先
+假定**。
+
+当前**不实际编译 RenderDoc**，**不进入事故复现**，**不进入 attribution**。
