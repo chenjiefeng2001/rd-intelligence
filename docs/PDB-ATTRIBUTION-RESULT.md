@@ -1473,3 +1473,67 @@ Q-NULL 的演绎与该排除**直接冲突**：
 | G4 | **UNCHANGED** |
 
 本次为一次**证据纠偏**，予以明确保留。
+
+### 22.7 P-d 排除（只读源码检查）
+
+**候选 P-d**：第 47 行 `new` 抛出，但异常在 driver 初始化路径被就地捕获，
+因而测试仍能 63/63 OK。
+
+**排除依据**（只读检查，无构建、无注入）：
+
+| 检查对象 | `catch` 命中 |
+| --- | --- |
+| `renderdoc/driver/vulkan/vk_core.cpp`（`WrappedVulkan` 构造函数所在文件） | **0** |
+| `renderdoc/driver/gl/gl_driver.cpp` | **0** |
+| `renderdoc/replay/**`（全目录） | **0** |
+
+（`vk_core.cpp` 与 `gl_driver.cpp` 的正则命中项经逐条核对全为假阳性：分别来自
+`entry`、`try and`、`retry`，以及测试段落的 `#include "catch/catch.hpp"`。）
+
+**结论**：driver 初始化路径上不存在任何可吞掉 `std::bad_alloc` 的 handler。若
+`rdcspv::Init()` 的分配抛出，异常将沿 `WrappedVulkan` 构造函数 → driver 创建 →
+`InitialiseReplay` → pybind11 转换为 Python 异常传播，测试必然 ERROR。实测为
+63/63 OK，故 **P-d = EXCLUDED**。
+
+**该排除使 §22.2 的演绎链更强**：现在「`Init()` 正常完成 ⇒ 指针曾被赋值 ⇒
+NULL 化只来自 `Shutdown()` ⇒ 崩溃前必有一次 `Shutdown()`」这一链条的两个前提
+（无 handler、唯一 NULL 化点）**均无反证**。
+
+### 22.8 P-c 的定位：unrefuted candidate，非 root cause
+
+P-c（更早的 shutdown callback 抛出 ⇒ `~RenderDoc()`（core.cpp:765-767）的
+`clear()` 未执行 ⇒ 再次进入时分发再次调用 `&rdcspv::Shutdown`）目前
+**无反证**，且与 A1 栈路径（`LdrShutdownProcess` → `execute_onexit_table` →
+renderdoc 分发 → `Shutdown()`，即 `atexit` 路径而非正常析构路径）**吻合**。
+
+> **但这只是源码层与栈路径的一致性支持，不是因果证明。**
+> **P-c 不得写为 root cause，`Root cause` 维持 `NOT_ESTABLISHED`。**
+
+确证 P-c 所需的两个可区分现场观测，二者目前**均不具备**：
+
+1. 更早的某个 shutdown callback 是否**真的抛出过异常**（若抛出，本应出现
+   第二次异常记录，从而改写 §22.1 的「整次运行异常总数 = 1」）；
+2. 第二次进入 shutdown 分发时，**注册表是否仍包含 `&rdcspv::Shutdown`**
+   （需要注册表内容/长度的现场读数）。
+
+在取得其中至少一个之前，不对 P-b′ / P-c 选边，不升级任何候选为 root cause，
+也不提出新的 repair proposal。
+
+### 22.9 冻结状态（更新）
+
+| 项 | 状态 |
+| --- | --- |
+| Fault identity | **ESTABLISHED** |
+| Fault point（`glslang_compile.cpp:57` / `0x4A0A4E`） | **ESTABLISHED** |
+| Observed `0/0/1` state | **ESTABLISHED** |
+| Root cause | **NOT_ESTABLISHED** |
+| 「line 47 `new` threw」 | **CONTRADICTED / DISPROVEN** |
+| P-d（driver 捕获 `bad_alloc`） | **EXCLUDED** |
+| 「崩溃前已有一次 `Shutdown()`」 | **ESTABLISHED（演绎）** |
+| P-b′ | **OPEN**，与 `epoch == 1` 冲突未解决 |
+| P-c | **OPEN**，unrefuted candidate，仅源码层一致性 |
+| Scheme C（`f4b3d4fac`） | **HARDENING / IMPLEMENTED** |
+| P1 | **DEFERRED** |
+| X2 artifact | **FIXED / HASHED** |
+| `pymodules` producer | **UNKNOWN** |
+| G4 | **UNCHANGED** |
