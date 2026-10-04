@@ -545,3 +545,40 @@ targets；未替换 target；未进入 P1 / P2 / P3 / P4；未修改 checkout。
 `props.out` 可解析且 `BuildDependsOn` 含 `BuildCompile`。
 
 因此 §8.1 / §8.3 的数字不再只有一次性出处。
+
+## 10. Q1 property 可观测性续探：结论为 UNKNOWN
+
+**验收问题**：MSBuild 17.14 的 evaluation-only 能力，是否足以把
+`Build → BuildCompile → ClCompile` 之间的 property indirection 完整展开成可追溯
+chain？
+
+**执行（零 target execution）**：从 `/pp` 文本枚举 `$(XDependsOn)` 属性名作为
+**查询规划**（不用于构建 target 图），得到 **93 个候选**；`-getProperty` 对
+**93 个全部求值成功**（exit 0）。chain 仅由 MSBuild 求值结果与 `/pp` 的
+`DependsOnTargets` 构成。
+
+**结果 —— 未达成成功判据：**
+
+| 判据 | 结果 |
+| --- | --- |
+| ① 每级 property 可追溯 | ❌ chain 使用的 6 个 property 中 **3 个在 `/pp` 中无可定位定义**（`TlogCleanupDependsOn`、`_CheckWindowsSDKInstalledDependsOn`、`AddExternalIncludDirectoriesToPathsDependsOn`，求值均为空） |
+| ② 展开后顺序可解释 | ⚠️ 部分。`BuildDependsOn` 的求值值**明确列出** `ResolveReferences`、`BuildGenerateSources`、`BuildCompile`，但展开结果中**三者均未出现** |
+| ③ 能定位 compilation boundary | ❌ 可达 15 个 target，**未抵达** `ClCompile` / `Link` |
+| ④ 零 target execution | ✅ 仅 `/pp` 与 `-getProperty` |
+| ⑤ 无编译/输出副作用 | ✅ 未编译、未向仓库写文件、未改 checkout |
+
+**结论**：即使 93 个 `*DependsOn` 属性全部求值，evaluation-only 表面**仍不足以**
+把 `Build` 到 compilation boundary 的链条完整展开。判据 ①②③ 均未满足。
+
+> **因此按授权以 `UNKNOWN` 收尾，不再设计第五种静态解析器。**
+
+**未解释的观察（如实记录，不掩盖）**：展开在 `AddExternalIncludDirectoriesToPaths`
+处终止，而 `BuildDependsOn` 中明列的 `ResolveReferences` / `BuildGenerateSources` /
+`BuildCompile` 未被纳入可达集。本轮**未定位**该不一致的确切成因（可能是
+`DependsOnTargets` 条目中 `$(...)` 与字面 target 混合时的展开丢失，也可能是
+求值条件导致），因此**不宣称**已解释。可追溯的结论只有：**该机制不足以支撑完整
+chain**。
+
+**状态不变**：`MSBuild generation = UNKNOWN`；actual build / reproduction /
+attribution = `NOT AUTHORIZED`。工件 `props2.out` 与探针脚本同属探针产物，未固化
+（若需固化，须另行授权）。
