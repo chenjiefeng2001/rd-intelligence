@@ -1154,3 +1154,65 @@ A3-1 / A3-2 / A3-3 **仍然全部作废**，但作废理由需补一条：其监
 而「被 `Shutdown()` 释放」已由 §16.2 排除，则只剩「两次 `new` 均未完成」⇒ **P-a 成立**。
 
 > **根因仍为 `OPEN`。P-b 已排除；P-a 未证实。**
+
+## 19. P-a 证实：根因确立
+
+### 19.1 实测（cdb，崩溃时刻读取）
+
+按 §18.3 的 ASLR 无关表达式读取三个全局：
+
+| 表达式 | 地址 | 值 | 全局 |
+| --- | --- | --- | --- |
+| `@rip+0x1278D4A` | `0x7ffe4ed79798` | `0x0000000000000000` | `allocatedShaders` |
+| `@rip+0x1278D32` | `0x7ffe4ed797a0` | `0x0000000000000000` | `allocatedPrograms` |
+| `@rip+0x127ED8E` | `0x7ffe4ed7f7dc` | `0x01` | `glslang_inited` |
+
+**阳性对照通过**：两个地址均落在 `.data`（RVA `0x170A000`–`0x17469A0`），返回合理值
+`0 / 0 / 1`，而非 §18.2 中错误地址返回的代码字节。
+
+### 19.2 推理链
+
+1. `glslang_inited == 1` ⇒ `rdcspv::Init()` 执行到了第 45 行；
+2. `allocatedPrograms == NULL` **且** `allocatedShaders == NULL` ⇒ 第 47 / 48 行的
+   两次分配**均未完成**；
+3. §16.2 已排除「指针被 `Shutdown()` 释放」这条路径（`ShutdownReplay` 从未执行，
+   `initialise_epoch == 1`）；
+4. 源码第 45–47 行之间**无任何分支或提前返回**：
+
+```cpp
+44:     glslang::InitializeProcess();
+45:     glslang_inited = true;
+46:
+47:     allocatedPrograms = new rdcarray<glslang::TProgram *>;
+48:     allocatedShaders  = new rdcarray<glslang::TShader *>;
+```
+
+因此唯一可能在 45 与 47 之间中止执行的原因是**第 47 行的 `new` 抛出异常**
+（分配失败）。指针未赋值、守卫已置位的不一致状态由此形成。
+
+### 19.3 根因
+
+> **`rdcspv::Init()` 的初始化顺序缺陷：守卫变量 `glslang_inited` 在被守卫资源
+> `allocatedPrograms` / `allocatedShaders` 分配之前即置为 `true`，且从不复位。
+> 第 47 行的分配失败（异常）会在进程内留下 `inited == true` 而两个指针为 `NULL`
+> 的不一致状态；进程退出时 `~RenderDoc()` 调用 `rdcspv::Shutdown()`，守卫通过，
+> 第 57 行解引用 `NULL`，在 RVA `0x4A0A4E` 触发访问违例。**
+
+### 19.4 状态
+
+| 项 | 状态 |
+| --- | --- |
+| fault identity（integration == teardown） | **ESTABLISHED** |
+| 故障点（`glslang_compile.cpp:57`） | **ESTABLISHED** |
+| 守卫缺陷（二进制级） | **ESTABLISHED** |
+| **根因** | **ESTABLISHED**（§19.2–19.3） |
+| 修复方案 | **未提出**（需先确定分配失败的诱因，属独立问题） |
+
+### 19.5 仍未确立（不影响根因，但影响修复方案）
+
+第 47 行 `new` **为何**失败——分配大小、时序、进程内内存压力等——**未确立**。
+本次证据只确立「分配未完成」这一事实，不解释其成因。
+
+修复若仅补 null 检查（第二阶段讨论中曾出现的「防御性判空」），**只会消��崩溃，
+不修复初始化顺序缺陷**，且会永久销毁该故障的可复现指示器。正确修复须针对
+第 19.3 节的顺序问题，并需另行授权。
