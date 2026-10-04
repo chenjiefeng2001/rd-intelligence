@@ -427,4 +427,7 @@ CMake 收敛到 MSBuild，加载与求值已验证，完整 generation 仍 UNKNO
 `/p:DesignTimeBuild=true` 配合 `Build` 是否真的不编译，**需要独立证明，不得预先
 假定**。
 
+该新探针定义已冻结为 `docs/BUILD-GENERATION-PROBE.md`（P0–P4）。**P0 尚未授权、
+尚未执行**；本节 §7 的实测结果不因该定义而改变。
+
 当前**不实际编译 RenderDoc**，**不进入事故复现**，**不进入 attribution**。
