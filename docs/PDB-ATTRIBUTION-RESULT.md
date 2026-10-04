@@ -431,3 +431,83 @@ CMake 收敛到 MSBuild，加载与求值已验证，完整 generation 仍 UNKNO
 尚未执行**；本节 §7 的实测结果不因该定义而改变。
 
 当前**不实际编译 RenderDoc**，**不进入事故复现**，**不进入 attribution**。
+
+## 8. P0 结果：PARTIALLY ESTABLISHED（只读，未执行任何 target）
+
+### 8.1 产出
+
+| 项 | 状态 |
+| --- | --- |
+| Target 清单（`/pp` 求值面） | **320** |
+| `compilation_boundary_candidates` | `ClCompile`（→`SelectClCompile`）、`Link`（→`ComputeLinkSwitches`）、`Lib`、`ResourceCompile` |
+| `generation_entry_candidates` | 完整清单 |
+| `design_time_conditions` | `DesignTimeBuild` 是**属性条件**而非 target |
+| `generation_dependency_chain` | **部分** —— 可达 15 个 generation 侧 target，在 `BuildCompile` 下层 property 边界停止 |
+| `generation_output_candidates` | **P0 结构性不可交付**（见 §8.4） |
+
+### 8.2 property indirection 是可观测的
+
+`-getProperty` 对 38 个 `*DependsOn` 属性求值成功（exit 0）。关键读数：
+
+```
+BuildDependsOn          = SetTelemetryEnvironmentVariables; _PrepareForBuild;
+                           ResolveReferences; PrepareForBuild; InitializeBuildStatus;
+                           BuildGenerateSources; BuildCompile; …
+PrepareForBuildDependsOn = _CheckWindowsSDKInstalled; GetFrameworkPaths;
+                           GetReferenceAssemblyPaths; AssignLinkMetadata; …
+ResolveReferencesDependsOn = _PrepareForReferenceResolution; ComputeCrtSDKReference;
+                           BeforeResolveReferences; AssignProjectConfiguration; …
+```
+
+四层分离成立：top-level property expansion → effective target 序列 →
+generation 侧 → compilation boundary。
+
+### 8.3 G3 的直接证据
+
+`/pp` 的 320-target 求值面中**不存在名为 `DesignTimeBuild` 的 target**（仅有
+`DesignTimeXamlMarkupCompilation`）；`DesignTimeBuild` 实际是**属性/条件**。
+故原 G3 的 `/t:DesignTimeBuild` invocation 分类为 **`INVALID_PROBE`** —— 现在由
+`/pp` 直接证据支撑，而非推断。`INVALID_PROBE` 不计入项目失败。
+
+### 8.4 方法论边界：`generation_output_candidates` 属于 P4，不属于 P0
+
+`/pp` 保留 target **定义**，但**不保留 target 内部实际执行的 task / output
+序列**。因此 generation 产物无法由只读求值得出。
+
+> **这是 P0 的结构性不可交付项，不是探针遗漏，也不是实现缺陷。**
+
+按 `BUILD-GENERATION-PROBE.md` §8，output closure 只能由**实际执行后的产物差异**
+确定，即 **P4**。把 P0 的能力边界误记为实现缺陷，会导致后续错误地「补齐」P0。
+
+### 8.5 探针实现缺陷（3 次，不转嫁为项目缺陷）
+
+1. import 遍历与 target 解析复用同一 `seen` 集合 → 42 个导入全被跳过，Target 数 0
+2. `os.path.relpath` 跨盘符（`D:` → `C:`）抛 `ValueError`
+3. `DependsOnTargets` 中的字面量 `$(Prop)` 引用未被解析 → 链长停在 2
+
+修正后可达 target 数由 2 升至 15。三者均为**探针实现缺陷**，与项目无关。
+
+### 8.6 未做的事
+
+未执行任何 target（无 `/t:Build`、`/t:ClCompile`、`/t:Link`）；未做
+`DesignTimeBuild` 执行实验；未向仓库生成文件；未编译；未修改 `.vcxproj` / props /
+targets；未替换 target；未进入 P1 / P2 / P3 / P4；未修改 checkout。
+
+`BuildCompile` 下层 property 的可观测性属于**新的探针机制**，需新授权与新验收
+定义，**不由当前 P0 授权自然延伸**。
+
+### 8.7 冻结后的状态
+
+| 项目 | 状态 |
+| --- | --- |
+| source relation | ESTABLISHED |
+| delta provenance | SOLIDIFIED |
+| CMake | BUILD_BLOCKED |
+| MSBuild solution loading | PASS |
+| MSBuild project evaluation | PASS |
+| shader precompile / evaluation | PASS |
+| **P0** | **PARTIALLY ESTABLISHED** |
+| **MSBuild generation** | **UNKNOWN** |
+| actual build | NOT AUTHORIZED |
+| reproduction | NOT AUTHORIZED |
+| attribution | NOT AUTHORIZED |
