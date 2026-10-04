@@ -1216,3 +1216,74 @@ A3-1 / A3-2 / A3-3 **仍然全部作废**，但作废理由需补一条：其监
 修复若仅补 null 检查（第二阶段讨论中曾出现的「防御性判空」），**只会消除崩溃，
 不修复初始化顺序缺陷**，且会永久销毁该故障的可复现指示器。正确修复须针对
 第 19.3 节的顺序问题，并需另行授权。
+
+## 20. 修复已实现（方案 C），尚未验证
+
+### 20.1 状态判定
+
+| 项 | 状态 |
+| --- | --- |
+| Repair implementation | **COMPLETE** |
+| Repair verification | **REPAIR_NOT_ESTABLISHED** |
+| Root cause | **ESTABLISHED**（§19） |
+| 第 47 行分配失败诱因 | **NOT_ESTABLISHED**（独立 backlog，按授权不开启） |
+| G4 / integration governance | **UNCHANGED** |
+
+### 20.2 变更标识
+
+| 项 | 值 |
+| --- | --- |
+| checkout | `D:\renderdoc_no_mcp\renderdoc` |
+| 修复前基线 commit | `b7f1554feb0d7d7120f2b9280364b98972ec37d3` |
+| 修复 commit | **`f4b3d4fac`** |
+| 改动文件 | `renderdoc/driver/shaders/spirv/glslang_compile.cpp` **仅此一个** |
+| 改动函数 | `rdcspv::Init()`、`rdcspv::Shutdown()` **仅此两个** |
+| 未触碰 | `renderdoc/core/core.cpp`（N3 capture-trigger delta 保持 `32 insertions`，工作树内原样存在） |
+
+### 20.3 修复内容
+
+`Init()`：改为早返回；`glslang::InitializeProcess()` → 分配两个容器 → **最后**置位
+`glslang_inited`。第二个 `new` 包裹 `try/catch(...)`，失败时 `SAFE_DELETE(allocatedPrograms)`
+（该宏置 NULL，已核对 `common.h:90-98`）、`glslang::FinalizeProcess()` 与上方配对、
+**`throw` 继续传播**。
+
+`Shutdown()`：在 `SAFE_DELETE` 两个容器与 `glslang::FinalizeProcess()` **之后**，
+以 `glslang_inited = false;` 收尾，使该标志在整个 teardown 期间始终保持其原意。
+
+### 20.4 不变式
+
+> `glslang_inited == true` ⟺ 两个容器均已建立且 glslang 进程已初始化
+
+### 20.5 状态转换核对
+
+| 场景 | 修复后行为 |
+| --- | --- |
+| 正常 Init | 两次分配成功后才置位，语义不变 |
+| 分配失败 | 标志保持 `false`；已分配资源回滚；`FinalizeProcess` 配对；异常传播 |
+| 重复 Shutdown | 第二次守卫不通过 → **no-op**（修复前会解引用 NULL） |
+| Shutdown 后再 Init | 标志已 false → 真正重新初始化（修复前为**静默空操作**） |
+| **异常从 Shutdown 内部抛出** | 标志仍 true、资源状态不定 → 后续 Shutdown 可能 double-free |
+
+**最后一行是残留风险，且非本次引入**（修复前即存在）。按授权**原样登记，不在本次修复**——
+扩大修复面会污染这次最小修复的归因。列为独立 backlog。
+
+### 20.6 授权边界遵守情况
+
+未使用任何被禁手段：无 `if(ptr)` 空指针守卫（`Shutdown()` 因不变式而**无需**判空）、
+无异常吞噬、无 `_exit` / 退出码掩码、未改门禁与 release blocking、
+未改使用点 63/64/93/119、未采用方案 B 静态对象重构、未触碰 `core.cpp` 的 N3 delta、
+未开启第 47 行诱因调查。
+
+### 20.7 尚未执行（验证阶段）
+
+专用构建 → P1（注入失败，验证负路径状态）→ P2（正常生命周期与 integration 回归）→
+P3（同等故障注入下走到进程退出）。
+
+**通过标准（三者须同时成立，不可只凭「崩溃没了」）**：
+
+1. 失败发生点**可见**（异常在初始化处传播，未被掩盖）
+2. 状态**正确回滚**（`glslang_inited == false`，已分配资源已释放，`FinalizeProcess` 配对）
+3. teardown **不再错误解引用**（无 `0x4A0A4E`）
+
+> **在三者全部成立前，`Repair` 不得由 `REPAIR_NOT_ESTABLISHED` 提升为 `REPAIR_VERIFIED`。**
+> 本轮未执行任何构建或验证。
