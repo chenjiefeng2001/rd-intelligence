@@ -738,3 +738,72 @@ Stage 1 中「寻回 `0x6A8B9BA9` 匹配的 PDB」**无法通过索取既有文�
 
 **未执行**：任何 target、编译、RenderDoc 运行、复现、改动 `.vcxproj`/props/targets、
 改动 `core.cpp` 或 delta。**不提出修复方案**——修复需在根因经 reproduction 确认后另行授权。
+
+## 13. 二进制层面确认与第二个 NULL 风险点
+
+承接 §12。仍为**只读静态分析**：未构建、未执行、未改动被观测对象。
+
+### 13.1 `Shutdown()` 全函数反汇编（二进制级证明）
+
+函数域 `RVA 0x4A0BC0`–`0x4A0CFA`（83 条指令），关键序列：
+
+```
+1804a0bc0: subq  $0x28, %rsp
+1804a0bd0: cmpb  $0x0, 0x127ec25(%rip)      # 0x18171f7fc   ← glslang_inited，函数内唯一引用
+1804a0bd7: je    0x1804a0cf6                 ← 守卫为假即返回
+1804a0bdd: movq  0x1278bbc(%rip), %rax       # 0x1817197a0   ← 载入 allocatedPrograms
+1804a0bee: movq  (%rax), %rbx                ← ★ 故障点
+1804a0bf1: testq %rbx, %rbx                  ← 检查的是数组 begin，不是容器指针
+...
+1804a0cad: movq  %rdi, 0x1278aec(%rip)       # allocatedPrograms = NULL
+1804a0ce0: movq  %rdi, 0x1278ab1(%rip)       # allocatedShaders  = NULL
+1804a0ce7: callq 0x18043ede0                 ← glslang::FinalizeProcess()
+1804a0cfa: retq
+```
+
+**两条二进制级事实：**
+
+1. **`glslang_inited`（`0x18171f7fc`）在整个 `Shutdown()` 内只被读一次，从未被写。**
+   §12.3 的静态缺陷由此从源码级升为**二进制级已证**。
+2. **`allocatedPrograms` 在被解引用之前没有任何空检查。** `testq %rbx,%rbx`
+   检查的是从 `*allocatedPrograms` 载入的 begin 指针，发生在解引用**之后**。
+
+### 13.2 第二个 NULL 风险点（同一根因的另一面）
+
+```cpp
+93:   allocatedShaders->push_back(shader);      ← 无守卫
+119:  allocatedPrograms->push_back(program);    ← 无守卫
+```
+
+由于 `rdcspv::Init()` 以 `glslang_inited` 为守卫，而该标志在 `Shutdown()` 后**不被复位**，
+「`Shutdown()` → `Init()`（空操作）→ 再次使用」会使 93 / 119 行同样解引用 NULL。
+即同一缺陷既可表现为 §12 的 `Shutdown()` 内崩溃，也可表现为**使用点**崩溃。
+
+### 13.3 一段既有实测声明，其工件已缺失
+
+`src/rdebug/adapter/core.py:199-222` 的注释声明：
+
+```
+Vulkan, 一次 InitialiseReplay → 0/60 崩溃
+Vulkan, 两次 InitialiseReplay → 23/60 崩溃 (p~1e-8)
+D3D11/D3D12, 两种情况         → 0/40 崩溃
+崩溃位于 cap.OpenCapture() 内，构建 Vulkan replay driver 时，0xC0000005
+```
+
+**该声明所引用的 `reports/n3/N3-native-open-probe-*.json` 与 `reports/` 目录在本机
+均不存在**，因此上述数字目前**无工件支撑**，与缺失的 `capture_mechanism.patch`
+属同类证据缺口。
+
+**因此不得据此断言 integration 的 `0xC0000005` 与本节的 `Shutdown()` 崩溃同源。**
+两者同属访问违例族，但发生位置不同（一处在 shutdown，一处在 driver 构建期），
+且故障地址未知。**是否同源尚未确立。**
+
+### 13.4 状态
+
+| 项 | 状态 |
+| --- | --- |
+| 故障点归属 | **ESTABLISHED**（§12，`glslang_compile.cpp:57`） |
+| 缺陷本身 | **ESTABLISHED（二进制级）**：守卫变量与指针状态脱钩 |
+| 根因 | **仍 OPEN**：实际运行时序列未确立 |
+| 与 integration `0xC0000005` 是否同源 | **NOT_ESTABLISHED**，且既有支撑工件缺失 |
+| 修复方案 | **未提出**（需先确立根因） |
