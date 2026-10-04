@@ -1046,3 +1046,58 @@ if _REPLAY_LIFECYCLE["initialised"] and _REPLAY_LIFECYCLE["sessions"] == 0:
 * 若 `allocatedPrograms` 曾被写入 ⇒ **P-a 证伪**，需另寻机制。
 
 此步骤需新的运行时授权（cdb 附加 + 在 RenderDoc 初始化期断下）。
+
+## 17. A3 三次尝试均作废（记入证据，防止日后被误引）
+
+为证实 §16.3 的 P-a，尝试用 cdb 硬件监视点观测 `allocatedPrograms`（RVA `0x6B88A0`）
+是否曾被写入。**三次尝试全部作废，均不构成证据。**
+
+| 尝试 | 方法 | 作废原因 |
+| --- | --- | --- |
+| A3-1 | `ba w8 renderdoc+0x6B88A0` | cdb 短名 `renderdoc` 解析到 **`renderdoc.pyd`**，非 `renderdoc.dll` |
+| A3-2 | `ba w8 <完整路径>+0x6B88A0` | `ba` **拒绝路径形式**，报 `Syntax error`（连 `;` 后整段被吞入参数） |
+| A3-3 | 短名 + `bl` 阳性对照 | 同样误绑定；**但对照成功暴露了问题**（见下） |
+
+### 17.1 阳性对照的输出（这是本节唯一有价值的产物）
+
+```
+bl : 0 e 00007ffe`d34888a0 w 8      ← 监视点实际落点
+     1 e 00007ffe`d348e8fc w 1
+lm : 00007ffe`4e9c0000-00007ffe`5023d000  renderdoc_7ffe4e9c0000   ← renderdoc.dll
+     00007ffe`d2dd0000-00007ffe`d3406000  renderdoc                ← renderdoc.pyd
+
+dll base + 0x6B88A0 = 0x7ffe507688a0   ✗ 不匹配
+pyd base + 0x6B88A0 = 0x7ffed34888a0   ✓ 与 bl 一致
+```
+
+**结论：进程内 `.pyd` 与 `.dll` 的 basename 同为 `renderdoc`，cdb 短名解析取先加载的
+`.pyd`。** 「监视点未触发」因此**不能**推出「该全局从未被写入」。
+
+### 17.2 明确警告
+
+> **不得**将 A3-1 / A3-3 的「监视点未触发」引用为「`allocatedPrograms` 从未被写入」
+> 或「P-a 已排除 / 已证实」。该推论无效。
+
+### 17.3 附带：故障第四次独立复现
+
+A3 各次运行均再次观测到 `c0000005` 的 `first chance → second chance` 转换，
+故障稳定可复现。
+
+### 17.4 正确的判据（尚未执行）
+
+无需监视点。在**崩溃时刻**直接读三个全局即可定案：
+
+| RVA | 全局 | 已知 / 期望 |
+| --- | --- | --- |
+| `0x6B88A0` | `allocatedPrograms` | `0`（已知：故障时 `RAX=0`） |
+| `0x6B8798` | `allocatedShaders` | **关键新判据，尚未读取** |
+| `0x6BE8FC` | `glslang_inited` | 非 `0`（已知：守卫通过） |
+
+**判读规则**：若 `allocatedShaders` **亦为 0**，而「被 `Shutdown()` 释放」已由 §16.2
+排除（`ShutdownReplay` 从未执行、`initialise_epoch == 1`），则只剩「两次 `new` 均未
+完成」⇒ **P-a 成立**。
+
+技术要点：`ba` 不接受路径形式，必须使用 `~<模块索引>+offset`；索引须在
+`sxe ld:renderdoc.dll` 断下时由 `lm t` 取得，且需两次运行（第二次假定索引稳定）。
+
+> **根因仍为 `OPEN`。P-b 已排除；P-a 未证实。**
