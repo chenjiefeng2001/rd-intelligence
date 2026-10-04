@@ -859,8 +859,14 @@ D3D11/D3D12, 两种情况         → 0/40 崩溃
 2. `spirv_reflect.cpp:2527` 的 `rdcspv::Init()` + `RegisterShutdownFunction`
    位于 **`TEST_CASE("Validate SPIR-V reflection")`** 内，属**测试代码**，非 replay 路径。
 
-**结论：glslang 指针缺陷解释 teardown 故障，但不足以解释 integration 的
-`0xC0000005`。两者不应被假定同源。** 此前 §13.3 的保留是正确的。
+~~**结论：glslang 指针缺陷解释 teardown 故障，但不足以解释 integration 的
+`0xC0000005`。两者不应被假定同源。**~~
+
+> **本节的 source-separation inference 已撤回（见 §15）。**
+> L93 预测的否证**成立**；但由此推出「本缺陷不解释 integration 故障」是**错误的**。
+> A1 已证明 integration 故障与历史 teardown 故障落在**同一 RVA、同一指令、同一寄存器
+> 状态**，即同一 fault 实例。「否证一个预测」与「两个故障不同源」是两个不同命题，
+> 本节把前者当成了后者。§13.3 当时的保留是对的，撤回的是本节的过度推论。
 
 ### 14.5 旁证：故障偏移语义得到独立确认
 
@@ -873,6 +879,92 @@ D3D11/D3D12, 两种情况         → 0/40 崩溃
 | --- | --- |
 | teardown 故障点 | **ESTABLISHED**（`glslang_compile.cpp:57`） |
 | 守卫缺陷 | **ESTABLISHED（二进制级）** |
-| integration `0xC0000005` | **NOT_ESTABLISHED / 未归属**，且**已排除**由本缺陷解释 |
-| 两者是否同源 | **NOT_ESTABLISHED**（现有静态证据倾向**不同源**） |
+| integration `0xC0000005` | **ESTABLISHED = 与历史 teardown 同一 fault**（§15；本行原写的「已排除由本缺陷解释」已撤回） |
+| 两者是否同源 | **SAME FAULT**（同模块、同 RVA `0x4A0A4E`、同指令 `48 8b 18`、同 `RAX=0`） |
 | 下一步 | **需分支决策**（见 §14.4：原预测已被自身证据推翻） |
+
+## 15. A1 复现成功：integration failure 与历史 teardown 是同一 fault
+
+### 15.1 实验记录（三次运行，全部保留，不抹除）
+
+| 运行 | 配置 | 结果 | 判定 |
+| --- | --- | --- | --- |
+| run 1 | 仅设 `RDEBUG_RENDERDOC_PATH` | 63 项全 skip，模块表**无** `renderdoc.pyd`/`.dll`，`g` 停在非异常事件 | **INVALID**——漏设 `RDEBUG_ISOLATION_CAPTURE_DIR`，未加载被观测对象 |
+| run 2 | 三项环境变量齐备 | 进程 exit 1，未加载 RenderDoc，63 项失败 | **PERTURBED**——cdb 在首现异常处断下，破坏了运行 |
+| run 3 | 同上 + `sxd *; sxe av`（屏蔽首现异常，仅在访问违例断下） | **捕获故障** | **VALID / DECISIVE** |
+
+run 1 与 run 2 **不构成反证**，仅为实验记录；run 3 是唯一有效证据。
+
+### 15.2 捕获结果（cdb 10.0.28000.2114 AMD64）
+
+```
+ExceptionAddress : 00007ffed2fb0a4e
+module           : pymodules\renderdoc.dll  base 0x7ffed2b10000
+RVA              = 0x7ffed2fb0a4e − 0x7ffed2b10000 = 0x4A0A4E
+instruction      : 488b18        mov rbx,qword ptr [rax]
+ExceptionCode    : c0000005      Parameter[0]=0  Parameter[1]=0
+                 → Attempt to read from address 0x0
+rax = 0000000000000000        rbx = 00007ffed424dc80（非空）
+```
+
+故障前序列与 §13 反汇编逐条一致：
+
+```
+d2fb0a20  sub  rsp,28h
+d2fb0a30  cmp  byte ptr [...+0x6be8fc],0      ← glslang_inited 守卫
+d2fb0a37  je   +0x2a6ff6                       ← 守卫为假即返回
+d2fb0a3d  mov  rax,qword ptr [...+0x6b88a0]    ← 载入 allocatedPrograms
+d2fb0a4e  mov  rbx,qword ptr [rax]             ← ★ NULL 解引用
+```
+
+运行中的模块**就是**故障映像：`0x4A0A3D` 处字节 `48 8b 05 3c 8d 27 01` 与故障 PE
+完全吻合。RenderDoc 自报 `v1.46 ... (b7f1554feb0d7d7120f2b9280364b98972ec37d3)`，
+与已确立的源码身份一致。
+
+### 15.3 fault identity（同一故障实例）
+
+| 特征 | A1 integration | 历史 teardown | 判定 |
+| --- | --- | --- | --- |
+| 模块 | `pymodules\renderdoc.dll` | 同 | 相同 |
+| RVA | `0x4A0A4E` | `0x4A0A4E` | 相同 |
+| 指令 | `48 8b 18` | `48 8b 18` | 相同 |
+| 读地址 | `0x0` | `0x0` | 相同 |
+| RAX | `0` | `0` | 相同 |
+| RBX | 非空 | 非空 | 相同 |
+| 上下文 | guard → load → dereference | 同 | 相同 |
+
+> **integration failure == teardown failure**（同一 fault 实例，非「同类」）
+
+### 15.4 触发路径
+
+栈（自底向上）：
+
+```
+python → ucrtbase!exit → ExitProcess → RtlExitUserProcess
+       → ntdll!LdrShutdownProcess              ← 进程退出 / DLL_PROCESS_DETACH
+       → ucrtbase!execute_onexit_table
+       → renderdoc 关闭函数分发
+       → rdcspv::Shutdown()  @ 0x4A0A4E      ← 崩溃
+```
+
+崩溃发生在**进程退出期**，不是测试执行期。这与门禁记录「63 项 OK，但进程未干净
+退出」完全一致。
+
+### 15.5 A2 取消
+
+归属**不需要符号**：§12/§13 已由字节匹配 + 反汇编建立代码归属，A1 又独立确认运行时
+命中同一 RVA。重链接不会提高证据等级，故 **A2 取消，未执行任何 relink**。
+
+### 15.6 仍开放的唯一问题
+
+> 为什么进程退出时 `allocatedPrograms == NULL`，而 `glslang_inited == true`？
+
+§14.2 给出的候选链条要求 `ShutdownReplay()` 先于 driver 重建发生。**该次序尚未用
+证据确立**，须以 harness 与 driver 生命周期的实际调用关系核对，不得以「应该先发生」
+补足。若静态代码不足以判定，保持 `UNCLASSIFIED`。
+
+### 15.7 附带发现（独立 issue，不参与本节判定）
+
+未提供 RenderDoc 时，integration 套件为 **60 skipped + 1 failure + 1 error**（exit 1）。
+那些用例应当 skip 而非失败。此为 harness 健壮性缺口，**与本 fault identity 无关，
+不得用它削弱 A1，也不得用它污染本节结论**。
