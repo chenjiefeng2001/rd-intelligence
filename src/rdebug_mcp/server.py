@@ -23,6 +23,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from rdebug.capture_policy import clamp_limits, redact
 from rdebug.errors import RDebugError
 from rdebug.jsonutil import to_json
 from rdebug.worker_manager import RecyclePolicy, WorkerManager
@@ -83,7 +84,13 @@ def _safe(fn):
             kind = getattr(e, "kind", None)
             record("query_error", transport="mcp", tool=fn.__name__,
                    error=str(e), **({"kind": kind} if kind else {}))
-            body = {"error": str(e), "tool": fn.__name__}
+            # The local log keeps the full message for operators; what goes back
+            # over the tool boundary is redacted, so an error cannot be used to
+            # map the host filesystem through a query surface.
+            capture = kwargs.get("capture")
+            if capture is None and args:
+                capture = args[0]
+            body = {"error": redact(e, capture), "tool": fn.__name__}
             if kind:
                 body["kind"] = kind
             return json.dumps(body)
@@ -108,11 +115,19 @@ def trace_pixel(
 ) -> str:
     """Local causal flow graph for one pixel: Pixel -> Draw -> Shader ->
     read Resources -> Writers. Every edge carries evidence referencing the
-    underlying capture facts (eventId / resourceId / operation)."""
+    underlying capture facts (eventId / resourceId / operation).
+
+    max_draws / max_writers are clamped to the server-side ceilings; a caller
+    asking for more is capped rather than refused, so the limit is a guarantee
+    about cost and not a new failure mode for existing callers."""
+    limits = clamp_limits(max_draws=max_draws, max_writers=max_writers,
+                          expand_reads=expand_reads)
     return to_json(_run(
         capture, "trace_pixel", x=x, y=y, target=target, eid=eid, mip=mip,
-        slice=slice, sample=sample, max_draws=max_draws,
-        expand_reads=expand_reads, max_writers=max_writers))
+        slice=slice, sample=sample,
+        expand_reads=limits["expand_reads"],
+        max_draws=limits["max_draws"],
+        max_writers=limits["max_writers"]))
 
 
 @mcp.tool()

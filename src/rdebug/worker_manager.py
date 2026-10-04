@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 
+from .capture_policy import resolve_capture
 from .errors import RDebugError
 
 
@@ -124,7 +125,8 @@ class _Worker:
     STDERR_DRAIN_TIMEOUT_S = 0.5
 
     def __init__(self, capture, env):
-        self.capture = os.path.abspath(capture)
+        # abspath alone does not constrain where this may point; the policy does.
+        self.capture = resolve_capture(capture)
         self.proc = None
         self._lock = threading.Lock()
         self._reader = None
@@ -433,7 +435,10 @@ class WorkerManager:
         return None
 
     def _get(self, capture) -> _Worker:
-        key = os.path.abspath(capture)
+        # Key and path are the same value: validating once here means the cache
+        # cannot be used to sidestep the policy, because an unvalidated path
+        # never reaches the dict.
+        key = resolve_capture(capture)
         w = self._workers.get(key)
         reason = None
         if w is not None:

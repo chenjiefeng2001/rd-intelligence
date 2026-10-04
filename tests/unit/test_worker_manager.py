@@ -120,16 +120,36 @@ class _StubBackend:
 class _StubWorkerBase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # This module exercises worker lifecycle and recycling, not the capture
+        # path policy. Its captures are synthetic files in the system temp dir,
+        # so the policy is widened to that dir for the duration of the module
+        # and restored afterwards. Production callers are unaffected.
+        cls._prev_roots = os.environ.get("RDEBUG_CAPTURE_ROOT")
+        os.environ["RDEBUG_CAPTURE_ROOT"] = tempfile.gettempdir()
         cls.backend = _StubBackend().start()
 
     @classmethod
     def tearDownClass(cls):
         cls.backend.stop()
+        if cls._prev_roots is None:
+            os.environ.pop("RDEBUG_CAPTURE_ROOT", None)
+        else:
+            os.environ["RDEBUG_CAPTURE_ROOT"] = cls._prev_roots
 
     def setUp(self):
         self.backend.reset()
         self.capture = os.path.join(tempfile.gettempdir(),
                                     "wm_fake_capture.rdc")
+        # The policy requires the target to be an existing file. Creating empty
+        # placeholders keeps the test's intent (the worker never opens them;
+        # the stub backend answers every query). The eviction test derives a
+        # second capture by suffixing, so that one is created too.
+        self._placeholders = [self.capture, self.capture + ".2"]
+        for path in self._placeholders:
+            with open(path, "wb"):
+                pass
+        self.addCleanup(lambda: [os.remove(p) for p in self._placeholders
+                                  if os.path.exists(p)])
         self.mgr = WorkerManager()
         self.addCleanup(self.mgr.dispose_all)
 
