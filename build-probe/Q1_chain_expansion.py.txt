@@ -1,0 +1,87 @@
+import json
+import re
+import xml.etree.ElementTree as ET
+
+OUT = r"C:\Users\14977\AppData\Local\Temp\opencode\rdgen"
+NS = "{http://schemas.microsoft.com/developer/msbuild/2003}"
+BOUNDARY = {"ClCompile", "Link", "Lib", "MASM", "ResourceCompile"}
+
+props = json.load(open(OUT + r"\props2.out", encoding="utf-8"))["Properties"]
+root = ET.parse(OUT + r"\renderdoc_pp.xml").getroot()
+
+# Q1.4 traceability: where is each property defined?
+where = {}
+for i, pg in enumerate(root.findall(f"{NS}PropertyGroup")):
+    for c in pg:
+        tag = c.tag.replace(NS, "")
+        if c.text and tag not in where:
+            where[tag] = f"PropertyGroup#{i}"
+
+targets = {t.get("Name"): [d.strip() for d in
+                           (t.get("DependsOnTargets") or "").split(";") if d.strip()]
+           for t in root.findall(f"{NS}Target") if t.get("Name")}
+
+def expand(entry):
+    """A DependsOnTargets entry -> concrete targets, via MSBuild values."""
+    refs = re.findall(r"\$\((\w+)\)", entry)
+    if refs:
+        out = []
+        for r in refs:
+            if r in props:
+                out += [t for t in re.split(r"[;\s]+", str(props[r]))
+                        if t.strip() in targets]
+            else:
+                out.append(f"<unresolved:{r}>")
+        return out
+    if entry.endswith("DependsOn") and entry in props:
+        return [t for t in re.split(r"[;\s]+", str(props[entry]))
+                if t.strip() in targets]
+    return [entry] if entry in targets else []
+
+order, queue, seen, used_props = [], ["Build"], set(), []
+while queue:
+    n = queue.pop(0)
+    if n in seen:
+        continue
+    seen.add(n)
+    order.append(n)
+    for d in targets.get(n, []):
+        for r in re.findall(r"\$\((\w+)\)", d):
+            if r in used_props:
+                continue
+            used_props.append(r)
+        for t in expand(d):
+            if t not in seen:
+                queue.append(t)
+
+gen = [n for n in order if n not in BOUNDARY]
+comp = [n for n in order if n in BOUNDARY]
+print(f"=== Q1.3 effective chain ===")
+print(f"  可达 target: {len(order)}   generation 侧: {len(gen)}   boundary: {comp}")
+if comp:
+    i = order.index(comp[0])
+    print(f"  首个 boundary: {comp[0]} @ 位置 {i}")
+    print(f"  其前 5 个: {order[max(0,i-5):i]}")
+    print(f"  其后 3 个: {order[i+1:i+4]}")
+else:
+    print("  未抵达 boundary")
+    print(f"  可达: {gen[:14]}")
+
+print("\n=== chain 顺序（可解释性）===")
+print("  " + " -> ".join(order[:20]) + (" ..." if len(order) > 20 else ""))
+
+print("\n=== Q1.4 property 可追溯性 ===")
+missing = [p for p in used_props if p not in where]
+print(f"  chain 使用的 property: {len(used_props)}   定义可定位: {len(used_props)-len(missing)}")
+if missing:
+    print(f"  未定位定义: {missing}")
+for p in used_props[:10]:
+    print(f"    {p:<40} {where.get(p, 'NOT FOUND')}")
+
+print("\n=== 未解析引用（evaluation-only 盲区）===")
+blind = sorted({n for n in order if n.startswith("<unresolved:")})
+print(f"  {blind if blind else '（无）'}")
+if blind:
+    for b in blind[:6]:
+        p = b.split(":", 1)[1][:-1]
+        print(f"    {p:<40} 在 -getProperty 结果中: {p in props}   在 /pp 定义: {p in where}")

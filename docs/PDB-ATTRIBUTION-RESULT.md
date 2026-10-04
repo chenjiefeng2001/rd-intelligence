@@ -580,5 +580,34 @@ chain？
 chain**。
 
 **状态不变**：`MSBuild generation = UNKNOWN`；actual build / reproduction /
-attribution = `NOT AUTHORIZED`。工件 `props2.out` 与探针脚本同属探针产物，未固化
-（若需固化，须另行授权）。
+attribution = `NOT AUTHORIZED`。
+
+### 10.1 Q1 工件已固化（probe evidence，字节级一致）
+
+| 工件 | 字节 | SHA256（前 16） | 内容 |
+| --- | ---: | --- | --- |
+| `build-probe/Q1_getproperty_93.out` | 12,758 | `d4b533bb504dd7be` | `-getProperty` 对 **93 个** `*DependsOn` 属性的求值结果（JSON），**本轮原始输出，未重新执行刷新** |
+| `build-probe/Q1_chain_expansion.py.txt` | 3,197 | `5e60038a24e4844c` | Q1 展开脚本本体（可达集计算与 property 可追溯性标注）。**以 `.txt` 存储**：内容与执行时**字节一致**（SHA256 未变），但避免其作为 `.py` 进入 ruff 门禁范围——修它的 lint 会破坏字节一致性 |
+
+**身份与上下文**
+
+| 项 | 值 |
+| --- | --- |
+| checkout / base commit | `D:\renderdoc_no_mcp\renderdoc`，`b7f1554feb0d7d7120f2b9280364b98972ec37d3`（`HEAD b7f155fe`，`v1.x`） |
+| MSBuild | **17.14.40.60911**（commit `3e744208875e56e4bf0bc22c40a1c431fb150987`） |
+| MSVC toolset | `14.44.35207`，`cl` `19.44.35228.0` |
+| evaluation context | `Release\|x64`，`-p:SolutionDir=<fork>\` |
+| 命令 | `msbuild renderdoc\renderdoc.vcxproj -getProperty:<93 项> -p:Configuration=Release -p:Platform=x64 -p:SolutionDir=<fork>\ -nologo` → **exit 0** |
+| 未执行 | 无任何 target；无 `/p:DesignTimeBuild=true` 执行；未修改 `.vcxproj`/props/targets；未编译；未改 checkout |
+
+**标记：probe evidence，不是 RenderDoc accident-build provenance。**
+两者不得互相引用为来源证明；未来任何自编译构建仍须**单独记录**其 base commit、
+delta 摘要、toolchain 与环境。
+
+**Q1 的三条失败判据原样保留**：① property 定义无法全部追溯；② property 展开顺序
+无法完整解释；③ 无法抵达 compilation boundary。
+
+**未重新打开 Q1**：`ResolveReferences` / `BuildGenerateSources` / `BuildCompile`
+为何未进入可达集，仍是**未解释事实**，本次固化**不解释**它。
+完整性由既有 `tests/unit/test_build_probe_artifacts.py` 覆盖：manifest 校验每个
+文件 SHA256，且目录内不得存在 manifest 未覆盖的文件。
