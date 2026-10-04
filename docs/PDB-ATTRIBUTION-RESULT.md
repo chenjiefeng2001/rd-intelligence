@@ -669,3 +669,72 @@ Stage 1 中「寻回 `0x6A8B9BA9` 匹配的 PDB」**无法通过索取既有文�
 2. 从构建过 `0x6A8B9BA9` 的外部构建机取回其归档 PDB。
 
 **当前状态不变**：无本机 PDB 覆盖故障映像，attribution 仍被外部输入阻塞。
+
+## 12. 归属推进：故障点已定位到源码行（零构建、零执行）
+
+**授权范围**：以破坏性最小的方式推进。**未构建、未执行 RenderDoc、未改动任何被观测对象**；全部为只读静态分析（PE 字节读取 + PDB 查询 + 反汇编）。
+
+### 12.1 方法链（每步可复核）
+
+| 步 | 动作 | 工具 | 结果 |
+| --- | --- | --- | --- |
+| 1 | 确认 `0x4A0A4E` 的地址语义 | 自写 PE 解析 | 是 **RVA**（非文件偏移）；映射 `.text` 偏移 `0x49FE4E`，字节 `48 8b 18` = `mov rbx,[rax]` |
+| 2 | 在另一构建中定位同一段代码 | 字节搜索 | **48 字节窗口唯一命中** → 新构建 RVA `0x4A0BEE`（与故障 RVA 相差 `0xA0`） |
+| 3 | 前向 46 字节比对 | 字节比较 | 指令操作码与长度**完全一致**；差异仅在位移立即数（`6a→ca`、`a5→25`、`3c→bc`），与两构建数据布局相差 512 字节一致 |
+| 4 | 行号解析 | `llvm-pdbutil dump -l`（LLVM 19.1.5） | 该地址为 `line/addr` 条目 `57 0049FBEE` 的**起始地址** |
+| 5 | 源文件归属 | 同上 | 归属模块的路径行为 `renderdoc\driver\shaders\spirv\glslang_compile.cpp` |
+| 6 | 指令级确认 | `llvm-objdump -d -l` | `1804a0bee: movq (%rax), %rbx`，其前为 `cmpb $0x0`（守卫）+ `je` + `movq ...(%rip),%rax` |
+
+### 12.2 已确立：故障点
+
+**`renderdoc/driver/shaders/spirv/glslang_compile.cpp:57`，函数 `rdcspv::Shutdown()` 内部。**
+
+```cpp
+52: void rdcspv::Shutdown()
+54:   if(glslang_inited)
+57:     for(glslang::TProgram *program : *allocatedPrograms)   ← RAX = allocatedPrograms = NULL
+66:     SAFE_DELETE(allocatedPrograms);
+```
+
+反汇编与源码逐条对应（含全局地址）：
+
+| 全局 | 地址 | 用途 |
+| --- | --- | --- |
+| `glslang_inited` | `0x18171f7fc` | `cmpb $0x0` 读（`if` 守卫）；`movb $0x1` 写（`Init()` 内） |
+| `allocatedPrograms` | `0x1817197a0` | `movq ...(%rip),%rax` 载入 → `movq (%rax),%rbx` 解引用 |
+
+### 12.3 已确立：静态缺陷（不依赖运行时）
+
+`glslang_inited` 全部出现位置仅 4 处（36 声明、42 读、45 写 `true`、54 读），
+**无任何位置将其复位为 `false`**。而 `Shutdown()` 在 66–67 行以 `SAFE_DELETE`
+把 `allocatedPrograms` / `allocatedShaders` 置为 `NULL`。
+
+因此不变式 `glslang_inited == true ⟹ allocatedPrograms != NULL` 在 `Shutdown()`
+之后**必然被破坏**：其后的 `Init()` 因 `if(!glslang_inited)` 为假而成为**静默空操作**，
+指针保持 `NULL`；再一次 `Shutdown()` 即可通过守卫并在第 57 行解引用 `NULL`。
+
+### 12.4 已证伪的假设（如实记录）
+
+**「重复注册导致 `Shutdown()` 被调用两次」——证伪。**
+`RenderDoc::RegisterShutdownFunction`（core.cpp:1030-1034）用 `std::lower_bound`
+去重，仅在不存在时插入，故 `&rdcspv::Shutdown` 只会被登记一次。
+`~RenderDoc()`（core.cpp:765-767）与 `ShutdownReplay()`（core.cpp:1025-1027）
+均遍历后 `clear()`，二者不会叠加调用。
+
+### 12.5 尚未确立（不得越界）
+
+- **运行时究竟经历了哪条序列**（是否发生 `Shutdown()` → `Init()` → `Shutdown()`，
+  或 `new` 抛异常留下窗口）——需 reproduction 授权，**当前 `NOT_AUTHORIZED`**。
+- 故障映像与新构建的源码同一性：已确立 base commit 为 `b7f1554fe…`，且 48 字节
+  唯一匹配；但两个 PE 并非同一文件，**行号归属依赖上述字节等价性**，已如实记录其前提。
+
+### 12.6 状态变更
+
+| 项 | 原状态 | 新状态 |
+| --- | --- | --- |
+| 故障点归属 | `NOT_ESTABLISHED` | **ESTABLISHED**（文件 + 行 + 函数 + 全局地址） |
+| `attribution` 阻塞原因 | `BLOCKED_BY_EXTERNAL_INPUT`（缺匹配 PDB） | **不再需要外部 PDB 即可定位故障点**；根因确认仍需 reproduction |
+| 根因 | `ROOT CAUSE OPEN` | 仍 `OPEN`，但已有具体静态缺陷（§12.3）与已证伪假设（§12.4） |
+
+**未执行**：任何 target、编译、RenderDoc 运行、复现、改动 `.vcxproj`/props/targets、
+改动 `core.cpp` 或 delta。**不提出修复方案**——修复需在根因经 reproduction 确认后另行授权。
