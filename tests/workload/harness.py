@@ -7,7 +7,6 @@ report + gate. Never modifies Stable Core."""
 import json
 import os
 import random
-import re
 import subprocess
 import sys
 import unittest
@@ -34,6 +33,10 @@ REPORTS_DIR = WORKLOAD_DIR / "reports"
 
 DRAW_COUNTS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 10000, 20000]
 
+#: Loaded on first use by _fixture_producer(); kept out of import time so that
+#: merely importing the harness does not reach into scripts/.
+_PRODUCER = None
+
 ENV_DETERMINISM_N = int(os.environ.get("WORKLOAD_DETERMINISM_N", "10"))
 ENV_WARM_RUNS = int(os.environ.get("WORKLOAD_WARM_RUNS", "20"))
 ENV_STRESS_QUERIES = int(os.environ.get("WORKLOAD_STRESS_QUERIES", "2000"))
@@ -51,16 +54,50 @@ def tier(draws):
     return "L"
 
 
+def _fixture_producer():
+    """The fixture producer, loaded by path.
+
+    Discovery and the integration gate must agree on what the population is, so
+    the canonical names come from the producer rather than being rebuilt here.
+    """
+    global _PRODUCER
+    if _PRODUCER is None:
+        import importlib.util
+        path = Path(__file__).resolve().parents[2] / "scripts" / "workload_corpus.py"
+        spec = importlib.util.spec_from_file_location(
+            "_workload_fixture_producer", str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _PRODUCER = module
+    return _PRODUCER
+
+
+def declared_fixtures():
+    """(draws, canonical filename) pairs for the declared population."""
+    producer = _fixture_producer()
+    return [(d, producer.canonical_name(d)) for d in DRAW_COUNTS]
+
+
+def declared_fixture_names():
+    """Canonical fixture filenames only."""
+    return [name for _, name in declared_fixtures()]
+
+
 def discover_corpus():
+    """The declared canonical fixtures that are actually present.
+
+    Membership is an exact filename test. The previous form globbed `*.rdc` and
+    matched a `w<digits>` prefix against the stem, so `w00001_evil.rdc`
+    satisfied the 1-draw tier and any `wNNNNN.rdc` joined the population.
+    """
     caps = []
     if not CORPUS_DIR.exists():
         return caps
-    for p in sorted(CORPUS_DIR.glob("*.rdc")):
-        m = re.match(r"w(\d+)", p.stem)
-        if not m:
+    for draws, name in declared_fixtures():
+        p = CORPUS_DIR / name
+        if not p.is_file():
             continue
-        caps.append({"path": str(p), "draws": int(m.group(1)),
-                     "tier": tier(int(m.group(1)))})
+        caps.append({"path": str(p), "draws": draws, "tier": tier(draws)})
     return caps
 
 
