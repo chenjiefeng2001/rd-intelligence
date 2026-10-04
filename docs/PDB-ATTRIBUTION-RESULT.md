@@ -1537,3 +1537,114 @@ renderdoc 分发 → `Shutdown()`，即 `atexit` 路径而非正常析构路径�
 | X2 artifact | **FIXED / HASHED** |
 | `pymodules` producer | **UNKNOWN** |
 | G4 | **UNCHANGED** |
+
+## 23. 根因重新确立（P-b′）、P-c 被否证、Scheme C 治理标签更正
+
+### 23.1 判别观测（只读，未改 shutdown 行为）
+
+在一次真实 integration 运行后读取既有进程状态（`_REPLAY_LIFECYCLE`）：
+
+```
+tests_run         : 63    errors 0    failures 0    skipped 0
+initialise_epoch  : 2          ← 不是 1
+initialised       : True
+sessions          : 0
+shutdown_error    : <ABSENT>   ← 该键从未被插入
+process exit      : -1073741819 (0xC0000005)
+```
+
+该观测**不是**从栈形状或源码结构推测，而是实际运行状态。
+
+### 23.2 P-b′ 因果链（机械成立）
+
+| 步 | 事实 | 依据 |
+| --- | --- | --- |
+| 1 | `InitialiseReplay()` 被调用**两次** | `initialise_epoch == 2` |
+| 2 | 第二次调用受 `if not initialised` 守卫约束 | `core.py:186` |
+| 3 | `initialised` 置 False **只**发生在 `shutdown_replay()` 的成功路径 | `core.py:292`（异常路径 `return`，不置 False） |
+| 4 | ⇒ `shutdown_replay()` 确实执行过，且 `rd.ShutdownReplay()` **正常返回** | 由 1+2+3 演绎 |
+| 5 | ⇒ `core.cpp:1027` 的 `clear()` 执行，注册表被清空 | `core.cpp:1025-1027` |
+| 6 | ⇒ 后续 driver 重新构造，`RegisterShutdownFunction(&rdcspv::Shutdown)` **重新注册** | `vk_core.cpp:194-195` / `gl_driver.cpp:710-711` |
+| 7 | ⇒ `rdcspv::Init()` 因 `glslang_inited` 仍为 true 而**静默跳过重新分配**，两指针保持 NULL | 原 `glslang_compile.cpp:42` 的 `if(!glslang_inited)` |
+| 8 | ⇒ exit-time 分发再次调用 `rdcspv::Shutdown()`，见 `0/0/1` | `core.cpp:765` + `static RenderDoc realInst`（`core.cpp:513`，经 `atexit`） |
+| 9 | ⇒ 第 57 行解引用 NULL，RVA `0x4A0A4E` | §12/§13/§19 |
+
+### 23.3 根因
+
+> **非幂等的 shutdown 与陈旧的 glslang 初始化状态**：第一次 `rdcspv::Shutdown()` 把两个容器
+> 指针置为 NULL，却**未**将 `glslang_inited` 复位；随后重新 `InitialiseReplay()` 时，
+> `rdcspv::Init()` 因该标志仍为 true 而**静默跳过重新分配**；进程退出时 `atexit`
+> 路径再次执行 `rdcspv::Shutdown()`，对 NULL 指针解引用。
+
+`epoch == 1` 的旧矛盾由此消解：**该断言只是某一时间点的观测，不是进程生命周期的终值**；
+第二次初始化发生在这些断言之后，故两者不冲突。
+
+### 23.4 候选状态
+
+| 候选 | 状态 |
+| --- | --- |
+| **P-b′**（Shutdown → clear → 重新注册 → Init 静默跳过 → 再次 Shutdown） | **CAUSAL CHAIN ESTABLISHED** |
+| **P-c**（注册表未清空） | **REFUTED** —— `shutdown_error` 缺失 ⇒ `ShutdownReplay()` 未抛出 ⇒ `clear()` 必然执行 |
+| **P-d**（driver 捕获 `bad_alloc`） | **EXCLUDED**（§22.7） |
+| 「第 47 行 `new` threw」 | **DISPROVEN**（§22.1） |
+| **Root cause** | **ESTABLISHED** |
+
+### 23.5 §22.1 措辞订正
+
+原表述「整次运行异常总数 = 1」**不准确**。准确表述为：
+
+> **到达顶层的异常为 1。**
+
+cdb 当时以 `sxd *` 屏蔽首现异常，而**被 harness 捕获的异常不会进入顶层过滤**。因此该计数
+**不能**推出「进程内部没有发生其他异常」。
+
+两件事必须分开：
+- **A1 那次运行**：顶层异常 = 1 ≠ 进程内异常总数 = 1
+- **本次判别运行**：`shutdown_error` absent + `epoch == 2` ⇒ 正常 `ShutdownReplay` + 重新初始化
+
+### 23.6 Scheme C 治理标签更正
+
+**原理由错误**：Scheme C 是为「`Init()` 异常安全」而改，该理由已被现场证据否证。
+
+**但其改动恰好切断真实故障链的第 7 步**：
+
+```
+第一次 Shutdown:  pointers → NULL,  glslang_inited → false   ← Scheme C 新增
+第二次 Init:      守卫不再静默返回 → 重新分配 pointers        ← 链条在此被切断
+```
+
+| 项 | 状态 |
+| --- | --- |
+| Scheme C 因果理由 | **CORRECTED**（原理由错误） |
+| Scheme C 代码 | **ROOT-CAUSE REPAIR / IMPLEMENTED** |
+| **Scheme C verified repair** | **NOT_YET_ESTABLISHED** |
+
+> **「修复机制与已确定根因对齐」≠「修复已通过验收」。**
+> 定性为 **root-cause repair / implemented — causal rationale corrected after field
+> evidence**，**不得**表述为 verified fix，也不得回写成「方案 C 一开始就被证明正确」。
+
+### 23.7 下一道门的具体内容
+
+验收只需验证修复后的真实生命周期：
+
+> `Init → Shutdown → Init → Shutdown / 进程退出` **不再进入 `0/0/1`**，
+> 且原有异常与资源语义未被掩盖。
+
+该验证**不需要故障注入、不需要定位目标分配点、不需要 shim**：X2 固定产物
+（`e1dce4d0…`）已含 Scheme C，只需在真实 integration 运行中观测
+`initialise_epoch == 2` 场景下**是否仍发生 exit-time 访问违例**。
+
+### 23.8 冻结状态
+
+| 项 | 状态 |
+| --- | --- |
+| Fault identity / fault point / `0/0/1` | **ESTABLISHED** |
+| **Root cause** | **ESTABLISHED**（P-b′） |
+| P-b′ / P-c / P-d | **ESTABLISHED** / **REFUTED** / **EXCLUDED** |
+| Scheme C 因果理由 | **CORRECTED** |
+| Scheme C 代码 | **ROOT-CAUSE REPAIR / IMPLEMENTED** |
+| Scheme C verified repair | **NOT_YET_ESTABLISHED** |
+| P1（注入式验证） | **DEFERRED**（被 §23.7 的更廉价路径取代） |
+| X2 artifact | **FIXED / HASHED** |
+| `pymodules` producer | **UNKNOWN** |
+| G4 | **UNCHANGED** |
