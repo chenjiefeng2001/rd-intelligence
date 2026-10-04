@@ -1287,3 +1287,78 @@ P3（同等故障注入下走到进程退出）。
 
 > **在三者全部成立前，`Repair` 不得由 `REPAIR_NOT_ESTABLISHED` 提升为 `REPAIR_VERIFIED`。**
 > 本轮未执行任何构建或验证。
+
+## 21. 证据完整性校正：参考构建已被 X2 覆盖
+
+### 21.1 触发原因
+
+X2 专用构建（`msbuild renderdoc\renderdoc.vcxproj /t:Build /p:Configuration=Release
+/p:Platform=x64`，exit 0）的输出目录为 `x64\Release\`，因此**覆盖了**此前作为
+§12/§13 字节匹配参考的 `x64\Release\renderdoc.dll`。
+
+**这是授权构建的直接后果，我在发起构建前未提示，属疏漏。** 现予正式记录。
+
+### 21.2 现状逐项核对
+
+| 资产 | 状态 |
+| --- | --- |
+| `pymodules\renderdoc.dll`（事故二进制） | **完整**。SHA256 `97cad315d1af01d7bc07bb8e09c080ffa31feecdc0c1857a42a3aa0dd9435f6e`，PE TS `0x6A8B9BA9`。§12/§13 的归属结论仍由它 + `pymodules\renderdoc.pdb` 支撑 |
+| X2 构建产物 `x64\Release\renderdoc.dll` | **已固定**。25,466,368 B，SHA256 `e1dce4d09db4c396470d90404e243edcce5fac7991393201930275f17ccdbacb` |
+| X2 validation copy | **一致**。`%TEMP%\opencode\x2_validation\renderdoc.dll`，SHA256 与上**逐字节相同** |
+| 原参考构建 `x64\Release\renderdoc.dll`（TS `0x6A91903B`） | **已被覆盖，不可恢复**（25,465,856 B 的旧文件已不存在） |
+| 原全量 PDB `x64\Release\renderdoc.pdb`（153,432,064 B） | **仍存在**，但其对应的 DLL 已不存在 ⇒ **不再能与任何现存 DLL 配对** |
+
+### 21.3 对既有结论的影响（必须如实重述）
+
+§12/§13 的代码归属结论**本身不因此失效**——它们由**故障 PE 的字节**与**行表/反汇编**
+共同支撑，而不依赖参考 DLL 继续存在。但其**证据链的当前可复核性**发生变化：
+
+> §12 / §13 的字节归属结果属于**历史已取得的证据，当前不可复核**。
+> 不得再将其描述为「当前可复核的事实」。
+
+具体而言，以下步骤**无法在当前工作区重做**：
+
+- 用 48 字节窗口在参考 DLL 中定位故障 RVA 的对应位置
+- 复核「前向 46 字节操作码一致、仅位移立即数不同」这一比较
+- 用 `renderdoc.pdb`（153 MB）查询参考 DLL 的行表/节贡献
+
+仍然**可复核**的部分：
+
+- 故障 PE 与 `pymodules\renderdoc.pdb`（窄 PDB，匹配 `renderdoc.pyd`）的完整性与哈希
+- §19 的 P1 判定（三个全局在崩溃时刻的实测值），该结论取自故障 PE，与参考 DLL 无关
+- §15 的 fault identity（A1 在 cdb 下捕获的 RVA `0x4A0A4E`）
+- 修复 commit `f4b3d4fac` 与 X2 产物的双 SHA256 一致性
+
+### 21.4 附带查明的两处事实
+
+1. **glslang 池分配器 `operator new` 确实存在于 DLL 中**，且自带标志位写入
+   （`0x18173db42` / `0x18173db43`，见 §21.5）。因此「`new rdcarray<…>` 走全局
+   `operator new`」不能仅由源码推断成立。
+2. **X2 产物无 PDB**（Release 未启用 `/DEBUG`，与 §11 关于 RenderDoc PE 无 CodeView
+   记录的结论一致），故在 X2 中定位 `rdcspv::Init()` 只能依赖结构判据。
+
+### 21.5 P1 先决条件核实进度
+
+| 项 | 状态 |
+| --- | --- |
+| A. 分配路径（`new rdcarray<…>` 的实际分配器） | **暂定成立，未由运行时证实**（§21.4-1） |
+| B. `Init_lo` / `Init_hi` / `RS_programs` / `RS_shaders` 定位 | **未达成** |
+| C. `RS_shaders` 的运行时栈回溯可见性 | **未验证** |
+
+**B 项的两次失败尝试如实记录**：结构指纹先后误命中「4 字符字符串比较后的标志置位」
+（`0x000E59C5`）与「glslang 池 `operator new`」（`0x010EEDC0`/`0x010EEDD0`）。
+漏掉的必要条件是「**存在两次指向同一目标的 `call`**」。**在 B 未达成前不得进入
+shim 构建。**
+
+### 21.6 状态
+
+```
+Repair                       = REPAIR_NOT_ESTABLISHED
+Root cause                   = ESTABLISHED
+X2 产物 e1dce4d0…            = 已固定，双 SHA256 一致
+参考构建 x64\Release(旧)      = 已被覆盖（不可恢复）
+原 153MB PDB                 = 存在但已无配对 DLL
+shim                        = 未授权、未构建
+第 47 行诱因                 = NOT_ESTABLISHED
+G4                           = UNCHANGED
+```
