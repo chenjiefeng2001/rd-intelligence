@@ -23,7 +23,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
-from rdebug.capture_policy import clamp_limits, redact
+from rdebug.capture_policy import clamp_limits, redact, resolve_capture
 from rdebug.errors import RDebugError
 from rdebug.jsonutil import to_json
 from rdebug.worker_manager import RecyclePolicy, WorkerManager
@@ -54,7 +54,30 @@ def _safe(fn):
     def wrapper(*args, **kwargs):
         from rdebug.observability import record, record_result, timed
 
+        # The rejection must be raised INSIDE the try below, so that it becomes
+        # the same structured payload every other classified error becomes.
+        # Outside it, an unhandled exception would replace an actionable error
+        # the agent can act on with an opaque tool failure.
         try:
+            # The capture path is the one caller-supplied value that reaches a
+            # file open, so it is checked here -- at the untrusted boundary,
+            # before any worker is spawned. Enforcing it lower down would also
+            # constrain the CLI and in-process callers, which are not crossing a
+            # privilege boundary.
+            #
+            # The rejection names the environment variable that widens the
+            # policy, which is the shape MCP expects, and beats succeeding with
+            # a warning the agent could not reliably distinguish.
+            capture = kwargs.get("capture")
+            if capture is None and args:
+                capture = args[0]
+            if capture is not None:
+                resolved = resolve_capture(capture)
+                if "capture" in kwargs:
+                    kwargs["capture"] = resolved
+                else:
+                    args = (resolved,) + tuple(args[1:])
+
             with timed("query", transport="mcp", tool=fn.__name__):
                 result = fn(*args, **kwargs)
             try:

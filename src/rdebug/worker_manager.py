@@ -22,7 +22,6 @@ import sys
 import threading
 import time
 
-from .capture_policy import resolve_capture
 from .errors import RDebugError
 
 
@@ -125,8 +124,11 @@ class _Worker:
     STDERR_DRAIN_TIMEOUT_S = 0.5
 
     def __init__(self, capture, env):
-        # abspath alone does not constrain where this may point; the policy does.
-        self.capture = resolve_capture(capture)
+        # Deliberately abspath, not the capture policy: this module is shared by
+        # the CLI and by in-process callers, which are not crossing a privilege
+        # boundary. The untrusted surface is the MCP tool boundary, and that is
+        # where the policy is enforced (see rdebug.capture_policy).
+        self.capture = os.path.abspath(capture)
         self.proc = None
         self._lock = threading.Lock()
         self._reader = None
@@ -435,10 +437,7 @@ class WorkerManager:
         return None
 
     def _get(self, capture) -> _Worker:
-        # Key and path are the same value: validating once here means the cache
-        # cannot be used to sidestep the policy, because an unvalidated path
-        # never reaches the dict.
-        key = resolve_capture(capture)
+        key = os.path.abspath(capture)
         w = self._workers.get(key)
         reason = None
         if w is not None:
