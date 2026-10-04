@@ -1362,3 +1362,114 @@ shim                        = 未授权、未构建
 第 47 行诱因                 = NOT_ESTABLISHED
 G4                           = UNCHANGED
 ```
+
+## 22. §19 根因下调 + Q-NULL 调查
+
+### 22.1 §19 的否证证据
+
+对 A1 现场日志（`a1_crash3.log`）的只读核对结果：
+
+| 观测 | 值 |
+| --- | --- |
+| 整次运行的异常总数 | **1**（仅进程退出期的 `c0000005`） |
+| 是否出现 `bad_alloc` | **否** |
+| RenderDoc 加载次数 | 1 |
+| RenderDoc 侧 shutdown 日志 | **无** |
+| `Opening RDCFile` | 17 |
+| 测试结果 | **63/63 OK** |
+
+§19 的推断链为「第 47 行 `new` 抛出 → 标志 true 而两指针为 NULL」。该链条与上述
+证据**不相容**：
+
+1. 全进程未出现 `bad_alloc`，故第 47 行**没有抛出**；
+2. 即使抛出，异常会沿 `InitialiseReplay` → `CaptureSession.__init__` 传播进 Python，
+   测试应当 ERROR；实测 63 项全部 OK；
+3. 故「`Init()` 留下半初始化状态」这一机制**被现场证据否证**。
+
+> ### `Root cause = NOT_ESTABLISHED`
+> ### 「第 47 行 `new` 抛异常」= `CONTRADICTED / DISPROVEN BY FIELD EVIDENCE`
+
+**仍然成立的观测事实**（不因机制被否证而动摇）：fault identity、故障点
+`glslang_compile.cpp:57`、RVA `0x4A0A4E`、`RAX=0`、`allocatedShaders=0`、
+`allocatedPrograms=0`、`glslang_inited=1`。
+
+> **观测事实成立 ≠ 导致这些状态的机制已经成立。**
+
+### 22.2 Q-NULL：谁把两个指针变成 NULL 而标志保持 1
+
+**问题**：在导致第 57 行的退出路径中，谁、何时、以什么调用链把
+`allocatedPrograms` / `allocatedShaders` 置为 NULL，同时 `glslang_inited` 保持 1？
+
+**由既有现场证据可确定的演绎**：
+
+1. §19 在崩溃入口处实测 `allocatedShaders = 0`、`allocatedPrograms = 0`、
+   `glslang_inited = 1`（读数发生在 `Shutdown()` 执行**之前**，故反映入口状态）。
+2. 63/63 测试 OK ⇒ `rdcspv::Init()` 正常完成，两个指针**曾被赋值**。
+3. 源码中把这两个指针置 NULL 的**唯一**位置是 `Shutdown()` 中的两个 `SAFE_DELETE`
+   （`common.h:90-98` 确认该宏置 NULL）。
+4. 崩溃栈显示本次调用来自 `LdrShutdownProcess` → `execute_onexit_table` →
+   renderdoc 关闭函数分发 → `rdcspv::Shutdown()`。
+
+> **因此：在崩溃之前，`rdcspv::Shutdown()` 必然已被调用过一次。**
+> 这一点由现场证据演绎得出，**不依赖任何注入实验**。
+
+**未确立的部分**：第一次调用如何发生，以及为何崩溃时的调用仍能进入该函数。
+两种可能均未排除：
+
+- **P-b′**：更早的 `Shutdown()` 由 `ShutdownReplay()` 触发（其会 `clear()` 注册表），
+  随后某条路径**重新注册**了 `&rdcspv::Shutdown`。
+- **P-c**：更早的调用来自注册表**未被清空**的路径（例如关闭函数分发中某个更早的
+  回调抛出，导致 `~RenderDoc()`（core.cpp:765-767）的 `clear()` 未执行，
+  析构被再次进入时重复执行）。
+
+### 22.3 与 §16.2 的冲突（必须记录的账实不符）
+
+§16.2 曾以「`ShutdownReplay` 从未执行」与「`initialise_epoch == 1`」排除 P-b。
+Q-NULL 的演绎与该排除**直接冲突**：
+
+- 若第一次 `Shutdown()` 来自 `ShutdownReplay()`，则注册表被 `clear()`，
+  崩溃时的调用必须来自一次**重新注册**，而重新注册需要再次构造 `WrappedVulkan`
+  ⇒ 再次 `InitialiseReplay` ⇒ **`initialise_epoch` 应为 2**；
+- 但 `test_m15_acceptance.py:172,178` 与 `test_runtime_isolation.py:149`
+  断言 `initialise_epoch == 1`，且实测全部通过。
+
+**该矛盾尚未解决**，不选边。
+
+### 22.4 确认的观测盲区
+
+`initialise_epoch` 与 `sessions` 仅通过 `replay_identity()` 的 telemetry 暴露
+（core.py:317-327），**日志中没有任何 `ShutdownReplay()` 执行记录**。因此
+「关闭已执行但 telemetry 未记录 / 未被断言覆盖」是**存活的可能**，
+现有遥测不足以判定 22.2 的两条路径。
+
+### 22.5 方案 C 治理状态变更
+
+| 项 | 状态 |
+| --- | --- |
+| 代码 | **保留，不回滚**（commit `f4b3d4fac`） |
+| 性质 | **Initialization-state hardening — implemented, root-cause attribution pending** |
+| 作为 root-cause fix | **NOT_ESTABLISHED** |
+| 独立价值 | 成立：即使真实事故另有原因，「`glslang_inited == true` 仅在两资源均建立后成立，并在 `Shutdown()` 后复位」是合理的状态一致性强化 |
+
+**不得**将方案 C 表述为 root-cause repair 或 verified fix。
+
+### 22.6 冻结状态
+
+| 项目 | 状态 |
+| --- | --- |
+| Fault identity | **ESTABLISHED** |
+| Fault point（`glslang_compile.cpp:57`） | **ESTABLISHED** |
+| Observed `0/0/1` state | **ESTABLISHED** |
+| **Root cause** | **NOT_ESTABLISHED** |
+| 「第 47 行 `new` threw」 | **CONTRADICTED** |
+| 「崩溃前已有一次 `Shutdown()`」 | **ESTABLISHED（演绎）** |
+| 第一次调用与重新注册的路径 | **NOT_ESTABLISHED** |
+| `epoch == 1` 与 P-b′ 的矛盾 | **未解决** |
+| Scheme C | **HARDENING / IMPLEMENTED** |
+| P1 injection | **DEFERRED** |
+| X2 artifact | **FIXED / HASHED**（`e1dce4d0…`） |
+| `pymodules` producer | **UNKNOWN** |
+| 第 47 行 allocation-failure cause | **NOT_ESTABLISHED**（且其具体假说已被否证） |
+| G4 | **UNCHANGED** |
+
+本次为一次**证据纠偏**，予以明确保留。
