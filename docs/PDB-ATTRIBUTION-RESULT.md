@@ -968,3 +968,81 @@ python → ucrtbase!exit → ExitProcess → RtlExitUserProcess
 未提供 RenderDoc 时，integration 套件为 **60 skipped + 1 failure + 1 error**（exit 1）。
 那些用例应当 skip 而非失败。此为 harness 健壮性缺口，**与本 fault identity 无关，
 不得用它削弱 A1，也不得用它污染本节结论**。
+
+## 16. 静态核对 shutdown 次序：排除 P-b，候选收敛为 P-a
+
+承接 §15。**纯静态核对**，未运行实验，未改动被观测对象。
+
+### 16.1 `shutdown_replay()` 在本次运行中并未真正执行
+
+`shutdown_replay()` 全仓库**只有一个真实调用点**：`tests/integration/test_ide_ownership.py:144`。
+而 5 处测试断言 `initialise_epoch == 1`
+（`test_ide_ci_workflow.py:89`、`test_ide_ownership.py:172`、`test_m15_acceptance.py:172,178`、
+`test_runtime_isolation.py:149`），且 A1 实测 **63 项全部 OK**。
+
+`core.py:275-292`：
+
+```python
+if _REPLAY_LIFECYCLE["initialised"] and _REPLAY_LIFECYCLE["sessions"] == 0:
+    _REPLAY_LIFECYCLE["rd"].ShutdownReplay()
+    ...
+    _REPLAY_LIFECYCLE["initialised"] = False
+```
+
+若该调用成功执行，`initialised` 被置 `False`，其后任何 `CaptureSession` 都会再次调用
+`InitialiseReplay()`（`core.py:186-190`），`initialise_epoch` 必然变为 2，上述断言必然失败。
+**它们没有失败** ⇒ `rd.ShutdownReplay()` 未被执行。
+
+### 16.2 排除 P-b
+
+§14.2 的候选链条要求「`ShutdownReplay()` 运行 → 指针置 NULL → driver 重建（重新注册
+`Shutdown`）→ 进程退出时 `~RenderDoc()` 再跑一次 `Shutdown()`」。该链条以
+`initialise_epoch >= 2` 为必要条件，与 §16.1 的实测约束**不相容**。
+
+> **P-b（Shutdown → 重建 → 退出再 Shutdown）已排除。**
+
+### 16.3 剩余唯一静态一致的候选：P-a（初始化顺序缺陷）
+
+```cpp
+44:   glslang::InitializeProcess();
+45:   glslang_inited = true;              ← 守卫变量先置位
+47:   allocatedPrograms = new rdcarray<...>;   ← 被守卫资源后分配
+48:   allocatedShaders  = new rdcarray<...>;
+```
+
+若第 47 / 48 行的 `new` **抛出**，状态恰为观测值：`glslang_inited == true` 而
+`allocatedPrograms == NULL`。随后进程退出 → `~RenderDoc()`（core.cpp:765-767）→
+`rdcspv::Shutdown()` → 守卫通过 → 第 57 行解引用 NULL → `0x4A0A4E`。
+
+**`new` 是否真的抛出属运行时条件，静态不可判定。** 不以「应该先发生」补足，
+故根因仍 `OPEN`，候选状态为：
+
+| 候选 | 状态 |
+| --- | --- |
+| P-b：Shutdown → driver 重建 → 退出再 Shutdown | **已排除**（`initialise_epoch == 1`） |
+| P-a：`Init()` 中 `new` 抛出，留下 `inited=true` / pointers=NULL | **唯一剩余，静态一致，未证实** |
+
+### 16.4 附带发现：harness 自身的第二个缺陷（独立 issue）
+
+`shutdown_replay()` 的 docstring（core.py:276-278）声称「之后不能再开新
+`CaptureSession`，因为 RenderDoc 不允许重初始化」，但**代码不强制**该约定：
+
+* `__init__` 只以 `not initialised` 决定是否调用 `InitialiseReplay()`（core.py:186）；
+* `shutdown_replay()` 的**成功路径恰好把 `initialised` 置 `False`**（core.py:292），
+  即**主动邀请**它自己声明禁止的重初始化；
+* 其 `except` 分支还特意**不清** `initialised` 以规避 F-N3-4（core.py:283-291），
+  而成功分支清。
+
+该不一致本次**未触发**（因 §16.1），属独立的 harness 缺陷，不参与本 fault 的判定，
+亦不得用来削弱 §15 的 fault identity。
+
+### 16.5 证实 P-a 所需的最小实验（尚未执行）
+
+无需修改被观测对象：故障 PE 中 `glslang_inited` 位于 **RVA `0x6BE8FC`**、
+`allocatedPrograms` 位于 **RVA `0x6B88A0`**（由 A1 的 cdb 输出解析而得）。可在 cdb 下以
+`bu` 对这两处**写入指令**下断点：
+
+* 若命中 `glslang_inited = 1` 而 `allocatedPrograms` **从未被写入** ⇒ **P-a 证实**；
+* 若 `allocatedPrograms` 曾被写入 ⇒ **P-a 证伪**，需另寻机制。
+
+此步骤需新的运行时授权（cdb 附加 + 在 RenderDoc 初始化期断下）。
