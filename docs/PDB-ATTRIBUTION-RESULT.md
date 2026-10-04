@@ -807,3 +807,72 @@ D3D11/D3D12, 两种情况         → 0/40 崩溃
 | 根因 | **仍 OPEN**：实际运行时序列未确立 |
 | 与 integration `0xC0000005` 是否同源 | **NOT_ESTABLISHED**，且既有支撑工件缺失 |
 | 修复方案 | **未提出**（需先确立根因） |
+
+## 14. C 阶段（纯静态收敛）：确立调用链，并证伪本项目自己的下一步预测
+
+承接 §13。仍为**只读静态分析**：未构建、未执行、未改动被观测对象。
+
+### 14.1 确立：`rdcspv::Init()` 位于 driver 构造函数内
+
+`renderdoc/driver/vulkan/vk_core.cpp:194-195`，位于 **`WrappedVulkan::WrappedVulkan()`**：
+
+```cpp
+174: WrappedVulkan::WrappedVulkan()
+...
+194:   rdcspv::Init();
+195:   RenderDoc::Inst().RegisterShutdownFunction(&rdcspv::Shutdown);
+```
+
+故**每一次 Vulkan driver 创建都会调用 `rdcspv::Init()`**。
+
+### 14.2 由 14.1 机械推出的因果链
+
+```
+1  InitialiseReplay #1 → WrappedVulkan() → rdcspv::Init() → 分配，glslang_inited=true
+2  ShutdownReplay()    → rdcspv::Shutdown() → 指针置 NULL，glslang_inited 仍为 true
+3  InitialiseReplay #2 → WrappedVulkan() → rdcspv::Init() → 静默空操作（指针仍为 NULL）
+4  再次 ShutdownReplay() 或使用点 → 解引用 NULL
+```
+
+该链条与 `src/rdebug/adapter/core.py` 的 `initialise_epoch`（同进程多次
+`InitialiseReplay()` 计数）所建模的场景一致。
+
+### 14.3 独立佐证：D3D 不崩的原因已静态解释
+
+`rdcspv::Init()` 的调用点仅存在于 **Vulkan 与 GL**：`vk_core.cpp`(1)、
+`gl_driver.cpp`(1)、`gl_emulated.cpp`(2)。**D3D11 / D3D12 既不调用
+`rdcspv::Init()`，也不调用 `CompileShaderForReflection`。**
+
+这静态解释了既有实测声明中的「D3D11 / D3D12 两种情况均 0/40 崩溃」。
+
+### 14.4 证伪本项目自己的预测（重要）
+
+§13 之后曾提出预测：integration 的 `0xC0000005` 应落在
+`CompileShaderForReflection` 第 93 行（`allocatedShaders->push_back`），
+其故障指令应为 `movq 0x10(%rdi),%rbx`（RDI=0，新构建 RVA `0x4A0DE4`）。
+
+**该预测被静态证据推翻：**
+
+1. `CompileShaderForReflection` 的调用点只有 **GL**（`gl_emulated.cpp:4239/4376/4377`、
+   `gl_shader_funcs.cpp:209`）。Vulkan 捕获自带 SPIR-V，replay 期不做 GLSL→SPIR-V
+   编译，故**第 93 / 119 行在 Vulkan 路径不可达**。
+2. `spirv_reflect.cpp:2527` 的 `rdcspv::Init()` + `RegisterShutdownFunction`
+   位于 **`TEST_CASE("Validate SPIR-V reflection")`** 内，属**测试代码**，非 replay 路径。
+
+**结论：glslang 指针缺陷解释 teardown 故障，但不足以解释 integration 的
+`0xC0000005`。两者不应被假定同源。** 此前 §13.3 的保留是正确的。
+
+### 14.5 旁证：故障偏移语义得到独立确认
+
+`docs/AUDIT-2026-10-02.md:85` 独立记录「`renderdoc.dll+0x4A0A4E`，`lm` 显示
+`(export symbols)` 而非 `(pdb)`」，与 §12.1 判定 `0x4A0A4E` 为 **RVA** 一致。
+
+### 14.6 状态
+
+| 项 | 状态 |
+| --- | --- |
+| teardown 故障点 | **ESTABLISHED**（`glslang_compile.cpp:57`） |
+| 守卫缺陷 | **ESTABLISHED（二进制级）** |
+| integration `0xC0000005` | **NOT_ESTABLISHED / 未归属**，且**已排除**由本缺陷解释 |
+| 两者是否同源 | **NOT_ESTABLISHED**（现有静态证据倾向**不同源**） |
+| 下一步 | **需分支决策**（见 §14.4：原预测已被自身证据推翻） |
