@@ -19,6 +19,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from rdebug.analysis.pixel_trace import MAX_DRAWS_DEFAULT
 from rdebug.errors import RDebugError
 from rdebug.jsonutil import to_json
 from rdebug.worker_manager import RecyclePolicy, WorkerManager
@@ -101,6 +102,39 @@ def _parse_xy(text):
         raise RDebugError("pixel coordinates must be 'x,y' integers")
 
 
+def _bool_param(query, name, default=False):
+    """Normalise a boolean query parameter from a real UI.
+
+    A checkbox serialises as "true"/"false"; a hand-written URL uses "1"/"0".
+    Accepting exactly those four is deliberate: widening it to "anything
+    truthy" would let a typo silently select the other branch, which is the
+    failure mode this replaces. Anything else is a bad request.
+    """
+    raw = query.get(name, None)
+    if raw is None:
+        return default
+    value = raw[0].strip().lower()
+    if value in ("1", "true"):
+        return True
+    if value in ("0", "false"):
+        return False
+    raise RDebugError(
+        f"{name} must be one of 1/0/true/false")
+
+
+def _int_param(query, name, default):
+    raw = query.get(name, None)
+    if raw is None:
+        return default
+    try:
+        value = int(raw[0])
+    except (TypeError, ValueError):
+        raise RDebugError(f"{name} must be an integer")
+    if value < 1:
+        raise RDebugError(f"{name} must be at least 1")
+    return value
+
+
 def api_info(query):
     return {"capture": _STATE["capture"], "ci": bool(_STATE["baseline"]),
             "ready": _STATE["ready"]}
@@ -130,14 +164,18 @@ def api_ci(query):
 
 def api_trace(query):
     x, y = int(query["x"][0]), int(query["y"][0])
-    return _run("trace_pixel", x=x, y=y,
-                max_draws=int(query.get("max_draws", ["4"])[0]))
+    # The scope is explicit and defaults to the library's own default rather
+    # than a silently tighter number. Truncation is not hidden here: the
+    # semantic layer already reports summary.truncatedDraws, and the UI is
+    # required to surface it.
+    max_draws = _int_param(query, "max_draws", MAX_DRAWS_DEFAULT)
+    return _run("trace_pixel", x=x, y=y, max_draws=max_draws)
 
 
 def api_diff(query):
     a = _parse_xy(query["a"][0])
     b = _parse_xy(query["b"][0])
-    deep = query.get("deep", ["0"])[0] == "1"
+    deep = _bool_param(query, "deep")
     return _run("diff_pixel", a_x=a[0], a_y=a[1], b_x=b[0], b_y=b[1],
                 include_shader_values=deep)
 
@@ -198,7 +236,7 @@ def explain_prompt(diff_payload, capture):
 def api_explain(query):
     a = _parse_xy(query["a"][0])
     b = _parse_xy(query["b"][0])
-    deep = query.get("deep", ["0"])[0] == "1"
+    deep = _bool_param(query, "deep")
     payload = _run("diff_pixel", a_x=a[0], a_y=a[1], b_x=b[0], b_y=b[1],
                    include_shader_values=deep)
     return {

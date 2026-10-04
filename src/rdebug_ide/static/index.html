@@ -82,6 +82,7 @@
 <script>
 const $ = id => document.getElementById(id);
 let lastDiff = null;
+const MAX_DRAWS = 16;   // explicit scope; truncation is surfaced, not hidden
 
 async function api(path) {
   const r = await fetch(path);
@@ -131,9 +132,15 @@ function renderTrace(g) {
   lastDiff = null;
   const reads = g.edges.filter(e => e.label === "reads");
   const written = g.edges.filter(e => e.label === "written_by");
-  let html = `<div class="kv">
+  // Truncation is reported by the semantic layer. Rendering the graph without
+  // saying so would present an incomplete investigation as a complete one.
+  const trunc = g.summary && g.summary.truncatedDraws;
+  let html = trunc
+    ? `<div class="banner banner-warn">Trace truncated &mdash; showing ${g.summary.modificationCount} of a larger set of modifications. This result is incomplete.</div>`
+    : "";
+  html += `<div class="kv">
     <span class="k">target</span><span>${esc(g.summary.target ?? "")}</span>
-    <span class="k">modifications</span><span>${g.summary.modificationCount}</span>
+    <span class="k">modifications</span><span>${g.summary.modificationCount}${trunc ? " (truncated)" : ""}</span>
     <span class="k">final value</span><span>${esc(JSON.stringify(g.summary.finalValue))}</span></div>
     <h2 style="margin-top:10px">Reads</h2>`;
   for (const r of reads) {
@@ -161,7 +168,9 @@ async function doDiff() {
 async function doTrace() {
   const [x] = $("a").value.split(",");
   $("result").innerHTML = "…";
-  const g = await api(`/api/trace?x=${x}&y=${($("a").value.split(",")[1]||"0").trim()}`);
+  // The investigation scope is sent explicitly rather than relying on a
+  // server-side default the interface cannot show the user.
+  const g = await api(`/api/trace?x=${x}&y=${($("a").value.split(",")[1]||"0").trim()}&max_draws=${MAX_DRAWS}`);
   if (g.error) { $("result").innerHTML = `<span class="err">${esc(g.error)}</span>`; return; }
   renderTrace(g);
 }
