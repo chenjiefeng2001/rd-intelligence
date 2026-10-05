@@ -377,3 +377,47 @@ Q8 是 P9a 中唯一会打开真实 capture 的操作。Track A 已确认根因�
 CSS 缺失本身不能仅凭静态检查定性为 UX defect，因浏览器实际渲染尚未观察。
 **P9 不修正**：若为使验证通过而临时补 CSS，将把验证工作流变成实现修改工作流，
 破坏 P2/P3 冻结边界。可见性结论留给 P9b / P10。
+
+## Q8 Gating Probe — PASS（仅 Q8，Q1a–Q7 未执行）
+
+隔离进程、单 capture、无 IDE HTTP server、无浏览器、未安装 Playwright、
+未修改任何冻结代码。前置条件已核验：**无并发持有 `.rdc` 的进程**（0 个）。
+
+| # | 步骤 | 结果 |
+| --- | --- | --- |
+| 1 | 加载 `renderdoc`（通过 `RDEBUG_RENDERDOC_PATH`） | **loaded** |
+| 2 | 打开 `w00001_frame11.rdc` | **opened** |
+| 3 | replay 初始化（隐式于构造函数） | `initialise_epoch=1`, `live_sessions=1` |
+| 4 | 低风险语义操作：绘制枚举（`pixel_diff`/`pixel_trace` 的首个调用） | `last_draw_event_id=11`, `draw_rows=1`, `valid_event_ids=4` |
+| 5 | 显式关闭 + `shutdown_replay()` | **clean**，进程退出码 **0** |
+
+语义操作选择理由：绘制枚举与 `pixel_diff` / `pixel_trace` 的首个调用是同一个，
+因此它确实需要 replay runtime，能区分「文件可打开」与「replay 可用」，
+而不触碰更重的操作。
+
+### Q8 带出的一个意外确认：合法 eid 是稀疏的
+
+```
+valid_event_ids = 4
+valid 范围 = [1, 12]
+```
+
+`core.py` 的错误消息写的是 `events 1..12`。但合法值只有 **4 个**——**区间是连续的，
+合法集合是稀疏的**。
+
+这也就是为什么 P3-EID 不得从错误文本推导范围：若 UI 按 `1..12` 校验，
+会放行 **8 个不存在的 event**（静默错误答案），同时拒绝任何位于 `1..12` 之外的合法 event。
+**P3 当时的选择被实际数据证实**。
+
+### Q8 PASS 不意味着什么（边界保持）
+
+* **不意味着 Track A `verified repair` 已建立**。Acceptance 3/4 因 CDB 同名模块寻址限制而未直接观察的
+  gap **完全不受影响**。
+* Q8 只证明：**当前这个隔离进程、这个 capture、这个最小 replay 操作，在当前环境能够工作**。
+* 本 capture 仅 `draw_rows=1`，较薄；它证明了可用性，**未证明任何需要更复杂 replay 操作的能力**（如 `pixel_history`、shader 取值）。
+
+### 本轮进程中我的两个错误
+
+1. 首次探测调用了不存在的 `CaptureSession.open()`（实际是 `__init__` + context manager）——探测脚本错，非 Q8 failure。
+2. 隔离性检查我写成了「无 python 进程」，而约束的正确表述是「无并发**打开 capture** 的进程」。
+   实际核验按正确口径重做，结果为 0，前置条件成立。
