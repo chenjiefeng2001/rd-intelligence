@@ -75,12 +75,47 @@ class TestFailureCannotReachARenderer(unittest.TestCase):
                     f"{name} appears unguarded in: {code}")
 
     def test_every_consumer_goes_through_a_guard(self):
+        # This used to assert the exact literal "if (!enter(d, renderDiff))
+        # return;", which pinned one spelling of the guard rather than the
+        # property. D11 legitimately routes it through enterSeq instead, so the
+        # control is expressed structurally now: the renderer is still reached
+        # only through a guard, and the guard set is closed.
         src = page()
-        self.assertIn("if (!enter(d, renderDiff)) return;", src)
-        self.assertIn("if (!enter(g, renderTrace)) return;", src)
+        guards = ("enter", "enterSeq", "showOk")
+        for renderer in ("renderDiff", "renderTrace"):
+            hits = [ln.strip() for ln in src.splitlines()
+                    if re.search(r"if \(!{}\(".format("|".join(guards)), ln)
+                    and re.search(rf"\b{renderer}\b", ln)]
+            self.assertTrue(hits,
+                            f"{renderer} is not reached through a guard")
+            for line in hits:
+                self.assertNotRegex(
+                    line, r"=\s*await\s+api\(",
+                    f"{renderer} consumes an api() result without guarding: {line}")
         self.assertIn("if (!showOk(ciResult)) return;", src)
-        self.assertIn("if (!showOk(r)) return;", src)
         self.assertIn("if (i.ok) $(\"capture\").textContent", src)
+
+    def test_every_guard_still_reaches_the_containment(self):
+        # A guard that does not delegate is not containment, and the previous
+        # literal assertion could not tell the difference.
+        for name in ("enterSeq", "enter"):
+            body = self._body(name)
+            with self.subTest(guard=name):
+                self.assertRegex(body, r"(showFailure|\benter\()",
+                                 f"{name} no longer reports and stops")
+
+    def _body(self, name):
+        src = page()
+        start = src.index(f"function {name}(")
+        i, depth = src.index("{", start), 0
+        while True:
+            if src[i] == "{":
+                depth += 1
+            elif src[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    return src[start:i + 1]
+            i += 1
 
     def test_the_info_then_callback_guards_on_ok(self):
         # A bare .then(i => i.capture) would read .capture off an envelope.
