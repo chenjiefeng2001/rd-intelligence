@@ -303,3 +303,77 @@ N3-05B / D5 / D7                                 NOT AUTHORIZED
 
 在四者皆未发生前，**不得**把 `teardown crash → 怀疑 replay → 扩大 replay 排除面`
 当作新的证据链 —— 该链已被明确排除。
+
+## P9a / P9b 分装与 P9a Contract（已接受，未执行）
+
+P9 拆为两个**成本结构完全不同**的部分，不得合并：
+
+| | P9a：HTTP Boundary | P9b：Browser Rendering |
+| --- | --- | --- |
+| 依赖 | **现有依赖即可** | **需新增 Playwright**（未授权） |
+| 能证明 | 真实 status / body / kind 端到端 | 页面执行、DOM、CSS、时序、可见性 |
+| 不能证明 | **任何视觉主张** | — |
+
+### P9a 证据问题（Contract ACCEPTED，待授权执行）
+
+| ID | 证据问题 | 目标 |
+| --- | --- | --- |
+| Q1a | IDE 页面及其静态资源能否通过真实 HTTP 完整取得 | **必须证明** |
+| Q1b | 页面 JavaScript 是否在真实浏览器中执行并建立交互 | **属于 P9b** |
+| Q2 | `bad_request` 是否真实经过 HTTP → 400 → JSON body | **必须证明** |
+| Q3 | API / transport / malformed failure 是否真实形成对应 JSON | **必须证明** |
+| Q4 | 合法空结果是否仍被当作成功结果 | **必须证明** |
+| Q5 | `deep=true/false` 是否真实经过 HTTP 边界保持语义 | **可证明** |
+| Q6 | `max_draws` 是否真实经过 HTTP 边界 | **可证明** |
+| Q7 | `eid` 对 Trace/Resource 的范围是否真实保持；Diff/Explain 不带 eid | **必须证明** |
+| Q8 | 实际 capture + RenderDoc replay 能否支撑至少一个真实 IDE query | **建议证明** |
+
+**Q1 必须拆为 Q1a / Q1b。** 用 HTTP 客户端冒充浏览器来回答「页面能否执行」，
+会把浏览器证据域偷渡进可用依赖的工作流。
+
+### P9a 明确不回答
+
+* CSS 是否让 banner 醒目
+* `#result` 是否视觉上清晰
+* button 是否真的可点击
+* stale response 在真实 browser event loop 中的行为
+* loading / disabled / focus / keyboard 行为
+* 人是否能快速理解结果
+
+上述全部留给 P9b / P10。
+
+### P9a 执行约束（来自 Track A 已冻结的根因）
+
+Q8 是 P9a 中唯一会打开真实 capture 的操作。Track A 已确认根因是
+**不可重复的 shutdown 使次次初始化失效**，且 RenderDoc 不允许一个进程内两个 replay runtime。
+因此：
+
+* P9a 必须在**隔离进程**中运行，不得与任何其他打开 capture 的进程并发；
+* corpus 是共享资源，并发访问会引入与本轮无关的失败；
+* 本条约束不修改任何冻结代码，只约束**如何运行**。
+
+### 可行性事实（已只读确认）
+
+| 项 | 状态 |
+| --- | --- |
+| `renderdoc` 模块 | **可导入**（`renderdoc\\x64\\Release\\pymodules\\renderdoc.pyd`，需加入 path） |
+| 真实 capture | **存在**（`tests/workload/corpus/*.rdc`） |
+| HTTP 客户端 | `requests` / `httpx` **可用** |
+| 浏览器自动化 | **playwright / selenium 均未安装** |
+
+### 发现：无对应 CSS（记录，本阶段不处置）
+
+`showFailure()` 写入 `<div class="banner banner-warn">`，但样式表中**不存在** `.banner`
+或 `.banner-warn` 规则；`#result` 带 `class="muted"`。trace 截断横幅使用同样的两个 class。
+
+此处**严格区分**：
+
+| 结论 | 状态 |
+| --- | --- |
+| 失败横幅存在于 DOM | **VERIFIED**（P2） |
+| 失败横幅对人可见且可辨识 | **NOT_ESTABLISHED** |
+| D2 截断横幅的可见性 | **NOT_ESTABLISHED**（DOM presence VERIFIED） |
+
+CSS 缺失本身不能仅凭静态检查定性为 UX defect，因浏览器实际渲染尚未观察。
+**P9 不修正**：若为使验证通过而临时补 CSS，将把验证工作流变成实现修改工作流，
+破坏 P2/P3 冻结边界。可见性结论留给 P9b / P10。
