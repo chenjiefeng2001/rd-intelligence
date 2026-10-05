@@ -84,9 +84,73 @@ const $ = id => document.getElementById(id);
 let lastDiff = null;
 const MAX_DRAWS = 16;   // explicit scope; truncation is surfaced, not hidden
 
+// Client result envelope. Internal to this page -- it is not the semantic API
+// contract, and the server's JSON contract is unchanged.
+//
+// The server already distinguishes outcomes: route() returns a real status and
+// always a JSON body. That distinction was being discarded here, which made an
+// error body indistinguishable from a result and a transport failure an
+// unhandled rejection. The four outcomes are therefore kept apart at the
+// boundary:
+//
+//   ok:true                a valid payload, INCLUDING a valid empty one
+//   ok:false kind:api_error      the server answered, and the answer was an error
+//   ok:false kind:transport_error  fetch itself rejected
+//   ok:false kind:malformed        the response body was not JSON
+//
+// `kind` exists to choose wording only. Deciding how the page should organise or
+// display outcomes is a separate concern and is deliberately not done here.
 async function api(path) {
-  const r = await fetch(path);
-  return r.json();
+  let r;
+  try {
+    r = await fetch(path);
+  } catch (e) {
+    return {ok:false, kind:"transport_error", message:String(e)};
+  }
+  let body;
+  try {
+    body = await r.json();
+  } catch (e) {
+    return {ok:false, kind:"malformed", status:r.status,
+            message:"response body was not JSON"};
+  }
+  if (!r.ok) {
+    return {ok:false, kind:"api_error", status:r.status,
+            message:(body && body.error) || ("HTTP " + r.status)};
+  }
+  if (body && typeof body === "object" && body.error) {
+    return {ok:false, kind:"api_error", status:r.status, message:body.error};
+  }
+  return {ok:true, data:body};
+}
+
+const FAILURE_TEXT = {
+  transport_error: "Cannot reach the rdebug-ide service",
+  malformed:       "The service returned a response that is not JSON",
+  api_error:       "The service rejected the request",
+};
+
+// Entry guard. Every consumer starts here, so a failure can never reach a
+// renderer as if it were data. This is containment, not a UI state machine:
+// it reports and stops, and it does not decide how outcomes are organised.
+function showFailure(result) {
+  const kind = (result && result.kind) || "api_error";
+  const detail = (result && result.message) || "";
+  $("result").innerHTML =
+    `<div class="banner banner-warn"><b>${esc(FAILURE_TEXT[kind] || FAILURE_TEXT.api_error)}</b>` +
+    `<div>${esc(detail)}</div></div>`;
+  return false;
+}
+
+function showOk(result) {
+  if (!result || result.ok !== true) return showFailure(result);
+  return true;
+}
+
+function enter(result, render) {
+  if (!result || result.ok !== true) return showFailure(result);
+  render(result.data);
+  return true;
 }
 
 function esc(s){ return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
@@ -123,7 +187,8 @@ function renderDiff(d) {
 }
 
 async function showEv(id) {
-  const r = await fetch(`/api/resource?id=${encodeURIComponent("ResourceId::" + id.replace(/\D/g,""))}`).catch(()=>null);
+  const r = await api(`/api/resource?id=${encodeURIComponent("ResourceId::" + id.replace(/\D/g,""))}`);
+  if (!showOk(r)) return;
   $("evdetail").style.display = "block";
   $("evdetail").textContent = "loading…";
 }
@@ -159,10 +224,9 @@ async function doDiff() {
   const a = $("a").value, b = $("b").value, deep = $("deep").checked ? 1 : 0;
   $("result").innerHTML = "…";
   const d = await api(`/api/diff?a=${a}&b=${b}&deep=${deep}`);
-  if (d.error) { $("result").innerHTML = `<span class="err">${esc(d.error)}</span>`; return; }
-  renderDiff(d);
+  if (!enter(d, renderDiff)) return;
   const p = await api(`/api/explain?a=${a}&b=${b}&deep=${deep}`);
-  $("prompt").value = p.prompt || "";
+  $("prompt").value = (p.ok && p.data && p.data.prompt) || "";
 }
 
 async function doTrace() {
@@ -171,12 +235,13 @@ async function doTrace() {
   // The investigation scope is sent explicitly rather than relying on a
   // server-side default the interface cannot show the user.
   const g = await api(`/api/trace?x=${x}&y=${($("a").value.split(",")[1]||"0").trim()}&max_draws=${MAX_DRAWS}`);
-  if (g.error) { $("result").innerHTML = `<span class="err">${esc(g.error)}</span>`; return; }
-  renderTrace(g);
+  if (!enter(g, renderTrace)) return;
 }
 
 async function loadCi() {
-  const ci = await api("/api/ci");
+  const ciResult = await api("/api/ci");
+  if (!showOk(ciResult)) return;
+  const ci = ciResult.data;
   if (!ci.enabled) return;
   const el = $("cibase");
   if (ci.status === "pass") { el.innerHTML = `<span class="badge pass">CI PASS</span>`; return; }
@@ -196,7 +261,7 @@ $("btnTrace").onclick = doTrace;
 $("btnExplain").onclick = doDiff;
 $("btnCopy").onclick = () => { navigator.clipboard.writeText($("prompt").value); };
 
-api("/api/info").then(i => { $("capture").textContent = i.capture; });
+api("/api/info").then(i => { if (i.ok) $("capture").textContent = i.data.capture; });
 loadCi();
 </script>
 </body>
