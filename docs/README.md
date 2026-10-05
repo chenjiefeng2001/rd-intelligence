@@ -12,7 +12,6 @@ a second taxonomy is exactly what the classification contract forbids.
 Correctness of this file, including the values in the Role column, is enforced by
 `tests/unit/test_docs_index.py`.
 
-
 ## Start here
 
 | Document | Role / freshness |
@@ -113,14 +112,14 @@ Machine-readable companions, listed for completeness:
 ## Known limits of this index
 
 * The unclassified documents are grouped by topic only. That grouping is not
-  schema and confers no status; a document may be re-grouped without consequence,
-  but it may not gain a role here.
+ schema and confers no status; a document may be re-grouped without consequence,
+ but it may not gain a role here.
 * The index does not restate document contents. Where it lists a role or
-  freshness value, that value is copied from front matter and the audit fails if
-  the two disagree.
+ freshness value, that value is copied from front matter and the audit fails if
+ the two disagree.
 * Adding, renaming or deleting a document requires updating this file; the audit
-  fails on an unlisted file, a dangling link, or a document listed twice.
+ fails on an unlisted file, a dangling link, or a document listed twice.
 * A document that gains front matter must have its Role cell corrected to match
-  the declaration, not left reading *not classified*.
+ the declaration, not left reading *not classified*.
 * This index does not list itself.
 

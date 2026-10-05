@@ -6,34 +6,34 @@ RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / repl
 > - Phase 1a → 5d 全部完成，每阶段有 `docs/validation/` 下的验证报告与原始数据。
 > - **唯一开放的 roadmap 项是 Real-world Validation（A/B/C），尚未开始**，且其前置条件（≥1 周真实负载遥测）尚不满足。
 > - 系统性排查「失败被伪装成结果」类缺陷，**共修复 20 项**并全部提交入库。
->   其中最严重的一项（`GetAllUsedDescriptors` 失败被当成空列表 → `diff-pixel`
->   报 **`same`**）此前一路通过 15 项机械审计——已补上针对该类缺陷的
->   §2.5 / §2.6 审计。详见 `../STATUS.md` §2.3。
-> - ⚠️ **§2.9 唯一未满足的 MUST**：MCP/IDE 仍走遗留进程内 `SessionManager`。
->   已实测确认为真实隔离问题（同一进程内 2 个 ReplayController 与 1 个
->   replay runtime 并存，即 W1-R1 F-1/F-2 形态）。
->   **当前阶段 M0：迁移范围与验收设计已交付**（`docs/SESSIONMANAGER-MIGRATION-SCOPE.md`），
->   含两道已验证的机械架构 Gate 与 7 项待裁决。M0 未改任何生产代码。
+> 其中最严重的一项（`GetAllUsedDescriptors` 失败被当成空列表 → `diff-pixel`
+> 报 **`same`**）此前一路通过 15 项机械审计——已补上针对该类缺陷的
+> §2.5 / §2.6 审计。详见 `../STATUS.md` §2.3。
+> - Note: **§2.9 唯一未满足的 MUST**：MCP/IDE 仍走遗留进程内 `SessionManager`。
+> 已实测确认为真实隔离问题（同一进程内 2 个 ReplayController 与 1 个
+> replay runtime 并存，即 W1-R1 F-1/F-2 形态）。
+> **当前阶段 M0：迁移范围与验收设计已交付**（`docs/SESSIONMANAGER-MIGRATION-SCOPE.md`），
+> 含两道已验证的机械架构 Gate 与 7 项待裁决。M0 未改任何生产代码。
 > - 跨仓库完成情况总报告见 `../STATUS.md`。
 
 ## 架构边界
 
 ```
-        AI / IDE / 其他消费者（未来，全部在本项目之外或最外层）
-                        │
-             ┌──────────▼──────────┐
-             │   Layer 2: rdebug   │   Query + Lazy Graph + Analysis
-             │   （本仓库主体）      │   纯 JSON 证据输出
-             └──────────┬──────────┘
-                        │
-             ┌──────────▼──────────┐
-             │  Layer 1: adapter   │   把 renderdoc 模块包装成稳定查询接口
-             └──────────┬──────────┘
-                        │  renderdoc.pyd / renderdoc.so
-             ┌──────────▼──────────┐
-             │      RenderDoc      │   Layer 0：保持原样，不做任何修改
-             │  Capture/Replay/RDC │   github.com/baldurk/renderdoc (MIT)
-             └─────────────────────┘
+ AI / IDE / 其他消费者（未来，全部在本项目之外或最外层）
+ │
+ ┌────────────────────┐
+ │ Layer 2: rdebug │ Query + Lazy Graph + Analysis
+ │ （本仓库主体） │ 纯 JSON 证据输出
+ └──────────┬──────────┘
+ │
+ ┌────────────────────┐
+ │ Layer 1: adapter │ 把 renderdoc 模块包装成稳定查询接口
+ └──────────┬──────────┘
+ │ renderdoc.pyd / renderdoc.so
+ ┌────────────────────┐
+ │ RenderDoc │ Layer 0：保持原样，不做任何修改
+ │ Capture/Replay/RDC │ github.com/baldurk/renderdoc (MIT)
+ └─────────────────────┘
 ```
 
 设计红线：
@@ -53,8 +53,8 @@ RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / repl
 1. 按 RenderDoc 源码中 `docs/python_api/python_module.rst` 的说明构建；
 2. Windows 下构建产物为 `pymodules/<平台>/<配置>/renderdoc.pyd`（同目录含 `renderdoc.dll`）；
 3. 让本工具找到它，任选其一：
-   - 设置环境变量 `RDEBUG_RENDERDOC_PATH=<该目录>`
-   - 命令行传 `--rd-path <该目录>`
+ - 设置环境变量 `RDEBUG_RENDERDOC_PATH=<该目录>`
+ - 命令行传 `--rd-path <该目录>`
 
 纯逻辑部分（events 过滤、lazy graph 组装、CLI）不依赖该模块即可测试。
 
@@ -74,10 +74,10 @@ rdebug pipeline capture.rdc --eid 1234
 rdebug usage capture.rdc --resource 91
 rdebug pixel-history capture.rdc --target 91 --x 824 --y 391
 rdebug trace-pixel capture.rdc --x 824 --y 391
-rdebug trace-resource capture.rdc --resource ResourceId::91   # Phase 2b: writers/readers
-rdebug debug-pixel capture.rdc --x 824 --y 391            # 自动从 pixel history 选 fragment
+rdebug trace-resource capture.rdc --resource ResourceId::91 # Phase 2b: writers/readers
+rdebug debug-pixel capture.rdc --x 824 --y 391 # 自动从 pixel history 选 fragment
 rdebug debug-pixel capture.rdc --x 824 --y 391 --primitive 3 --sample 0
-rdebug diff-pixel capture.rdc --a 320,240 --b 10,10       # Phase 3: first divergence
+rdebug diff-pixel capture.rdc --a 320,240 --b 10,10 # Phase 3: first divergence
 ```
 
 所有命令向 stdout 输出严格 JSON（NaN/Inf 已字符串化），错误走 stderr 的 `{"error": ...}` 并返回非零退出码，便于脚本与未来的 AI Agent 直接消费。
@@ -88,15 +88,15 @@ rdebug diff-pixel capture.rdc --a 320,240 --b 10,10       # Phase 3: first diver
 
 ```json
 {
-  "id": "a1b2c3d4e5f6",
-  "capture": "capture.rdc",
-  "eventId": 1821,
-  "resourceId": "ResourceId(91)",
-  "subresource": {"mip": 0, "slice": 0, "sample": 0},
-  "location": {"x": 824, "y": 391},
-  "operation": "writes",
-  "source": "ReplayController.PixelHistory",
-  "data": {}
+ "id": "a1b2c3d4e5f6",
+ "capture": "capture.rdc",
+ "eventId": 1821,
+ "resourceId": "ResourceId(91)",
+ "subresource": {"mip": 0, "slice": 0, "sample": 0},
+ "location": {"x": 824, "y": 391},
+ "operation": "writes",
+ "source": "ReplayController.PixelHistory",
+ "data": {}
 }
 ```
 
@@ -113,20 +113,20 @@ rdebug diff-pixel capture.rdc --a 320,240 --b 10,10       # Phase 3: first diver
 
 ```json
 {
-  "nodes": [
-    {"id": "pixel:824,391", "kind": "pixel", "attrs": {"x": 824, "y": 391}},
-    {"id": "target:ResourceId(91)", "kind": "target", "attrs": {"resource": "ResourceId(91)"}},
-    {"id": "draw:1234", "kind": "draw", "attrs": {"eventId": 1234, "primitives": [3], "passed": 1, "failed": 0}},
-    {"id": "shader:1234:ResourceId(7)", "kind": "shader", "attrs": {"stage": "Pixel"}},
-    {"id": "resource:ResourceId(42)", "kind": "resource", "attrs": {}}
-  ],
-  "edges": [
-    {"from": "draw:1234", "to": "target:ResourceId(91)", "label": "writes",
-     "evidence": [{"id": "...", "eventId": 1234, "operation": "writes",
-                    "data": {"primitives": [3], "postMod": {"float": [0,0,0,1]}}}]},
-    {"from": "shader:1234:ResourceId(7)", "to": "resource:ResourceId(42)", "label": "reads"}
-  ],
-  "summary": {"modificationCount": 2, "finalValue": {"float": [0,0,0,1]}, "truncatedDraws": false}
+ "nodes": [
+ {"id": "pixel:824,391", "kind": "pixel", "attrs": {"x": 824, "y": 391}},
+ {"id": "target:ResourceId(91)", "kind": "target", "attrs": {"resource": "ResourceId(91)"}},
+ {"id": "draw:1234", "kind": "draw", "attrs": {"eventId": 1234, "primitives": [3], "passed": 1, "failed": 0}},
+ {"id": "shader:1234:ResourceId(7)", "kind": "shader", "attrs": {"stage": "Pixel"}},
+ {"id": "resource:ResourceId(42)", "kind": "resource", "attrs": {}}
+ ],
+ "edges": [
+ {"from": "draw:1234", "to": "target:ResourceId(91)", "label": "writes",
+ "evidence": [{"id": "...", "eventId": 1234, "operation": "writes",
+ "data": {"primitives": [3], "postMod": {"float": [0,0,0,1]}}}]},
+ {"from": "shader:1234:ResourceId(7)", "to": "resource:ResourceId(42)", "label": "reads"}
+ ],
+ "summary": {"modificationCount": 2, "finalValue": {"float": [0,0,0,1]}, "truncatedDraws": false}
 }
 ```
 
@@ -142,22 +142,22 @@ rdebug debug-pixel capture.rdc --x 824 --y 391
 
 ```json
 {
-  "eventId": 1821,
-  "pixel": {"x": 824, "y": 391},
-  "primitive": 3,
-  "shader": {"stage": "Pixel", "entryPoint": "PSMain", "resource": "ResourceId(7)"},
-  "inputs": [{"name": "input.color", "type": "Float", "rows": 1, "columns": 4}],
-  "outputs": {},
-  "steps": [
-    {"stepIndex": 5, "nextInstruction": 12,
-     "source": {"fileIndex": 0, "line": 42, "disassemblyLine": 17},
-     "disassemblyText": "mov o0.xyzw, r0.xyzw",
-     "sourceFile": "ps.hlsl",
-     "changes": [{"before": {...}, "after": {...}}]}
-  ],
-  "stepCount": 87,
-  "truncated": false,
-  "evidence": [{"id": "...", "operation": "shader_debug"}]
+ "eventId": 1821,
+ "pixel": {"x": 824, "y": 391},
+ "primitive": 3,
+ "shader": {"stage": "Pixel", "entryPoint": "PSMain", "resource": "ResourceId(7)"},
+ "inputs": [{"name": "input.color", "type": "Float", "rows": 1, "columns": 4}],
+ "outputs": {},
+ "steps": [
+ {"stepIndex": 5, "nextInstruction": 12,
+ "source": {"fileIndex": 0, "line": 42, "disassemblyLine": 17},
+ "disassemblyText": "mov o0.xyzw, r0.xyzw",
+ "sourceFile": "ps.hlsl",
+ "changes": [{"before": {...}, "after": {...}}]}
+ ],
+ "stepCount": 87,
+ "truncated": false,
+ "evidence": [{"id": "...", "operation": "shader_debug"}]
 }
 ```
 
@@ -175,15 +175,15 @@ from rdebug.analysis.pixel_trace import trace_pixel
 from rdebug.analysis.shader_trace import debug_pixel
 
 with CaptureSession("capture.rdc") as s:
-    graph = trace_pixel(s, x=824, y=391)
-    trace = debug_pixel(s, x=824, y=391)   # 自动选 fragment 并步进 shader
+ graph = trace_pixel(s, x=824, y=391)
+ trace = debug_pixel(s, x=824, y=391) # 自动选 fragment 并步进 shader
 ```
 
 ## 测试与质量
 
 ```bash
-python -m unittest discover -s tests          # 纯逻辑单元测试，无需 renderdoc 模块
-python -m ruff check src tests                # 可选
+python -m unittest discover -s tests # 纯逻辑单元测试，无需 renderdoc 模块
+python -m ruff check src tests # 可选
 
 # 集成测试：需要真实模块 + capture，缺省自动跳过
 set RDEBUG_RENDERDOC_PATH=C:\path\to\built\pymodules
@@ -194,31 +194,31 @@ python -m unittest discover -s tests
 目录结构：
 
 ```
-tests/                            # 核心：74 tests（unit 65 + integration 9）
-├── unit/                         # 不依赖 GPU / renderdoc 模块，CI 可全跑
-│   ├── test_ci_gate.py
-│   ├── test_clear_semantics.py
-│   ├── test_cli.py
-│   ├── test_dataflow_phase2c.py
-│   ├── test_events_logic.py
-│   ├── test_evidence.py
-│   ├── test_pixel_diff.py
-│   ├── test_pixel_trace_graph.py
-│   ├── test_resource_flow.py
-│   └── test_shader_trace_build.py
-├── integration/                  # 通过环境变量开启，验证真实 replay 路径
-│   └── test_real_replay.py
-└── workload/                     # 10 tests；需 corpus + RDEBUG_RENDERDOC_PATH
-    └── ...
+tests/ # 核心：74 tests（unit 65 + integration 9）
+├── unit/ # 不依赖 GPU / renderdoc 模块，CI 可全跑
+│ ├── test_ci_gate.py
+│ ├── test_clear_semantics.py
+│ ├── test_cli.py
+│ ├── test_dataflow_phase2c.py
+│ ├── test_events_logic.py
+│ ├── test_evidence.py
+│ ├── test_pixel_diff.py
+│ ├── test_pixel_trace_graph.py
+│ ├── test_resource_flow.py
+│ └── test_shader_trace_build.py
+├── integration/ # 通过环境变量开启，验证真实 replay 路径
+│ └── test_real_replay.py
+└── workload/ # 10 tests；需 corpus + RDEBUG_RENDERDOC_PATH
+ └── ...
 
-tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与核心完全隔离
+tests_transport/ # 31 tests；MCP/IDE 传输层不变量，与核心完全隔离
 ├── test_transport.py
 ├── test_session_manager.py
 ├── test_observability.py
 └── test_ide_app.py
 ```
 
-> ⚠️ `tests_transport/` 没有 `__init__.py`，且不在 `pyproject.toml` 的
+> Note: `tests_transport/` 没有 `__init__.py`，且不在 `pyproject.toml` 的
 > `testpaths = ["tests"]` 之内——默认 `pytest` 会**静默跳过**这 31 个测试。
 > 需显式运行：`python -m unittest discover -s tests_transport`。
 
@@ -231,46 +231,46 @@ tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与�
 - [x] Validation：性能基线（Small/Medium 档、重复查询曲线）→ **判定暂不需要 `.rdc.idx`**（见 `docs/validation/perf-baseline.md`）
 - [x] Phase 2b：`trace-resource`（writer/reader 分类 + evidence，基于 `GetUsage`）
 - [x] Phase 2c：Pixel→Shader→Resource→Writer 局部数据流（`PixelHistoryResult` 一等共享、
-  reads 一层展开、history 复用回归 ≈省一半以上，见 `docs/validation/perf-baseline.md`）
+ reads 一层展开、history 复用回归 ≈省一半以上，见 `docs/validation/perf-baseline.md`）
 - [x] Phase 3（第一版）：`diff-pixel` 同 capture 两像素局部因果链 diff——
-  六层比较（pixel_value/fragment/shader/input_bindings/shader_input_values/resource_provenance）、
-  same|different|unknown 三态（无相似度）、最深因果层为 firstDivergence、全链 evidence 回链；
-  跨 capture identity 语义与采样值提取留待后续（当前 `shader_input_values` 默认 unknown）
+ 六层比较（pixel_value/fragment/shader/input_bindings/shader_input_values/resource_provenance）、
+ same|different|unknown 三态（无相似度）、最深因果层为 firstDivergence、全链 evidence 回链；
+ 跨 capture identity 语义与采样值提取留待后续（当前 `shader_input_values` 默认 unknown）
 - [x] Phase 3a closure：Medium 档插桩验证（history 恰好 2 次、无重复展开、语义稳定，
-  见 `docs/validation/phase3a-closure.md`）+ **Semantic API v1 冻结**
+ 见 `docs/validation/phase3a-closure.md`）+ **Semantic API v1 冻结**
 - [x] Phase 3b①：Deep Diff（`--include-shader-values`，默认关闭，基础语义不变）
 - [x] Phase 4a：Thin MCP Transport（`rdebug-mcp`，仅四个 tool，无编排/无分析/无 RenderDoc API；
-  协议级冒烟通过，transport 测试与核心测试完全隔离）
+ 协议级冒烟通过，transport 测试与核心测试完全隔离）
 - [x] Phase 4b：真实 LLM tool-use 验证（被测模型 ox-alpha，self-play 经真实 MCP transport；
-  三实验 5/5 通过：tool selection / argument correctness / evidence grounding /
-  unknown discipline / no hallucinated API，见 `docs/validation/phase4b-trajectory.md`）
+ 三实验 5/5 通过：tool selection / argument correctness / evidence grounding /
+ unknown discipline / no hallucinated API，见 `docs/validation/phase4b-trajectory.md`）
 - [x] Clear 语义修正：`fragment_candidate` 谓词（clear 保留 pixel 事实、永不成为 fragment
-  候选、不携带 shader evidence）
+ 候选、不携带 shader evidence）
 - [x] Phase 4c：Grounded reasoning benchmark（5 指标 × 4 case 全通过；首轮即抓出 diff 层
-  evidence 缺口并修复，见 `docs/validation/phase4c-reasoning.md`）
+ evidence 缺口并修复，见 `docs/validation/phase4c-reasoning.md`）
 - [x] Phase 4d：Transport session reuse（SessionManager：路径隔离/LRU/健康探测/失效恢复；
-  稳态 trajectory **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4，
-  见 `docs/validation/phase4d-session-reuse.md`）
+ 稳态 trajectory **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4，
+ 见 `docs/validation/phase4d-session-reuse.md`）
 - [x] **v1 Architecture Freeze**（`c060ba2`）：Stable Core = Semantic API v1 + Evidence Model；
-  所有前端（MCP/CLI/IDE/CI）只经 Stable Core 消费，禁止直连 RenderDoc API
+ 所有前端（MCP/CLI/IDE/CI）只经 Stable Core 消费，禁止直连 RenderDoc API
 - [x] Phase 5a：CI 回归试点（`ci-record`/`ci-check` 确定性门禁：基线指纹 + evidence 回链 +
-  机器可读 verdict，AI 仅作解释器，见 `docs/validation/phase5a-ci.md`）
+ 机器可读 verdict，AI 仅作解释器，见 `docs/validation/phase5a-ci.md`）
 - [x] Phase 5b：IDE 极简原型（`rdebug-ide`：CI failure → pixel → firstDivergence →
-  provenance → evidence → grounded AI prompt，仅消费 Stable Core，
-  见 `docs/validation/phase5b-ide.md`）
+ provenance → evidence → grounded AI prompt，仅消费 Stable Core，
+ 见 `docs/validation/phase5b-ide.md`）
 - [x] Phase 5c（重定义）：Production Observation——opt-in JSONL 遥测
-  （`RDEBUG_TELEMETRY`），transport 层记录 session/query 生命周期与延迟；
-  **并发层冻结**：除非真实数据证明瓶颈，且届时优先进程隔离
-  （见 `docs/validation/phase5c-observability.md`）
+ （`RDEBUG_TELEMETRY`），transport 层记录 session/query 生命周期与延迟；
+ **并发层冻结**：除非真实数据证明瓶颈，且届时优先进程隔离
+ （见 `docs/validation/phase5c-observability.md`）
 - [x] **v1 Design Spec 冻结**：`docs/DESIGN_SPEC.md`（五层边界 MUST/MUST-NOT +
-  数据驱动决策规则 + 质量门）+ `scripts/audit_boundaries.py` 机械合规审计（8/8）
+ 数据驱动决策规则 + 质量门）+ `scripts/audit_boundaries.py` 机械合规审计（8/8）
 - [x] Phase 5d：Workload Test v1（14-capture S/M/L 语料；确定性 / 冷热 / evidence /
-  三态 / 隔离 / LRU / 错误注入 / MCP 契约 / 压测九个套件，共 10 tests）。
-  Round 1 GATE FAIL 暴露 WLF-1（LRU 逐出路径原生 AV），Round 2（2026-08-25）
-  **GATE PASS**：2193 queries、correctness 11/11、0 violation，见
-  `docs/validation/phase5d-workload.md`）
+ 三态 / 隔离 / LRU / 错误注入 / MCP 契约 / 压测九个套件，共 10 tests）。
+ Round 1 GATE FAIL 暴露 WLF-1（LRU 逐出路径原生 AV），Round 2（2026-08-25）
+ **GATE PASS**：2193 queries、correctness 11/11、0 violation，见
+ `docs/validation/phase5d-workload.md`）
 - [ ] Runtime Isolation（§2.9 WorkerManager 模型）—— **代码已写但未提交、未接线、
-  无测试覆盖**。详见下方「Runtime Isolation 实现状态」。
+ 无测试覆盖**。详见下方「Runtime Isolation 实现状态」。
 
 - [x] **P0/P1** Baseline Freeze + UX Readiness 审计（11 项缺陷，全部静默失败）
 - [x] **P2-A** D1 `deep` 语义一致 + D2 trace scope 可见
@@ -308,18 +308,18 @@ tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与�
 
 - spawn 后 `mem_baseline = 198.88 MB`（修复前恒为 `None`）；
 - 私有内存增长实测 **~800 KB/查询**（w00016 约 170 KB/查询），
-  与 W1 的 230–500 KB/query 观测同量级；
+ 与 W1 的 230–500 KB/query 观测同量级；
 - `max_private_memory_delta` 触发器**实际触发**：6 个 worker 代次、5 次回收，
-  `recycle_events` 记录 `reason: "max_private_memory_delta"`；
+ `recycle_events` 记录 `reason: "max_private_memory_delta"`；
 - **§2.9「语义结果不依赖 worker 生命周期」实测成立**：跨 6 代次
-  语义 payload 逐字节一致（该性质在修复前无法验证——因为从不发生回收）。
+ 语义 payload 逐字节一致（该性质在修复前无法验证——因为从不发生回收）。
 
 **仍存在的差距**
 
 | 状态 | 项 |
 | --- | --- |
-| ⚠️ 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST。**迁移设计见 `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`（M0，未实施）** |
-| ⚠️ 无 CI | 仓库无 `.github/workflows`。上述测试与边界审计需手工执行 |
+| Note: 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST。**迁移设计见 `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`（M0，未实施）** |
+| Note: 无 CI | 仓库无 `.github/workflows`。上述测试与边界审计需手工执行 |
 
 ### 语义层「失败不得冒充观测」（2026-09-29 第二轮修复）
 
@@ -352,27 +352,27 @@ unknown 升级为确定结论。多个路径曾把「查不到」转成空值，
 （需真实 capture）。边界审计 17/17 + 1 deviation，`ruff check` 全绿。
 
 - [ ] **Real-world Validation**（唯一开放的 roadmap 项，NOT STARTED）：
-  A. 真实项目试点（非 fixture capture 走完整链路）→
-  B. 数据驱动优化（只解决 telemetry 证明的问题）→
-  C. v1.1 决策（仅由真实需求触发；跨 capture matching 继续冻结）
+ A. 真实项目试点（非 fixture capture 走完整链路）→
+ B. 数据驱动优化（只解决 telemetry 证明的问题）→
+ C. v1.1 决策（仅由真实需求触发；跨 capture matching 继续冻结）
 
-  `docs/REAL_WORLD_VALIDATION.md` 的 5 项检查全部未勾选。前置条件尚未满足：
-  磁盘上仅有 **1h51m** 遥测（2026-08-25 04:45–06:37，710 事件），
-  不构成 `REAL_WORLD_VALIDATION.md:53` 要求的「≥1 周真实负载归档」。
-  该文档同时写明「从此刻起，『不开发』是默认正确的工程动作」。
+ `docs/REAL_WORLD_VALIDATION.md` 的 5 项检查全部未勾选。前置条件尚未满足：
+ 磁盘上仅有 **1h51m** 遥测（2026-08-25 04:45–06:37，710 事件），
+ 不构成 `REAL_WORLD_VALIDATION.md:53` 要求的「≥1 周真实负载归档」。
+ 该文档同时写明「从此刻起，『不开发』是默认正确的工程动作」。
 
-  跨机器确定性（D7 / N1）为 OPEN 证据缺口——B/C 机器 `unavailable`，
-  不作跨机器声明；且 N3 侧的 D7 缺口**不能靠替换渲染器关闭**。
+ 跨机器确定性（D7 / N1）为 OPEN 证据缺口——B/C 机器 `unavailable`，
+ 不作跨机器声明；且 N3 侧的 D7 缺口**不能靠替换渲染器关闭**。
 
 ## Stable Core（冻结）
 
 ```text
 RenderDoc (zero modifications)
-      │
+ │
 rd-intelligence Stable Core
-  ├─ Semantic API v1: trace_pixel / trace_resource / debug_pixel / diff_pixel
-  └─ Evidence Model: 稳定 id + eventId/resourceId/operation 回链
-      │
+ ├─ Semantic API v1: trace_pixel / trace_resource / debug_pixel / diff_pixel
+ └─ Evidence Model: 稳定 id + eventId/resourceId/operation 回链
+ │
 Transports: MCP ｜ CLI ｜ CI ｜ IDE（均只消费 Stable Core）
 ```
 
@@ -383,7 +383,7 @@ Transports: MCP ｜ CLI ｜ CI ｜ IDE（均只消费 Stable Core）
 
 ```bash
 pip install -e .[mcp]
-rdebug-mcp          # stdio MCP server，四个 tool：trace_pixel / trace_resource / debug_pixel / diff_pixel
+rdebug-mcp # stdio MCP server，四个 tool：trace_pixel / trace_resource / debug_pixel / diff_pixel
 ```
 
 边界（由 `tests_transport/` 不变量锁定）：
@@ -393,22 +393,22 @@ rdebug-mcp          # stdio MCP server，四个 tool：trace_pixel / trace_resou
 - 结果（含 evidence）原样 JSON 透传，不创建第二套 domain model；
 - 运行期错误以 `{"error": ..., "tool": "..."}` JSON 返回，不中断会话；
 - 会话复用已实现（Phase 4d `SessionManager`：路径隔离 / LRU / 健康探测 /
-  失效恢复），稳态 **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4。
-  ⚠️ 但 `server.py:34` 当前仍实例化**遗留的进程内** `SessionManager`，
-  未迁移到 §2.9 的 WorkerManager 模型；W1-R1 的 F-1/F-2（多 controller 共存导致
-  静默值污染 / 原生挂起 / 0xC0000005）正发生在该路径上。
-  缓解：Agent/IDE 切换 capture 即重建 transport。见 `DESIGN_SPEC.md` §2.9。
+ 失效恢复），稳态 **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4。
+ Note: 但 `server.py:34` 当前仍实例化**遗留的进程内** `SessionManager`，
+ 未迁移到 §2.9 的 WorkerManager 模型；W1-R1 的 F-1/F-2（多 controller 共存导致
+ 静默值污染 / 原生挂起 / 0xC0000005）正发生在该路径上。
+ 缓解：Agent/IDE 切换 capture 即重建 transport。见 `DESIGN_SPEC.md` §2.9。
 
 客户端配置示例（Claude Desktop / 任意 MCP client）：
 
 ```json
 {
-  "mcpServers": {
-    "rdebug": {
-      "command": "rdebug-mcp",
-      "env": { "RDEBUG_RENDERDOC_PATH": "C:\\path\\to\\pymodules" }
-    }
-  }
+ "mcpServers": {
+ "rdebug": {
+ "command": "rdebug-mcp",
+ "env": { "RDEBUG_RENDERDOC_PATH": "C:\\path\\to\\pymodules" }
+ }
+ }
 }
 ```
 
@@ -428,7 +428,7 @@ from rdebug import trace_pixel, trace_resource, debug_pixel, diff_pixel
 ## 设计原则（由真实验证固化）
 
 - **ResourceId 是不透明引用**：Layer 2 一律使用 `rdebug.model.ResourceRef`，禁止 `int` 假设；
-  `ResourceId::NN` 字符串形式只是 adapter 边界格式。
+ `ResourceId::NN` 字符串形式只是 adapter 边界格式。
 - **每条 data-flow 边必须携带 evidence**，可回链 `eventId/resourceId/operation` → RenderDoc 原始事实。
 - **fixture 负责确定性回归，真实游戏 capture 负责真实行为**，两者不可互相替代。
 
@@ -470,17 +470,17 @@ Phase 1–5 增加了能力，本轮**修正已存在的能力在 UI 中产生�
 由此确立的阶梯：
 
 ```
-pure-function semantics        纯函数语义
-      ↓
-whole-script parseability      整页 <script> 可解析
-      ↓
-static/unit integration        静态 / 单元集成
-      ↓
-real HTTP / IDE execution      真实 HTTP 与 IDE 执行
-      ↓
-browser propagation            浏览器传播
-      ↓
-human acceptance               人工验收
+pure-function semantics 纯函数语义
+ ↓
+whole-script parseability 整页 <script> 可解析
+ ↓
+static/unit integration 静态 / 单元集成
+ ↓
+real HTTP / IDE execution 真实 HTTP 与 IDE 执行
+ ↓
+browser propagation 浏览器传播
+ ↓
+human acceptance 人工验收
 ```
 
 **跨越中间层级是无效的。** 停在第一层却宣称完成，正是那次冻结失效的原因。
@@ -491,18 +491,18 @@ human acceptance               人工验收
 
 ```
 implementation
-  → targeted behavior tests
-  → reversible mutation（可逆缺陷注入）
-  → revert-only 分层独立性
-  → restore → full regression → freeze
+ → targeted behavior tests
+ → reversible mutation（可逆缺陷注入）
+ → revert-only 分层独立性
+ → restore → full regression → freeze
 ```
 
 两条由此确立的判定原则：
 
 1. **控制层先证明自己能抓住错误，绿色结果才有意义。**
-   `588 passed` 不是冻结依据；可逆缺陷注入 + revert-only 分层独立性 + 动态行为证据才是。
+ `588 passed` 不是冻结依据；可逆缺陷注入 + revert-only 分层独立性 + 动态行为证据才是。
 2. **区分「修复存在性控制」与「防止过度实现控制」。**
-   前者随修复回退而失败；后者（如禁止引入状态机）在回退后**必须继续通过**。
+ 前者随修复回退而失败；后者（如禁止引入状态机）在回退后**必须继续通过**。
 
 ### 阶段矩阵
 
@@ -541,25 +541,25 @@ Q4 是**证据不足**（本 capture 无自然案例，**未制造特殊场景�
 ### 当前未建立的事项（如实列出）
 
 * **`browser-level UI propagation = NOT_ESTABLISHED`。**
-  所有 UI 层结论目前建立在**源码层断言与 Node 中执行的页面自身函数**之上，
-  从未在真实浏览器中渲染观察过。
+ 所有 UI 层结论目前建立在**源码层断言与 Node 中执行的页面自身函数**之上，
+ 从未在真实浏览器中渲染观察过。
 * **失败横幅的可见性未建立。** `showFailure()` 写入 DOM 已 VERIFIED，
-  但样式表中**不存在** `.banner` / `.banner-warn` 规则，`#result` 带 `class="muted"`。
-  这**不作为 UX defect 定性**——静态检查无法在浏览器渲染前判定可见性；
-  也**刻意不在验证过程中补 CSS**，否则会把验证工作流变成实现修改工作流。
+ 但样式表中**不存在** `.banner` / `.banner-warn` 规则，`#result` 带 `class="muted"`。
+ 这**不作为 UX defect 定性**——静态检查无法在浏览器渲染前判定可见性；
+ 也**刻意不在验证过程中补 CSS**，否则会把验证工作流变成实现修改工作流。
 * **HTTP status 不是充分的错误判别依据。** 已分类错误返回 400；**未分类**错误返回
-  **200 + error body**（无 `kind`）。正确契约是 `status + body 形状 + kind（若存在）` 三者合取。
-  这与已冻结的客户端行为一致，**未发现回归**；记为开放设计问题，**不定性为缺陷**。
+ **200 + error body**（无 `kind`）。正确契约是 `status + body 形状 + kind（若存在）` 三者合取。
+ 这与已冻结的客户端行为一致，**未发现回归**；记为开放设计问题，**不定性为缺陷**。
 
 ### 两条从错误中固化的判定原则
 
 1. **event-level draw 数量 ≠ query-level analysis cardinality。**
-   `draw_event_ids=[11]`（带 drawcall 的 event）**不能**用于推导 `max_draws` 是否退化；
-   `max_draws` 约束的是被分析的 modification 序列。「单 draw ⇒ 参数无效」这一推断**已被实测推翻**。
+ `draw_event_ids=[11]`（带 drawcall 的 event）**不能**用于推导 `max_draws` 是否退化；
+ `max_draws` 约束的是被分析的 modification 序列。「单 draw ⇒ 参数无效」这一推断**已被实测推翻**。
 
 2. **字段级语义证据优先于 payload 大小。**
-   trace 截断边界处响应**仅相差 1 byte**；以字节长度为判据会漏掉真实信号。
-   判定必须基于 `analyzedDraws` / `truncatedDraws` 等**字段**。
+ trace 截断边界处响应**仅相差 1 byte**；以字节长度为判据会漏掉真实信号。
+ 判定必须基于 `analyzedDraws` / `truncatedDraws` 等**字段**。
 
 ### 未启动的工作流
 

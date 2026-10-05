@@ -142,10 +142,10 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | worker 返回**已分类**错误（有 `error` 且有 `kind`） | **400** | `{"error", "kind", "tool"?}` |
 | 抛出 `RDebuggerError` | **400** | `{"error"}` + `"kind"`（若有） |
 | 抛出 `KeyError`/`IndexError`/`ValueError`/`TypeError` | **400** | `{"error": "invalid request parameters: …", "endpoint"}` |
-| **worker 返回未分类错误**（有 `error`，**无 `kind`**） | **200** ⚠ | `{"error", "tool"}` |
+| **worker 返回未分类错误**（有 `error`，**无 `kind`**） | **200** Note: | `{"error", "tool"}` |
 | 其余 | **200** | 结果 payload |
 
-> ⚠ **[P9a] 关键：HTTP status 不是充分的错误判别依据。**
+> Note: **[P9a] 关键：HTTP status 不是充分的错误判别依据。**
 > **未分类**的 worker 错误返回 **200 + error body**。**[P9a]** 实测：
 > `/api/resource?id=<不存在的 id>` → **200** + `unknown resource id …`。
 >
