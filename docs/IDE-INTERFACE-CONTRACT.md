@@ -158,7 +158,51 @@ banner-colour assertion now sets `color_scheme="dark"` explicitly. Asserting one
 literal RGB while inheriting whatever scheme the browser defaults to is a test of
 the default, not of the page.
 
-## 7. Serving the bundle
+## 7. Structure of the React app
+
+The page is split, and the split is checked rather than described.
+
+```
+src/
+  main.jsx                    mount only
+  App.jsx                     state and orchestration
+  api.js                      the client result envelope
+  useEventStream.js           the SSE client
+  i18n.js                     the two string tables
+  components/primitives.jsx   Panel Button Field Checkbox Badge Alert
+                              EmptyState Skeleton KeyValues
+  panels/QueryPanel.jsx       TopBar, QueryPanel, StatusBar
+  panels/EvidencePanel.jsx    evidence chips and the prompt
+  views/ResultPanel.jsx       DiffView, TraceView, ResultPanel
+  theme.css                   tokens, including both colour schemes
+  styles.css                  the primitives
+```
+
+`tests/unit/test_ide_ui_design.py` holds the structural controls, including the
+ones that stop the split from quietly becoming duplication: `main.jsx` may only
+mount, `App.jsx` may not contain markup, and no panel may hold local state.
+
+## 8. Design decisions, and the check for each
+
+| Decision | Why | Checked by |
+| --- | --- | --- |
+| one `primary` filled button, and it is Diff | the page exists to compare two pixels; two filled controls is not a hierarchy | exactly one `primary` prop, and it is on the diff control |
+| the result panel is elevated, the others are not | the eye should land on the answer rather than on whichever card is top-left | both shadow tokens asserted on their own rules |
+| `grid-template-areas` names the focal area | the layout states what matters instead of relying on source order | areas asserted |
+| skeleton, not a spinner | a spinner beside an empty panel reads as "no result" | shimmer asserted; loading and empty are separate test ids |
+| hover, active and focus-visible on every control | an element that gives no sign of being touched is unproven to work | `:hover:not(:disabled)`, `:active:not(:disabled)`, and one shared focus rule naming four selectors |
+| a pulsing dot for the live connection | connection state should be legible peripherally | the dot pulses, not the whole pill |
+| every colour is a token | a literal hex does not follow the scheme | no hex literal in the stylesheet or in any component |
+| every interaction latency comes from a motion token | feedback speed should be one decision | every `transition` rule asserted to use a token |
+| animation *periods* may be literal | a spin loop is not feedback latency; moving the number would be theatre | the reduced-motion override is asserted instead |
+| both palettes restate the same token names | a token defined in only one scheme makes the page unreadable in the other | set difference asserted empty |
+
+One component bug was found by the split rather than by a test: `Badge`
+destructured its props and dropped the rest, so `data-testid` never reached the
+DOM and the stream badge had no handle. Component boundaries make that class of
+mistake visible, which is most of the argument for having them.
+
+## 9. Serving the bundle
 
 `/ui/` resolves inside `static/ui/dist` and the resolved path is checked to be
 inside that root. A server that concatenates a request path onto a directory
@@ -176,7 +220,7 @@ alone renders a page with no script in it — so at least one built asset is
 required too. The asset filename is content-hashed, which is why the requirement
 is a prefix rather than a literal name.
 
-## 8. What is not established
+## 10. What is not established
 
 | Item | Status |
 | --- | --- |

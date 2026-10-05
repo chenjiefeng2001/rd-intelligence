@@ -1,0 +1,127 @@
+/* Design tokens.
+ *
+ * One scale for spacing, one for radius, one for motion. Values are named by
+ * their role rather than by their size, so a component that needs "the gap
+ * between two related things" reaches for the same token as everything else and
+ * the page stays consistent when a step changes.
+ *
+ * The dark and light palettes define the same token names. A palette that had
+ * to define extra tokens would mean some component is reading a colour that has
+ * no counterpart in the other scheme, which is how a page ends up unreadable in
+ * one of them.
+ */
+
+:root {
+  color-scheme: dark light;
+
+  /* Spacing: a 4px base. Named steps rather than arbitrary numbers. */
+  --s-1: 2px;
+  --s-2: 4px;
+  --s-3: 8px;
+  --s-4: 12px;
+  --s-5: 16px;
+  --s-6: 24px;
+  --s-7: 32px;
+
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 10px;
+  --r-pill: 999px;
+
+  /* Motion. Short enough to feel like feedback rather than decoration, and
+     declared once so a reduced-motion override can reach all of them. */
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  --bg: #0f1115;
+  --bg-elev: #171a20;
+  --panel: #1b1f26;
+  --panel-2: #22262e;
+  --panel-3: #2a2f38;
+  --fg: #e4e8ee;
+  --fg-strong: #ffffff;
+  --dim: #98a1b0;
+  --faint: #6b7382;
+  --border: #2e343e;
+  --border-strong: #3d4552;
+
+  --accent: #5aa2ff;
+  --accent-fg: #06101f;
+  --accent-soft: rgba(90, 162, 255, 0.14);
+
+  --good: #5ad48a;
+  --good-soft: rgba(90, 212, 138, 0.14);
+  --bad: #ff7a7a;
+  --bad-soft: rgba(255, 122, 122, 0.14);
+  --warn: #e8c468;
+  --warn-soft: rgba(232, 196, 104, 0.12);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: Consolas, "SF Mono", ui-monospace, monospace;
+}
+
+/* The light palette is defined twice on purpose: once for the system setting,
+   and once for :root[data-theme=...]. A class cannot narrow a media query, so an
+   explicit user choice has to be expressed by restating the same tokens under a
+   selector rather than by trying to filter the query. Both blocks name the same
+   set, which is what keeps the two schemes interchangeable. */
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f4f6f9;
+    --bg-elev: #ffffff;
+    --panel: #ffffff;
+    --panel-2: #f2f4f8;
+    --panel-3: #e8ecf2;
+    --fg: #1b2029;
+    --fg-strong: #000000;
+    --dim: #5b6474;
+    --faint: #8a93a3;
+    --border: #dfe4ec;
+    --border-strong: #c6cedb;
+    --accent: #0b5fd0;
+    --accent-fg: #ffffff;
+    --accent-soft: rgba(11, 95, 208, 0.1);
+    --good: #17864b;
+    --good-soft: rgba(23, 134, 75, 0.12);
+    --bad: #c0263a;
+    --bad-soft: rgba(192, 38, 58, 0.1);
+    --warn: #8a6400;
+    --warn-soft: rgba(138, 100, 0, 0.12);
+    --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --shadow-2: 0 8px 24px rgba(16, 24, 40, 0.1);
+  }
+}
+
+/* An explicit theme choice has to beat the media query, so it is applied by
+   setting the same tokens on :root[data-theme=...] rather than by filtering the
+   media query, which cannot be overridden from a class. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --bg-elev: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f2f4f8;
+  --panel-3: #e8ecf2;
+  --fg: #1b2029;
+  --fg-strong: #000000;
+  --dim: #5b6474;
+  --faint: #8a93a3;
+  --border: #dfe4ec;
+  --border-strong: #c6cedb;
+  --accent: #0b5fd0;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(11, 95, 208, 0.1);
+  --good: #17864b;
+  --good-soft: rgba(23, 134, 75, 0.12);
+  --bad: #c0263a;
+  --bad-soft: rgba(192, 38, 58, 0.1);
+  --warn: #8a6400;
+  --warn-soft: rgba(138, 100, 0, 0.12);
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 8px 24px rgba(16, 24, 40, 0.1);
+}

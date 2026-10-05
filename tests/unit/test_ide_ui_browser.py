@@ -193,8 +193,8 @@ class TestInARealBrowser(unittest.TestCase):
         status = page.get_attribute('[data-testid="stream-status"]', "class")
         page.wait_for_function(
             "() => document.querySelector('[data-testid=\"stream-status\"]')"
-            ".className.includes('stream-live')", timeout=15000)
-        self.assertIn("stream-live", status)
+            ".className.includes('badge--live')", timeout=15000)
+        self.assertIn("badge--live", status)
 
     def test_switching_language_changes_rendered_text(self):
         # inner_text() returns the rendered text, and the card heading is
@@ -356,7 +356,7 @@ class TestRestoredFeatures(unittest.TestCase):
         page = self.page()
         page.wait_for_function(
             "() => document.querySelector('[data-testid=\"stream-status\"]')"
-            ".className.includes('stream-live')", timeout=15000)
+            ".className.includes('badge--live')", timeout=15000)
         self.assertIn("live", page.inner_text('[data-testid="stream-status"]'))
 
 

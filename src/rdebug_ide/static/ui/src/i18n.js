@@ -24,12 +24,16 @@ export const I18N = {
       explain: "Generate AI Prompt",
       copy: "Copy prompt",
       copied: "Copied",
+      copiedHint: "prompt copied to the clipboard",
     },
     eidScope:
       "Applies to: <b>Trace</b>, <b>Resource</b>. Does not apply to: <b>Diff</b>, <b>Generate AI Prompt</b> (they use the default event).",
+    lang: { other: "中文", switch: "Switch interface language" },
     res: {
       blank: "run a query…",
       hint: "[Generate AI Prompt] run a diff first",
+      hintEvidence: "Run a diff to collect resource ids.",
+      noReads: "No readable resources at this pixel.",
       loading: "loading…",
     },
     diff: {
@@ -82,12 +86,16 @@ export const I18N = {
       explain: "生成 AI 提示词",
       copy: "复制提示词",
       copied: "已复制",
+      copiedHint: "提示词已复制到剪贴板",
     },
     eidScope:
       "生效于：<b>追踪</b>、<b>资源</b>。不生效于：<b>对比</b>、<b>生成 AI 提示词</b>（二者使用默认事件）。",
+    lang: { other: "English", switch: "切换界面语言" },
     res: {
       blank: "执行一次查询…",
       hint: "[生成 AI 提示词] 先运行一次 diff",
+      hintEvidence: "运行一次对比以收集资源 id。",
+      noReads: "该像素没有可读资源。",
       loading: "加载中…",
     },
     diff: {
