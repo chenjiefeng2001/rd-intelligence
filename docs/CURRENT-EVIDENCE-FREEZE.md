@@ -10,7 +10,7 @@ document_point_in_time_note: >-
 
 冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
 前一刷新基线为 `a81600e`）
-baseline_commit: 024d554
+baseline_commit: 4129ec8
 baseline_drift: 0
 
 `baseline_drift` 是本文档自陈的陈旧度。**刷新节奏为 milestone** ——
