@@ -187,7 +187,25 @@ function renderDiff(d) {
 }
 
 async function showEv(id) {
-  const r = await api(`/api/resource?id=${encodeURIComponent("ResourceId::" + id.replace(/\D/g,""))}`);
+// The id arrives from the evidence chips, which the server already rendered in
+// canonical form. Rewriting it here meant stripping every non-digit and
+// re-prefixing, which round-trips only for the one id shape that happens to
+// survive it and silently corrupts any other. This is a pure function so the
+// contract can be exercised directly rather than by reading the source: the id
+// is either already canonical and is preserved byte for byte, or it is refused.
+function canonicalResourceId(id) {
+  const raw = (id || "").trim();
+  if (!/^ResourceId::\d+$/.test(raw)) {
+    return {ok:false, kind:"api_error",
+            message:"not a canonical resource identifier: " + raw};
+  }
+  return {ok:true, data:{id:raw}};
+}
+
+async function showEv(id) {
+  const c = canonicalResourceId(id);
+  if (!showOk(c)) return;
+  const r = await api(`/api/resource?id=${encodeURIComponent(c.data.id)}`);`/api/resource?id=${encodeURIComponent(canonical)}`);
   if (!showOk(r)) return;
   $("evdetail").style.display = "block";
   $("evdetail").textContent = "loading…";
@@ -229,12 +247,28 @@ async function doDiff() {
   $("prompt").value = (p.ok && p.data && p.data.prompt) || "";
 }
 
+// Coordinate input contract: the value is either a well formed "x,y" or it is
+// rejected. The previous form took the first token as x and fell back to "0"
+// for a missing y, which quietly asked about a pixel the user never named.
+// Synthesis is the defect, so this validates and refuses; it never guesses.
+function parseCoord(text) {
+  const raw = (text || "").trim();
+  const m = /^(-?\d+)\s*,\s*(-?\d+)$/.exec(raw);
+  if (!m) {
+    return {ok:false, kind:"api_error",
+            message:"coordinates must be written as x,y integers; got: " + raw};
+  }
+  return {ok:true, data:{x:parseInt(m[1], 10), y:parseInt(m[2], 10)}};
+}
+
 async function doTrace() {
-  const [x] = $("a").value.split(",");
+  const c = parseCoord($("a").value);
+  if (!showOk(c)) return;
+  const {x, y} = c.data;
   $("result").innerHTML = "…";
   // The investigation scope is sent explicitly rather than relying on a
   // server-side default the interface cannot show the user.
-  const g = await api(`/api/trace?x=${x}&y=${($("a").value.split(",")[1]||"0").trim()}&max_draws=${MAX_DRAWS}`);
+  const g = await api(`/api/trace?x=${x}&y=${y}&max_draws=${MAX_DRAWS}`);
   if (!enter(g, renderTrace)) return;
 }
 
