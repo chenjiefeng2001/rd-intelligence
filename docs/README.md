@@ -2,8 +2,8 @@
 
 Every document in this directory, one row each, grouped by topic.
 
-**13 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **47 are not classified** and are deliberately not
+**14 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
+and are constrained by it; **48 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -12,11 +12,13 @@ a second taxonomy is exactly what the classification contract forbids.
 Correctness of this file, including the values in the Role column, is enforced by
 `tests/unit/test_docs_index.py`.
 
+
 ## Start here
 
 | Document | Role / freshness |
 | --- | --- |
 | [`API-REFERENCE.md`](API-REFERENCE.md) | not classified |
+| [`API-REFERENCE.en.md`](API-REFERENCE.en.md) | not classified |
 | [`DESIGN_SPEC.md`](DESIGN_SPEC.md) | not classified |
 | [`CAPABILITIES-AND-BOUNDARIES-2026-10.md`](CAPABILITIES-AND-BOUNDARIES-2026-10.md) | `audit_record` / `point_in_time` @ `d691050` |
 | [`P0-P1-UX-READINESS.md`](P0-P1-UX-READINESS.md) | not classified |
@@ -52,6 +54,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`FIXTURE-POPULATION-CONTRACT.md`](FIXTURE-POPULATION-CONTRACT.md) | `contract` / `living` |
 | [`GATE3-COLD-WARM-CONTRACT.md`](GATE3-COLD-WARM-CONTRACT.md) | not classified |
 | [`LINT-EXECUTION-CONTRACT.md`](LINT-EXECUTION-CONTRACT.md) | `contract` / `living` |
+| [`PACKAGING-BUILD-CONTRACT.md`](PACKAGING-BUILD-CONTRACT.md) | `contract` / `living` |
 | [`MCP-CONTRACT-GOVERNANCE.md`](MCP-CONTRACT-GOVERNANCE.md) | not classified |
 | [`REPORT-SCHEMA-OWNERSHIP.md`](REPORT-SCHEMA-OWNERSHIP.md) | `contract` / `living` |
 | [`SCENARIO-LIFECYCLE-ADJUDICATION.md`](SCENARIO-LIFECYCLE-ADJUDICATION.md) | not classified |
@@ -104,9 +107,9 @@ Machine-readable companions, listed for completeness:
 
 | | Count |
 | --- | --- |
-| Documents indexed | 60 |
-| Machine-classified | 13 |
-| Not classified | 47 |
+| Documents indexed | 62 |
+| Machine-classified | 14 |
+| Not classified | 48 |
 | Of which validation evidence | 10 markdown + 3 json |
 
 ## Known limits of this index
@@ -122,3 +125,4 @@ Machine-readable companions, listed for completeness:
 * A document that gains front matter must have its Role cell corrected to match
   the declaration, not left reading *not classified*.
 * This index does not list itself.
+

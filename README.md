@@ -64,6 +64,18 @@ RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / repl
 pip install -e .
 ```
 
+### 构建发行包
+
+```bash
+python -m pip install build
+python scripts/build_package.py --outdir dist --clean --json build_report.json
+```
+
+构建完成后脚本会打开 wheel 与 sdist，核对安装所必需的成员（IDE 静态页、LICENSE、
+三个 console script），缺失即以退出码 2 报 REGRESSION；构建后端缺失或无法构建以
+退出码 3 报 INFRASTRUCTURE_FAILURE。详见
+[`docs/PACKAGING-BUILD-CONTRACT.md`](docs/PACKAGING-BUILD-CONTRACT.md)。
+
 ## 使用
 
 ```bash
@@ -81,6 +93,16 @@ rdebug diff-pixel capture.rdc --a 320,240 --b 10,10       # Phase 3: first diver
 ```
 
 所有命令向 stdout 输出严格 JSON（NaN/Inf 已字符串化），错误走 stderr 的 `{"error": ...}` 并返回非零退出码，便于脚本与未来的 AI Agent 直接消费。
+
+### IDE 界面与语言
+
+```bash
+rdebug-ide capture.rdc --port 8080     # 仅监听 127.0.0.1
+```
+
+界面默认英文，标题栏右侧的按钮可在中英文之间切换，选择会记在浏览器本地。
+英文是默认语言而非按浏览器语言推断：页面本身是英文的，而本仓库从未建立浏览器
+渲染层的验证结论，按不可验证的方式推断语言只会把猜测写进默认值。
 
 ## Evidence Contract
 

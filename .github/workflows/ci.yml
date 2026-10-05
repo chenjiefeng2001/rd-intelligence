@@ -52,3 +52,46 @@ jobs:
         run: |
           echo "release blocking is NOT authorized; an exit 4 is a legitimate"
           echo "resting state and must not be treated as a green build."
+
+  # A separate job on purpose. The gates above cannot pass on a hosted runner, so
+  # folding packaging into them would make a real packaging failure
+  # indistinguishable from the infrastructure failure that is already expected
+  # there. This job needs no GPU, no RenderDoc and no sibling checkout, so a
+  # failure here is a statement about the package.
+  package-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the build backend
+        run: python -m pip install --upgrade build
+
+      - name: Build the distributions and check their contents
+        id: build
+        run: |
+          python scripts/build_package.py \
+            --outdir dist \
+            --clean \
+            --json build_report.json
+
+      - name: Upload the distributions and the build report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            build_report.json
+
+      - name: What this job does not cover
+        if: always()
+        run: |
+          echo "a green package-build means the artifacts are complete and"
+          echo "installable. It says nothing about the replay gates, which"
+          echo "remain INFRASTRUCTURE_FAILURE on this runner, and it is not"
+          echo "release blocking."

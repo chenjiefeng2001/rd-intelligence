@@ -22,7 +22,10 @@ dependencies = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    # The MIT classifier was removed deliberately. PEP 639 supersedes it with the
+    # `license` expression and `license-files` above, and setuptools >= 78 refuses
+    # to build while both are present -- so this was not a style preference, it
+    # was an unbuildable package that no test noticed.
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Debuggers",
 ]
@@ -37,6 +40,13 @@ mcp = ["mcp>=1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# Without this the wheel builds cleanly and silently omits the IDE page: pip
+# reports success, `rdebug-ide` starts, and it serves nothing. setuptools does not
+# collect .html on its own without MANIFEST.in or a VCS plugin, and neither
+# exists here, so the asset has to be declared.
+rdebug_ide = ["static/*.html"]
 
 [tool.pytest.ini_options]
 # Both suites are in the default run. tests_transport was previously absent

@@ -11,7 +11,8 @@ PAGE = (pathlib.Path(__file__).resolve().parent.parent.parent
 # explicit is deliberate: the point is to catch a call to something that is no
 # longer defined, which whole-script parsing cannot see.
 HELPERS = ("api", "enter", "showFailure", "showOk", "parseCoord",
-           "canonicalResourceId", "renderDiff", "renderTrace", "renderCi")
+           "canonicalResourceId", "renderDiff", "renderTrace", "renderCi",
+           "T", "resolve", "applyI18n")
 
 
 def script() -> str:

@@ -1,5 +1,7 @@
 # API Reference
 
+英文版见 [`API-REFERENCE.en.md`](API-REFERENCE.en.md)。两版由 `tests/unit/test_api_reference_parity.py` 保持一致：端点、参数、状态码与证据标记任一漂移即失败。
+
 代码真值来源：`src/rdebug_ide/app.py`、`src/rdebug_mcp/server.py`、`src/rdebug/cli.py`。
 **本文档只描述已存在的接口，不新增、不修改任何契约。**
 

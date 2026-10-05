@@ -39,6 +39,7 @@ IN_SCOPE = [
     REPO / "README.md",
     DOCS / "README.md",
     DOCS / "API-REFERENCE.md",
+    DOCS / "API-REFERENCE.en.md",
 ]
 
 

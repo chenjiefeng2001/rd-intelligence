@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>rdebug-ide</title>
@@ -49,46 +49,170 @@
 <header>
   <h1>rdebug-ide</h1>
   <span class="muted" id="capture"></span>
-  <span id="cibase" class="muted">CI baseline: not loaded</span>
+  <span id="cibase" class="muted" data-i18n="ci.baseline">CI baseline: not loaded</span>
+  <button id="btnLang" title="Switch interface language">中文</button>
 </header>
 <main>
   <div class="card" style="max-width:420px">
-    <h2>Query</h2>
+    <h2 data-i18n="h.query">Query</h2>
     <div style="display:grid;gap:6px">
-      <label>A (x,y) <input id="a" value="320,240" size="8"></label>
-      <label>B (x,y) <input id="b" value="10,10" size="8"></label>
-      <label><input type="checkbox" id="deep"> deep diff (shader debugger)</label>
-      <label>Event ID (optional) <input id="eid" size="6"></label>
-      <div class="muted" id="eidscope">
+      <label data-i18n="l.a">A (x,y) <input id="a" value="320,240" size="8"></label>
+      <label data-i18n="l.b">B (x,y) <input id="b" value="10,10" size="8"></label>
+      <label data-i18n="l.deep"><input type="checkbox" id="deep"> deep diff (shader debugger)</label>
+      <label data-i18n="l.eid">Event ID (optional) <input id="eid" size="6"></label>
+      <div class="muted" id="eidscope" data-i18n-html="eidScope">
         Applies to: <b>Trace</b>, <b>Resource</b>.
         Does not apply to: <b>Diff</b>, <b>Generate AI Prompt</b>
         (they use the default event).
       </div>
       <div>
-        <button id="btnDiff">Diff A vs B</button>
-        <button id="btnTrace">Trace A</button>
-        <button id="btnExplain" disabled>Generate AI Prompt</button>
+        <button id="btnDiff" data-i18n="b.diff">Diff A vs B</button>
+        <button id="btnTrace" data-i18n="b.trace">Trace A</button>
+        <button id="btnExplain" disabled data-i18n="b.explain">Generate AI Prompt</button>
       </div>
     </div>
     <div id="ci" style="margin-top:10px"></div>
   </div>
   <div class="card" style="flex:2">
-    <h2>Result</h2>
-    <div id="result" class="muted">run a query…</div>
+    <h2 data-i18n="h.result">Result</h2>
+    <div id="result" class="muted" data-i18n="res.blank">run a query…</div>
   </div>
   <div class="card" style="flex:1">
-    <h2>Evidence</h2>
+    <h2 data-i18n="h.evidence">Evidence</h2>
     <div id="evidence" class="muted">—</div>
     <div id="evdetail" style="display:none"></div>
-    <h2 style="margin-top:12px">AI Prompt (grounded)</h2>
-    <textarea id="prompt" readonly placeholder="[Generate AI Prompt] 先运行一次 diff"></textarea>
-    <button id="btnCopy" style="margin-top:6px" disabled>Copy prompt</button>
+    <h2 style="margin-top:12px" data-i18n="h.prompt">AI Prompt (grounded)</h2>
+    <textarea id="prompt" readonly data-i18n-placeholder="res.hint" placeholder="[Generate AI Prompt] 先运行一次 diff"></textarea>
+    <button id="btnCopy" style="margin-top:6px" disabled data-i18n="b.copy">Copy prompt</button>
   </div>
 </main>
 <script>
 const $ = id => document.getElementById(id);
 let lastDiff = null;
 const MAX_DRAWS = 16;   // explicit scope; truncation is surfaced, not hidden
+
+// ---------------------------------------------------------------------------
+// Interface language.
+//
+// English is the default: every frozen test in this repository asserts the
+// English source literals, and the interface is authored in English. Chinese
+// is additive -- `data-i18n` names a group.key, and a key with no translation
+// leaves the element's own text in place instead of blanking it.
+//
+// showFailure() deliberately takes no language lookup. test_ide_d11_request_identity
+// and test_ide_d9_explain extract it together with esc, showOk, enter, claim,
+// isStale, enterSeq and `const FAILURE_TEXT`, then execute that set in a bare
+// Node process containing no i18n symbols, so a reference added here would be a
+// ReferenceError at runtime. The failure banner is therefore translated by
+// assigning into the one frozen FAILURE_TEXT object: showFailure stays
+// self-contained and keeps its `FAILURE_TEXT[kind] || FAILURE_TEXT.api_error`
+// fallback for an unrecognised kind.
+//
+// The default is `en` rather than a navigator.language probe, because the page
+// is English and this repository has never established browser-level rendering;
+// inferring a language nobody can test here would be an unverifiable default.
+const I18N = {
+  en: {
+    langLabel: "中文",
+    h: {query:"Query", result:"Result", evidence:"Evidence", prompt:"AI Prompt (grounded)"},
+    l: {a:"A (x,y)", b:"B (x,y)", deep:"deep diff (shader debugger)", eid:"Event ID (optional)"},
+    b: {diff:"Diff A vs B", trace:"Trace A", explain:"Generate AI Prompt", copy:"Copy prompt"},
+    eidScope: 'Applies to: <b>Trace</b>, <b>Resource</b>. Does not apply to: <b>Diff</b>, <b>Generate AI Prompt</b> (they use the default event).',
+    res: {blank:"run a query…", hint:"[Generate AI Prompt] run a diff first",
+          loading:"loading…"},
+    diff: {comparison:"comparison", firstDivergence:"first divergence", good:"good",
+           bad:"bad", layers:"Layers"},
+    trace: {target:"target", modifications:"modifications", finalValue:"final value",
+            reads:"Reads", truncatedShort:" (truncated)",
+            truncated:"Trace truncated &mdash; showing {n} of a larger set of modifications. This result is incomplete.",
+            writtenBy:"written by {id}"},
+    ci: {baseline:"CI baseline: not loaded", pass:"CI PASS"},
+    failure: {
+      transport_error: "Cannot reach the rdebug-ide service",
+      malformed: "The service returned a response that is not JSON",
+      api_error: "The service rejected the request",
+    },
+  },
+  zh: {
+    langLabel: "English",
+    h: {query:"查询", result:"结果", evidence:"证据",
+        prompt:"AI 提示词（有依据）"},
+    l: {a:"A (x,y)", b:"B (x,y)", deep:"深度 diff（着色器调试器）",
+        eid:"事件 ID（可选）"},
+    b: {diff:"对比 A 与 B", trace:"追踪 A",
+        explain:"生成 AI 提示词", copy:"复制提示词"},
+    eidScope: '生效于：<b>追踪</b>、<b>资源</b>。不生效于：<b>对比</b>、<b>生成 AI 提示词</b>（二者使用默认事件）。',
+    res: {blank:"执行一次查询…",
+          hint:"[生成 AI 提示词] 先运行一次 diff",
+          loading:"加载中…"},
+    diff: {comparison:"对比结论", firstDivergence:"首个分歧",
+           good:"A 值", bad:"B 值", layers:"分层"},
+    trace: {target:"目标", modifications:"修改次数",
+            finalValue:"最终值", reads:"读取来源",
+            truncatedShort:"（已截断）",
+            truncated:"追踪已截断 —— 仅显示较大修改集合中的 {n} 项。本结果不完整。",
+            writtenBy:"写入者 {id}"},
+    ci: {baseline:"CI 基线：未加载", pass:"CI 通过"},
+    failure: {
+      transport_error: "无法连接 rdebug-ide 服务",
+      malformed: "服务返回的不是 JSON",
+      api_error: "服务拒绝了该请求",
+    },
+  },
+};
+let LANG = "en";
+
+function T(group, key, vars) {
+  const table = I18N[LANG] || I18N.en;
+  const fallback = I18N.en[group] || {};
+  let s = (table[group] || {})[key];
+  if (s === undefined) s = fallback[key];
+  if (s === undefined) return "";
+  if (vars) {
+    for (const k of Object.keys(vars)) s = s.split("{" + k + "}").join(String(vars[k]));
+  }
+  return s;
+}
+
+// A key is either `group.key` or a bare top-level name such as eidScope. Both
+// forms are resolved here rather than by each caller, because a caller that
+// splits on "." and gets no dot does not fail -- it looks up a truncated name,
+// misses, and leaves the element untranslated.
+function resolve(key) {
+  const dot = key.indexOf(".");
+  if (dot < 0) {
+    const table = I18N[LANG] || I18N.en;
+    return table[key] !== undefined ? table[key] : I18N.en[key];
+  }
+  return T(key.slice(0, dot), key.slice(dot + 1));
+}
+
+function applyI18n(lang) {
+  LANG = I18N[lang] ? lang : "en";
+  document.documentElement.lang = LANG === "zh" ? "zh-CN" : "en";
+  Object.assign(FAILURE_TEXT, I18N[LANG].failure);
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const s = resolve(el.getAttribute("data-i18n"));
+    if (s) el.textContent = s;
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+    const s = resolve(el.getAttribute("data-i18n-placeholder"));
+    if (s) el.placeholder = s;
+  });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => {
+    const s = resolve(el.getAttribute("data-i18n-html"));
+    if (s) el.innerHTML = s;
+  });
+  const btn = $("btnLang");
+  if (btn) btn.textContent = I18N[LANG].langLabel;
+  try { localStorage.setItem("rdebug-ide-lang", LANG); } catch (e) { /* private mode */ }
+  // Markup produced by the diff and trace views carries its own keys, so this
+  // pass re-translates the labels already on screen without re-running a
+  // renderer -- which the failure-containment contract forbids at this call
+  // site anyway. Interpolated text (writer names, the truncation count) keeps
+  // the language it was rendered in until the next query. That staleness is
+  // accepted rather than hidden.
+}
 
 // Client result envelope. Internal to this page -- it is not the semantic API
 // contract, and the server's JSON contract is unchanged.
@@ -192,12 +316,12 @@ function renderDiff(d) {
   const bad = first.bad ? first.bad.value : null;
   $("result").innerHTML = `
     <div class="kv">
-      <span class="k">comparison</span><span>${statusSpan(d.comparison)}</span>
-      <span class="k">first divergence</span><span>${esc(first.layer ?? "—")}</span>
-      <span class="k">good</span><span>${esc(JSON.stringify(good))}</span>
-      <span class="k">bad</span><span>${esc(JSON.stringify(bad))}</span>
+      <span class="k" data-i18n="diff.comparison">comparison</span><span>${statusSpan(d.comparison)}</span>
+      <span class="k" data-i18n="diff.firstDivergence">first divergence</span><span>${esc(first.layer ?? "—")}</span>
+      <span class="k" data-i18n="diff.good">good</span><span>${esc(JSON.stringify(good))}</span>
+      <span class="k" data-i18n="diff.bad">bad</span><span>${esc(JSON.stringify(bad))}</span>
     </div>
-    <h2 style="margin-top:10px">Layers</h2>${layers}`;
+    <h2 style="margin-top:10px" data-i18n="diff.layers">Layers</h2>${layers}`;
   const ids = [...new Set((function collect(n){ let o=[];
     if (Array.isArray(n)) return n.flatMap(collect);
     if (n && typeof n === "object") {
@@ -241,7 +365,7 @@ async function showEv(id) {
   // the one generation domain, so neither can outlive a newer user action.
   if (!enterSeq(seq, r, () => {
     $("evdetail").style.display = "block";
-    $("evdetail").textContent = "loading…";
+    $("evdetail").textContent = T("res", "loading");
   })) return;
 }
 
@@ -253,17 +377,17 @@ function renderTrace(g) {
   // saying so would present an incomplete investigation as a complete one.
   const trunc = g.summary && g.summary.truncatedDraws;
   let html = trunc
-    ? `<div class="banner banner-warn">Trace truncated &mdash; showing ${g.summary.modificationCount} of a larger set of modifications. This result is incomplete.</div>`
+    ? `<div class="banner banner-warn">${esc(T("trace", "truncated", {n: g.summary.modificationCount}))}</div>`
     : "";
   html += `<div class="kv">
-    <span class="k">target</span><span>${esc(g.summary.target ?? "")}</span>
-    <span class="k">modifications</span><span>${g.summary.modificationCount}${trunc ? " (truncated)" : ""}</span>
-    <span class="k">final value</span><span>${esc(JSON.stringify(g.summary.finalValue))}</span></div>
-    <h2 style="margin-top:10px">Reads</h2>`;
+    <span class="k" data-i18n="trace.target">target</span><span>${esc(g.summary.target ?? "")}</span>
+    <span class="k" data-i18n="trace.modifications">modifications</span><span>${g.summary.modificationCount}${trunc ? T("trace", "truncatedShort") : ""}</span>
+    <span class="k" data-i18n="trace.finalValue">final value</span><span>${esc(JSON.stringify(g.summary.finalValue))}</span></div>
+    <h2 style="margin-top:10px" data-i18n="trace.reads">Reads</h2>`;
   for (const r of reads) {
     html += `<div>${esc(r.to)}</div><div class="tree">`;
     for (const w of written.filter(w => w.from === r.to)) {
-      html += `<div>written by ${esc(w.to)} <span class="muted">(${esc(w.evidence[0].data?.primitives ?? "")})</span></div>`;
+      html += `<div>${esc(T("trace", "writtenBy", {id: w.to}))} <span class="muted">(${esc(w.evidence[0].data?.primitives ?? "")})</span></div>`;
     }
     html += `</div>`;
   }
@@ -353,7 +477,10 @@ async function loadCi() {
   const ci = ciResult.data;
   if (!ci.enabled) return;
   const el = $("cibase");
-  if (ci.status === "pass") { el.innerHTML = `<span class="badge pass">CI PASS</span>`; return; }
+  if (ci.status === "pass") {
+    el.innerHTML = `<span class="badge pass">${esc(T("ci", "pass"))}</span>`;
+    return;
+  }
   el.innerHTML = `<span class="badge regression">CI ${ci.status.toUpperCase()}</span>`;
   const box = $("ci");
   box.innerHTML = ci.failures.map((f,i) =>
@@ -368,8 +495,12 @@ async function loadCi() {
 $("btnDiff").onclick = doDiff;
 $("btnTrace").onclick = doTrace;
 $("btnExplain").onclick = doExplain;
+$("btnLang").onclick = () => applyI18n(LANG === "zh" ? "en" : "zh");
 $("btnCopy").onclick = () => { navigator.clipboard.writeText($("prompt").value); };
 
+let storedLang = null;
+try { storedLang = localStorage.getItem("rdebug-ide-lang"); } catch (e) { /* private mode */ }
+applyI18n(storedLang || "en");
 api("/api/info").then(i => { if (i.ok) $("capture").textContent = i.data.capture; });
 loadCi();
 </script>
