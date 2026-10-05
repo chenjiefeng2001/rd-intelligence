@@ -150,9 +150,14 @@ class TestD6IsGone(unittest.TestCase):
         self.assertNotIn("catch(()=>null)", page())
 
     def test_the_resource_call_goes_through_the_client_boundary(self):
-        src = page()
-        self.assertIn("const r = await api(`/api/resource", src)
-        self.assertNotIn("fetch(`/api/resource", src)
+        # Flattened before matching, as elsewhere in this file: the property is
+        # that the resource request is issued through api() rather than by a
+        # bare fetch, and that is not a statement about where the line wraps.
+        src = re.sub(r"\s+", " ", page())
+        self.assertRegex(src, r"const r = await api\(\s*`/api/resource",
+                         "the resource request no longer goes through api()")
+        self.assertNotRegex(src, r"fetch\(\s*`/api/resource",
+                            "a bare fetch bypassed the client boundary")
 
 
 class TestGuardsDoNotBecomeAStateMachine(unittest.TestCase):

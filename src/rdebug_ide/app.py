@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from rdebug.analysis.pixel_trace import MAX_DRAWS_DEFAULT
-from rdebug.errors import RDebugError
+from rdebug.errors import QueryError, RDebugError
 from rdebug.jsonutil import to_json
 from rdebug.worker_manager import RecyclePolicy, WorkerManager
 
@@ -162,6 +162,25 @@ def api_ci(query):
             "failures": failures}
 
 
+def _eid_param(query):
+    """Event context, carried through exactly or not at all.
+
+    Only the format is decided here, so that a malformed value is a parameter
+    error rather than a replay failure. Whether the event actually exists in
+    this capture is left to the action tree in the query layer, which already
+    classifies that as bad_request. No range is inferred from the number: the
+    valid set is membership, not an interval, and a client that guessed an
+    interval would reject legal events and accept illegal ones.
+    """
+    raw = (query.get("eid", None) or [""])[0].strip()
+    if not raw:
+        return None
+    digits = raw[1:] if raw.startswith("-") else raw
+    if not (digits.isascii() and digits.isdigit()):
+        raise QueryError(f"eid must be an integer; got: {raw}", kind="bad_request")
+    return int(raw)
+
+
 def api_trace(query):
     x, y = int(query["x"][0]), int(query["y"][0])
     # The scope is explicit and defaults to the library's own default rather
@@ -169,7 +188,11 @@ def api_trace(query):
     # semantic layer already reports summary.truncatedDraws, and the UI is
     # required to surface it.
     max_draws = _int_param(query, "max_draws", MAX_DRAWS_DEFAULT)
-    return _run("trace_pixel", x=x, y=y, max_draws=max_draws)
+    # Only trace and resource accept an event context. diff_pixel has no
+    # such parameter and always uses the library default event, so the UI
+    # must not offer one here: sending it would be silently ignored.
+    return _run("trace_pixel", x=x, y=y, max_draws=max_draws,
+                eid=_eid_param(query))
 
 
 def api_diff(query):
@@ -181,7 +204,7 @@ def api_diff(query):
 
 
 def api_resource(query):
-    return _run("trace_resource", resource=query["id"][0])
+    return _run("trace_resource", resource=query["id"][0], eid=_eid_param(query))
 
 
 

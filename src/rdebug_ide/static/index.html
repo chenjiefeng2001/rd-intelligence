@@ -58,6 +58,12 @@
       <label>A (x,y) <input id="a" value="320,240" size="8"></label>
       <label>B (x,y) <input id="b" value="10,10" size="8"></label>
       <label><input type="checkbox" id="deep"> deep diff (shader debugger)</label>
+      <label>Event ID (optional) <input id="eid" size="6"></label>
+      <div class="muted" id="eidscope">
+        Applies to: <b>Trace</b>, <b>Resource</b>.
+        Does not apply to: <b>Diff</b>, <b>Generate AI Prompt</b>
+        (they use the default event).
+      </div>
       <div>
         <button id="btnDiff">Diff A vs B</button>
         <button id="btnTrace">Trace A</button>
@@ -229,7 +235,8 @@ async function showEv(id) {
   const seq = claim();
   const c = canonicalResourceId(id);
   if (!showOk(c)) return;
-  const r = await api(`/api/resource?id=${encodeURIComponent(c.data.id)}`);
+  const r = await api(
+    `/api/resource?id=${encodeURIComponent(c.data.id)}${eidParam()}`);
   // The evidence panel is a different target from the result panel but shares
   // the one generation domain, so neither can outlive a newer user action.
   if (!enterSeq(seq, r, () => {
@@ -318,6 +325,16 @@ function parseCoord(text) {
   return {ok:true, data:{x:parseInt(m[1], 10), y:parseInt(m[2], 10)}};
 }
 
+// Event context. The value is transported as typed; whether the event exists in
+// this capture is decided by the action tree in the query layer, which already
+// classifies an unknown event as bad_request. Nothing here infers a range from
+// the number, because the valid set is membership rather than an interval.
+// An empty field means no event context and is omitted entirely.
+function eidParam() {
+  const raw = ($("eid").value || "").trim();
+  return raw ? "&eid=" + encodeURIComponent(raw) : "";
+}
+
 async function doTrace() {
   const seq = claim();
   const c = parseCoord($("a").value);
@@ -326,7 +343,7 @@ async function doTrace() {
   $("result").innerHTML = "…";
   // The investigation scope is sent explicitly rather than relying on a
   // server-side default the interface cannot show the user.
-  const g = await api(`/api/trace?x=${x}&y=${y}&max_draws=${MAX_DRAWS}`);
+  const g = await api(`/api/trace?x=${x}&y=${y}&max_draws=${MAX_DRAWS}${eidParam()}`);
   if (!enterSeq(seq, g, renderTrace)) return;
 }
 
