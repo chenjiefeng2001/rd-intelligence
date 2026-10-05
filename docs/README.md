@@ -2,7 +2,7 @@
 
 Every document in this directory, one row each, grouped by topic.
 
-**14 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
+**15 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
 and are constrained by it; **48 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
@@ -53,6 +53,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`F12-CONTEXT-EID-CONTRACT.md`](F12-CONTEXT-EID-CONTRACT.md) | not classified |
 | [`FIXTURE-POPULATION-CONTRACT.md`](FIXTURE-POPULATION-CONTRACT.md) | `contract` / `living` |
 | [`GATE3-COLD-WARM-CONTRACT.md`](GATE3-COLD-WARM-CONTRACT.md) | not classified |
+| [`IDE-INTERFACE-CONTRACT.md`](IDE-INTERFACE-CONTRACT.md) | `contract` / `living` |
 | [`LINT-EXECUTION-CONTRACT.md`](LINT-EXECUTION-CONTRACT.md) | `contract` / `living` |
 | [`PACKAGING-BUILD-CONTRACT.md`](PACKAGING-BUILD-CONTRACT.md) | `contract` / `living` |
 | [`MCP-CONTRACT-GOVERNANCE.md`](MCP-CONTRACT-GOVERNANCE.md) | not classified |
@@ -107,8 +108,8 @@ Machine-readable companions, listed for completeness:
 
 | | Count |
 | --- | --- |
-| Documents indexed | 62 |
-| Machine-classified | 14 |
+| Documents indexed | 63 |
+| Machine-classified | 15 |
 | Not classified | 48 |
 | Of which validation evidence | 10 markdown + 3 json |
 

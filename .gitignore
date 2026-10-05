@@ -8,6 +8,14 @@ venv/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Node build inputs for the React IDE page. node_modules is ~40MB of third-party
+# code that npm restores exactly from package-lock.json, and the built bundle
+# under static/ui/dist is a build output: build_package.py rebuilds it from a
+# clean checkout, so committing it would only create a second thing that can go
+# stale. An earlier `git add -A` put 300-odd node_modules files in the index,
+# which is what prompted this entry rather than a reason found afterwards.
+src/rdebug_ide/static/ui/node_modules/
 *.rdc.idx
 tests/workload/corpus/
 tests/workload/reports/

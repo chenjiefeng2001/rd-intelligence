@@ -15,6 +15,7 @@ pair, and a failed configure establishes nothing.
 
 import json
 import os
+import queue as queuelib
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -69,6 +70,10 @@ def configure(capture, baseline=None, workers=None):
             raise
         _workers = mgr
         _STATE = {"capture": target, "baseline": baseline, "ready": True}
+    # Outside _config_lock so a slow stream cannot delay ownership transfer. The
+    # failed-configure path above raises without publishing, because a capture
+    # that never became the owner is not a state anyone should be told about.
+    publish("configured", target)
     return _STATE["capture"]
 
 
@@ -80,6 +85,10 @@ def dispose():
         if mgr is not None:
             mgr.dispose_all()
         _STATE = {"capture": None, "baseline": None, "ready": False}
+        # Published outside _config_lock: publish() takes _state_lock, and the
+        # two are disjoint, but keeping the notification out of the state
+        # transition means a slow subscriber cannot delay the teardown.
+        publish("disposed")
 
 
 def _run(tool, **args):
@@ -312,6 +321,104 @@ _ROUTES = {
 }
 
 
+# --------------------------------------------------------------------------
+# Change notification.
+#
+# A stream has to be able to say "nothing changed since you looked". That is
+# only possible with a revision: a counter that increases on every observable
+# change, so a client that reconnects with the revision it last saw can be told
+# the difference between "you are current" and "you missed events 7 and 8".
+# Without it, a dropped connection is indistinguishable from an idle one, and
+# the failure mode is a client that looks healthy while showing stale data.
+#
+# This is additive. It observes the state that already exists; it does not
+# change how any endpoint computes its answer, and no existing route consults
+# it. An endpoint that never calls publish() is simply not streamable, which is
+# reported rather than papered over.
+#
+# Bounded history, because an unbounded event log in a long-lived debug session
+# is a memory leak with a friendly name. Once the buffer is full the oldest
+# event is dropped, and a client asking for a revision that has already been
+# evicted is told so explicitly instead of being handed a silently short gap.
+# --------------------------------------------------------------------------
+
+HISTORY_LIMIT = 256
+
+_REVISION = 0
+_HISTORY = []
+_SUBSCRIBERS = []
+_state_lock = threading.Lock()
+
+
+def revision() -> int:
+    with _state_lock:
+        return _REVISION
+
+
+def publish(kind, detail=None):
+    """Record one state change and wake every subscriber."""
+    global _REVISION
+    with _state_lock:
+        _REVISION += 1
+        event = {"revision": _REVISION, "kind": kind, "detail": detail,
+                 "state": snapshot_state()}
+        _HISTORY.append(event)
+        if len(_HISTORY) > HISTORY_LIMIT:
+            del _HISTORY[:len(_HISTORY) - HISTORY_LIMIT]
+        waiters = list(_SUBSCRIBERS)
+    for queue in waiters:
+        try:
+            queue.put_nowait(event)
+        except Exception:
+            # A subscriber that cannot keep up is dropped rather than allowed to
+            # block the publisher: a notification channel must never be able to
+            # stall a query.
+            pass
+    return event
+
+
+def snapshot_state() -> dict:
+    """The observable surface, small and JSON-safe."""
+    return {"ready": bool(_STATE.get("ready")),
+            "capture": _STATE.get("capture"),
+            "ci": _STATE.get("baseline") is not None,
+            "revision": _REVISION}
+
+
+def replay_since(last_revision):
+    """Events after `last_revision`, or None if that revision was evicted.
+
+    None is distinct from an empty list on purpose. An empty list means "you
+    are current"; None means "I no longer have the events you missed" and the
+    client has to fall back to a full snapshot rather than assume it is up to
+    date.
+    """
+    with _state_lock:
+        if last_revision is None:
+            return []
+        if last_revision > _REVISION:
+            return None            # a revision from another server lifetime
+        if last_revision == _REVISION:
+            return []
+        oldest = _HISTORY[0]["revision"] if _HISTORY else _REVISION + 1
+        if last_revision < oldest - 1:
+            return None            # the gap predates what is still buffered
+        return [e for e in _HISTORY if e["revision"] > last_revision]
+
+
+def subscribe():
+    q = queuelib.Queue()
+    with _state_lock:
+        _SUBSCRIBERS.append(q)
+    return q
+
+
+def unsubscribe(q):
+    with _state_lock:
+        if q in _SUBSCRIBERS:
+            _SUBSCRIBERS.remove(q)
+
+
 def route(path, query):
     from rdebug.observability import record, record_result, timed
 
@@ -368,6 +475,27 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        if parsed.path == "/ui" or parsed.path.startswith("/ui/"):
+            # The React build is served alongside the frozen page rather than
+            # replacing it. index.html is not a UI choice, it is the fixture the
+            # frozen IDE controls cut their functions out of, so it stays exactly
+            # where it is and reachable at exactly the same URL.
+            self.serve_static(parsed.path)
+            return
+        if parsed.path == "/api/state":
+            # The snapshot a reconnecting client asks for when its revision was
+            # evicted, and the first thing a client reads at all. A stream can
+            # only carry changes; this carries the state they add up to.
+            body = to_json(snapshot_state()).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if parsed.path == "/api/events":
+            self.serve_events(parsed)
+            return
         if parsed.path.startswith("/api/"):
             query = parse_qs(parsed.query)
             status, payload = route(parsed.path, query)
@@ -380,8 +508,146 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+    # Server-sent events.
+    #
+    # `retry:` is sent up front rather than left to the browser default, because
+    # the reconnect policy is a property of this server, not of whatever client
+    # happens to connect. A named event carries a revision in both its `id:` and
+    # its payload, so `Last-Event-ID` on reconnect is meaningful and a client can
+    # also read the revision out of the body if it prefers.
+    #
+    # The heartbeat is a comment line, not an event: it exists to keep the
+    # connection open through an idle period, and emitting it as a named event
+    # would make every idle minute look like a state change to the client.
+    HEARTBEAT_SECONDS = 15
+
+    def serve_events(self, parsed):
+        query = parse_qs(parsed.query)
+        raw = query.get("lastEventId", [None])[0]
+        header = self.headers.get("Last-Event-ID")
+        last = header if header else (raw or None)
+        try:
+            last_revision = int(last) if last not in (None, "") else None
+        except (TypeError, ValueError):
+            last_revision = None
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        q = subscribe()
+        try:
+            self.wfile.write(b"retry: 2000\n\n")
+            self.wfile.flush()
+
+            backlog = replay_since(last_revision)
+            if backlog is None:
+                # The gap predates the buffer. Say so, with a resync instruction,
+                # rather than resuming from a point that leaves a hole.
+                state = snapshot_state()
+                self.wfile.write(
+                    ("event: resync\ndata: " + to_json(state) + "\n\n")
+                    .encode("utf-8"))
+                self.wfile.flush()
+            else:
+                for event in backlog:
+                    self.wfile.write(self._frame(event))
+                if backlog:
+                    self.wfile.flush()
+
+            # A client that arrives current gets one event so it learns the
+            # revision it is at. Silence would leave it unable to reconnect.
+            if not backlog:
+                self.wfile.write(self._frame({
+                    "revision": revision(), "kind": "hello", "detail": None,
+                    "state": snapshot_state()}))
+                self.wfile.flush()
+
+            while True:
+                try:
+                    event = q.get(timeout=self.HEARTBEAT_SECONDS)
+                except queuelib.Empty:
+                    self.wfile.write(b": heartbeat\n\n")
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(self._frame(event))
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            # The client went away. That is the normal end of a stream, not an
+            # error worth reporting, and the subscriber is removed below either
+            # way.
+            pass
+        finally:
+            unsubscribe(q)
+
+    @staticmethod
+    def _frame(event):
+        return ("id: {revision}\nevent: {kind}\ndata: {data}\n\n".format(
+            revision=event["revision"], kind=event["kind"],
+            data=to_json(event))).encode("utf-8")
+
+    _UI_ROOT = os.path.join(_STATIC, "ui", "dist")
+    _TYPES = {".html": "text/html; charset=utf-8",
+              ".js": "text/javascript; charset=utf-8",
+              ".css": "text/css; charset=utf-8",
+              ".json": "application/json; charset=utf-8",
+              ".svg": "image/svg+xml",
+              ".ico": "image/x-icon"}
+
+    def serve_static(self, path):
+        """Serve the built React app.
+
+        The resolved path is checked to be inside the dist root. A server that
+        concatenates a request path onto a directory without that check will
+        happily serve any file the process can read, and a debug tool is exactly
+        the kind of program people point at a machine they do not fully trust.
+        """
+        rel = path[len("/ui"):].lstrip("/") or "index.html"
+        if rel.endswith("/"):
+            rel += "index.html"
+        target = os.path.normpath(os.path.join(self._UI_ROOT, rel))
+        root = os.path.normpath(self._UI_ROOT)
+        if not (target == root or target.startswith(root + os.sep)):
+            self.send_response(403)
+            self.end_headers()
+            return
+        if os.path.isdir(target):
+            target = os.path.join(target, "index.html")
+        if not os.path.isfile(target):
+            # Client-side routing falls back to the app shell rather than
+            # answering 404 for a path the bundler would have handled.
+            target = os.path.join(root, "index.html")
+            if not os.path.isfile(target):
+                self.send_response(404)
+                self.end_headers()
+                return
+        ext = os.path.splitext(target)[1]
+        body = open(target, "rb").read()
+        self.send_response(200)
+        self.send_header("Content-Type",
+                         self._TYPES.get(ext, "application/octet-stream"))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, fmt, *args):
         pass
+
+    def handle_one_request(self):
+        # A client that navigates away mid-stream aborts the socket, and the
+        # default implementation lets that surface as a traceback from
+        # socketserver even though a dropped subscriber is the normal end of a
+        # stream. Serving it quietly is not hiding a fault: the alternative is a
+        # stack trace for an event the server does not care about, which trains
+        # readers to ignore tracebacks. Anything that is a real fault still
+        # propagates, because only the disconnect errors are absorbed.
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            self.close_connection = True
 
 
 def main():

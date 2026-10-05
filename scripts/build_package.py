@@ -49,7 +49,15 @@ WHEEL_REQUIRED = (
     "rdebug_ide/app.py",
     "rdebug/cli.py",
     "rdebug_mcp/server.py",
+    # The React build. An empty glob is deliberately not the requirement: the
+    # hashed asset filename changes on every build, so requiring one specific
+    # name would make the check fail for a reason that has nothing to do with
+    # the packaging. What must hold is that the shell and at least one script
+    # are present, which is what /ui needs to render anything at all.
+    "rdebug_ide/static/ui/dist/index.html",
 )
+
+WHEEL_REQUIRED_PREFIX = ("rdebug_ide/static/ui/dist/assets/",)
 
 CONSOLE_SCRIPTS = ("rdebug", "rdebug-mcp", "rdebug-ide")
 
@@ -88,6 +96,9 @@ def check_wheel(path):
     licences = [m for m in members if "LICENSE" in m.split("/")[-1]]
     if not licences:
         missing.append("LICENSE (any dist-info/licenses entry)")
+    for prefix in WHEEL_REQUIRED_PREFIX:
+        if not [m for m in members if m.startswith(prefix) and not m.endswith("/")]:
+            missing.append("at least one built asset under " + prefix)
     entry = next((m for m in members if m.endswith("entry_points.txt")), None)
     scripts = []
     if entry is None:
@@ -139,11 +150,57 @@ def stage_source(dest):
             raise Infra("missing build input: " + name)
         shutil.copy2(src, os.path.join(dest, name))
         staged.append(name)
+    # The React bundle is built before the copy, not after. It is a build
+    # output, so it is gitignored and a fresh checkout has none; but the
+    # artifact has to ship it, because a wheel with no /ui installs cleanly and
+    # then serves 404 for the new page. Copying src/ first and building into the
+    # repository afterwards would stage the tree before the bundle existed.
+    bundle = os.path.join(ROOT, "src", "rdebug_ide", "static", "ui", "dist")
+    if not os.path.isfile(os.path.join(bundle, "index.html")):
+        if shutil.which("npm") is None:
+            raise Infra("static/ui/dist is absent and npm is not on PATH, so "
+                        "the wheel would ship with no /ui. Build it with "
+                        "`npm ci && npm run build` in "
+                        "src/rdebug_ide/static/ui.")
+        build_bundle()
+
     shutil.copytree(os.path.join(ROOT, "src"), os.path.join(dest, "src"),
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc",
                                                   "*.egg-info"))
     staged.append("src/")
+    staged.append("src/rdebug_ide/static/ui/dist/")
     return staged
+
+
+def npm_command():
+    """Resolve npm, including the .cmd shim Windows actually executes.
+
+    subprocess raises FileNotFoundError for a bare "npm" on Windows even when npm
+    is installed, because the executable is npm.cmd and execve does not consult
+    PATHEXT. Reported as infrastructure rather than surfacing as a traceback
+    about a subprocess, which says nothing about why the build could not run.
+    """
+    found = shutil.which("npm")
+    if found is None:
+        raise Infra("npm is not on PATH, so static/ui cannot be built and the "
+                    "wheel would ship with no /ui")
+    return found
+
+
+def build_bundle():
+    ui = os.path.join(ROOT, "src", "rdebug_ide", "static", "ui")
+    npm = npm_command()
+    if not os.path.isdir(os.path.join(ui, "node_modules")):
+        install = subprocess.run([npm, "ci"], cwd=ui, capture_output=True,
+                                 text=True, encoding="utf-8", errors="replace")
+        if install.returncode != 0:
+            raise Infra("npm ci failed in static/ui:\n"
+                        + (install.stderr or install.stdout)[-1500:])
+    proc = subprocess.run([npm, "run", "build"], cwd=ui, capture_output=True,
+                          text=True, encoding="utf-8", errors="replace")
+    if proc.returncode != 0:
+        raise Infra("npm run build failed in static/ui:\n"
+                    + (proc.stderr or proc.stdout)[-1500:])
 
 
 def build(outdir, workdir):

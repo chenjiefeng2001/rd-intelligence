@@ -46,7 +46,14 @@ where = ["src"]
 # reports success, `rdebug-ide` starts, and it serves nothing. setuptools does not
 # collect .html on its own without MANIFEST.in or a VCS plugin, and neither
 # exists here, so the asset has to be declared.
-rdebug_ide = ["static/*.html"]
+rdebug_ide = [
+  "static/*.html",
+  # The built React bundle. Only dist/ ships: node_modules is a build input,
+  # not a runtime dependency, and shipping it would add tens of megabytes of
+  # third-party code to every install.
+  "static/ui/dist/*",
+  "static/ui/dist/assets/*",
+]
 
 [tool.pytest.ini_options]
 # Both suites are in the default run. tests_transport was previously absent

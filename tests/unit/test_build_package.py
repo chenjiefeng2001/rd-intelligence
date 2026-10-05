@@ -11,6 +11,7 @@ import importlib.util
 import io
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -62,6 +63,11 @@ GOOD_MEMBERS = [
     "rdebug_ide/app.py",
     "rdebug/cli.py",
     "rdebug_mcp/server.py",
+    "rdebug_ide/static/ui/dist/index.html",
+    # A representative built asset. The real name is content-hashed and changes
+    # on every build, which is why the checker requires the prefix and not a
+    # literal filename.
+    "rdebug_ide/static/ui/dist/assets/index-abc123.js",
     "rd_intelligence-0.1.0.dist-info/licenses/LICENSE",
 ]
 GOOD_ENTRY = ("[console_scripts]\n"
@@ -89,6 +95,24 @@ class TestTheVerifierHasTeeth(unittest.TestCase):
         out = bp.check_wheel(self._wheel(members))
         self.assertFalse(out["ok"])
         self.assertIn("rdebug_ide/static/index.html", out["missing"])
+
+    def test_a_wheel_without_the_react_bundle_is_rejected(self):
+        members = [m for m in GOOD_MEMBERS if "/ui/" not in m]
+        members = [m for m in members
+                   if "index.html" not in m or "static/ui" in m]
+        out = bp.check_wheel(self._wheel(members))
+        self.assertFalse(out["ok"])
+        self.assertTrue(any("ui/dist" in m for m in out["missing"]))
+
+    def test_a_wheel_with_the_bundle_but_no_built_asset_is_rejected(self):
+        # The shell alone renders a page with no script in it. Requiring only
+        # index.html would accept a bundle that cannot run.
+        members = [m for m in GOOD_MEMBERS if "static/" not in m or True]
+        members = [m for m in members if not m.startswith("rdebug_ide/static/ui")]
+        members.append("rdebug_ide/static/ui/dist/index.html")
+        out = bp.check_wheel(self._wheel(members))
+        self.assertFalse(out["ok"])
+        self.assertTrue(any("built asset" in m for m in out["missing"]))
 
     def test_a_wheel_without_a_licence_is_rejected(self):
         members = [m for m in GOOD_MEMBERS if "LICENSE" not in m]
@@ -148,6 +172,27 @@ class TestTheDeclarationsThatBrokeTheBuild(unittest.TestCase):
     def test_the_page_the_declaration_protects_exists(self):
         self.assertTrue(STATIC.is_file())
 
+    def test_the_built_bundle_is_declared_as_package_data(self):
+        # The React bundle is a build output. If it is not declared it does not
+        # ship, and /ui answers 404 while every other route looks healthy.
+        text = PP.read_text(encoding="utf-8")
+        self.assertIn("static/ui/dist", text)
+
+    def test_only_the_built_bundle_is_declared_not_the_build_inputs(self):
+        # Checked against the globs themselves, not the whole file: the file
+        # mentions node_modules in a comment explaining why it is excluded, and
+        # a substring search over prose would fail on its own explanation.
+        text = PP.read_text(encoding="utf-8")
+        block = text[text.index("[tool.setuptools.package-data]"):]
+        globs = [line.strip().strip('",')
+                 for line in block.splitlines()
+                 if line.strip().startswith('"')]
+        self.assertTrue(globs)
+        for glob in globs:
+            with self.subTest(glob=glob):
+                self.assertNotIn("node_modules", glob)
+                self.assertNotIn("src/", glob)
+
 
 class TestTheRealBuild(unittest.TestCase):
     """Layer two. A real build, because these defects had no other detector."""
@@ -174,16 +219,21 @@ class TestTheRealBuild(unittest.TestCase):
         # The mutation that mattered: remove the declaration and the wheel loses
         # the page while still building successfully. The staged copy exists so
         # that a leftover SOURCES.txt cannot mask this.
+        #
+        # The whole section is cut rather than one line of it, because the list
+        # has grown: pinning the deletion to a single literal would silently stop
+        # testing anything the day the list is edited.
         original = PP.read_bytes()
         text = original.decode("utf-8")
         head, sep, tail = text.partition("[tool.setuptools.package-data]")
         self.assertTrue(sep, "the package-data section is already gone")
-        cut = tail.index("rdebug_ide = [\"static/*.html\"]")
-        tail = tail[tail.index("\n", cut) + 1:]
+        after = re.search(r"\n\[(?!tool\.setuptools\.package-data)", tail)
+        self.assertIsNotNone(after, "could not find the section that follows")
+        rest = tail[after.start() + 1:]
         out = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, out, ignore_errors=True)
         try:
-            PP.write_bytes((head + tail).encode("utf-8"))
+            PP.write_bytes((head + rest).encode("utf-8"))
             proc = run_script(out)
         finally:
             PP.write_bytes(original)
@@ -192,6 +242,40 @@ class TestTheRealBuild(unittest.TestCase):
                          "a wheel without the IDE page was accepted:\n"
                          + proc.stdout + proc.stderr)
         self.assertIn("rdebug_ide/static/index.html", proc.stdout + proc.stderr)
+
+    def test_the_bundle_is_included_because_it_is_declared(self):
+        # Same mutation, aimed at the React bundle this time: the wheel loses
+        # /ui and every other route keeps answering.
+        original = PP.read_bytes()
+        text = original.decode("utf-8")
+        head, sep, tail = text.partition("[tool.setuptools.package-data]")
+        self.assertTrue(sep)
+        # Everything after the section, found from the *next* top-level header so
+        # the splice cannot swallow [tool.setuptools.packages.find]. Splitting on
+        # the closing bracket instead reaches the first "]" inside the list and
+        # cuts the file in half.
+        after = re.search(r"\n\[(?!tool\.setuptools\.package-data)", tail)
+        self.assertIsNotNone(after, "could not find the section that follows")
+        rest = tail[after.start() + 1:]
+        out = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, out, ignore_errors=True)
+        try:
+            # Keep the html glob, drop only the ui globs, so the failure this
+            # mutation produces is specifically "no /ui" rather than "no page".
+            # partition() consumes the header it matched, so it has to be put
+            # back; omitting it produces a pyproject with no package-data at all,
+            # which fails as INFRASTRUCTURE and tests nothing about the bundle.
+            trimmed = (head + "[tool.setuptools.package-data]\n"
+                       'rdebug_ide = ["static/*.html"]\n')
+            PP.write_bytes((trimmed + rest).encode("utf-8"))
+            proc = run_script(out)
+        finally:
+            PP.write_bytes(original)
+        self.assertEqual(PP.read_bytes(), original, "the mutation did not revert")
+        self.assertEqual(proc.returncode, bp.REGRESSION,
+                         "a wheel without the React bundle was accepted:\n"
+                         + proc.stdout + proc.stderr)
+        self.assertIn("ui/dist", proc.stdout + proc.stderr)
 
     def test_an_unbuildable_package_is_infrastructure_not_pass(self):
         original = PP.read_bytes()
