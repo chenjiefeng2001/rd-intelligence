@@ -877,3 +877,67 @@ Resource 会**静默得到 `undefined`**。这属于未来客户端实现的 **s
 不改变 Q7 判定。
 
 字节差异（729 vs 727）仅作辅助观察，**不作为 context 证据**——判定依据为字段级取值。
+
+## P9a HTTP / Semantic Boundary Workstream — COMPLETE / FROZEN
+
+### 账本
+
+| 项 | 状态 |
+| --- | --- |
+| **Q1a-Retrieval** | **PASS** |
+| Q1c-Clean Shutdown | **NOT_ESTABLISHED** / capability boundary（未授权建立） |
+| **Q2** | **PASS**（仅已分类 `bad_request`；status 单独不充分） |
+| Q3 | **NOT_OBSERVABLE_IN_P9a** → DEFERRED_TO_P9b |
+| Q4 | **NOT_ESTABLISHED**（无合适合法空结果案例） |
+| **Q5** | **PASS**（含反向对照） |
+| Q6 feasibility | **DIFFERENCE_POSSIBLE** |
+| **Q6** | **PASS**（5/5） |
+| **Q7** | **PASS**（全部子命题确证） |
+| **Q8 / Q8b** | **PASS / PASS** |
+
+**6 项 PASS，3 项非 PASS 保留原分类。** 不将「全部有结论」升级为「全部 PASS」。
+
+### 冻结的两条判定原则
+
+**1. event-level draw 数量 ≠ query-level analysis cardinality**
+
+`draw_event_ids=[11]`（带 drawcall 的 event）**不能**推导 `max_draws` 是否退化。
+`max_draws` 约束的是**被分析的 modification 序列**，该 capture 实测 `analyzedDraws=2`。
+「单 draw event ⇒ Q6 退化」这一推断**已被实测推翻**。
+
+**2. 字段级语义证据优先于 payload 大小**
+
+Q6 截断边界处响应仅相差 **1 byte**（8364 vs 8365）。字节长度是真实却极易忽略的信号，
+若沿用 Q5 的字节判据极可能误得「无差异」。判定必须基于 `analyzedDraws` / `truncatedDraws` **字段**。
+同理，Q7 的 729 vs 727 bytes 仅作辅助，**不作为 context 证据**。
+
+### 本阶段的三项非 PASS 各自的性质（不得混同）
+
+| 项 | 性质 |
+| --- | --- |
+| Q1c | **能力边界**：`terminate()` 无法证明 `dispose()` 执行；exit 1 已归因为 `TerminateProcess` 固有产物，既非失败也非成功 |
+| Q3 | **结构性不可观测**：`transport_error` / `malformed` 是浏览器端 `api()` 的分类，服务器无此概念 |
+| Q4 | **证据不足**：本 capture 无自然合法空结果；**未制造特殊场景、未扩 corpus** |
+
+### 本阶段的三处探测自身错误（方法学证据，非产品缺陷）
+
+1. 把 `deep=`（空）与 `True `（尾随空白）spec 成非法值 → 虚增两条「非法值未被拒绝」
+2. 残留未带 base URL 的重复请求 + readiness 无标志位 → 「capture 不可用」的假象
+3. Resource 的 `contextEventId` 从 `summary` 读取 → 「Resource context 不变」的假象
+
+三者的共同形态：**把「探测坏了」或「取错位置」读成「产品/环境有缺陷」**。
+第 3 项经最小补测（仅改读回位置）即闭合，**推测未被当作观察**。
+
+### 阶段边界
+
+未修改任何生产代码；未启动浏览器；未扩充 capture；未推进 D3b / D4 / eid discovery / A8；
+未建立 graceful-shutdown capability；未重开 Track A。P0–P3 冻结项全程未触碰。
+
+### 后续（均未启动，须显式选择）
+
+* **P9b** Browser Rendering —— 解决 Q3，需 Playwright
+* **P10** Human Acceptance
+* **Deferred workstreams** —— D3b / D4 / eid discovery / A8，各自需重新定义 scope
+* **Q1c** —— 除非 graceful-shutdown capability 本身成为明确目标
+
+**当前没有为「把账本全部变成 PASS」而启动任何一项的理由。**
