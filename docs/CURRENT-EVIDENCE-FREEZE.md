@@ -472,3 +472,53 @@ Contract，目前已由真实 replay 数据证实。
 * 本 capture 仅 `draw_rows=1`。三类查询可完成，**但仅在这个薄 capture 上**；未证明更复杂场景。
 * 未执行 `pixel_history`（按授权不为覆盖度而扩展）。
 * Q1a–Q7 仍未授权。
+
+## Q1a HTTP 页面取证 — RETRIEVAL PASS，CLEAN SHUTDOWN NOT_ESTABLISHED
+
+隔离进程启动**真实 IDE**（`python -m rdebug_ide.app <capture> --port`，即 production 路径）。
+前后置均核验：无并发持有 `.rdc` 的进程（0 → 0）。
+无浏览器、无 JS 执行、未修改任何代码。
+
+### 取证证据（PASS）
+
+| path | status | Content-Type | bytes | 与磁盘字节一致 | 未截断 |
+| --- | --- | --- | --- | --- | --- |
+| `/` | **200** | `text/html; charset=utf-8` | 16968 | **YES** | doctype + `</html>` 完整 |
+| `/index.html` | **200** | `text/html; charset=utf-8` | 16968 | **YES** | 同上 |
+
+另：`sanitize`/UTF-8 解码成功，`<script>` 块完整。页面由服务端每次从磁盁现读，
+因此**字节一致性**是本次可得的最强完整性证据。
+
+### 静态资源集合 = 单一页面（观察，非假设）
+
+```
+<link>      0        <script src>  0        <img>  0        css url()  0
+```
+
+`static/` 目录仅有 `index.html`。页面**完全自包**，无任何外部引用。
+因此 Q1a 的「页面及其实际引用的静态资源」归结为**单一页面**，
+且 Q1b（浏览器执行）不依赖任何额外网络拉取。
+
+**`Content-Length` 头未发送**（`null`），服务端依赖连接关闭。
+因此完整性只能由完整读取 + 字节比对验证，不能由头部声明。
+
+### 关闭：NOT_ESTABLISHED（不得读作 PASS）
+
+授权要求「完成后显式关闭 server；确认进程正常退出」。实际结果：
+
+```
+proc.terminate()  ->  exit_code = 1
+```
+
+**归因已验证**：在 Windows 上对**带 cleanup handler 的平凡进程**执行 `terminate()` 也统一返回 1。
+即 **exit 1 是 `TerminateProcess` 的固有产物**，既不能读作产品关闭失败，也不能读作成功。
+
+**但它同时意味着 IDE 的 `finally: dispose()` 未被执行**——骤杀不展开栈。
+因此 Q1a **不能声称完整 PASS**：取证成立，**干净关闭未建立**。
+
+这是**探测机制的限制**，不是产品发现。要让 `dispose()` 实际运行，需要能被 Python 将互不解堆的
+信号（Windows 上需 `CTRL_C_EVENT` 投递到进程组），而非 `TerminateProcess`。
+此机制尚未建立，且属于新的探测能力而非既有 Contract。
+
+**边界保持**：Q1a PASS 不等于页面 JS 能执行（Q1b 属 P9b）；
+未对 `.banner` 可见性作任何判断；Q2–Q7 未执行。
