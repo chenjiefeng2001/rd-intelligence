@@ -25,7 +25,7 @@ def eid_param():
     except ImportError as exc:
         raise AssertionError(
             "the IDE exposes no event-id parameter handling, so the transport "
-            "and classification properties cannot hold: %s" % exc)
+            f"and classification properties cannot hold: {exc}")
     return impl
 
 
