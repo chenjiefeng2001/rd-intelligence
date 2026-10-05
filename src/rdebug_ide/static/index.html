@@ -186,13 +186,12 @@ function renderDiff(d) {
   $("btnCopy").disabled = false;
 }
 
-async function showEv(id) {
 // The id arrives from the evidence chips, which the server already rendered in
-// canonical form. Rewriting it here meant stripping every non-digit and
-// re-prefixing, which round-trips only for the one id shape that happens to
-// survive it and silently corrupts any other. This is a pure function so the
-// contract can be exercised directly rather than by reading the source: the id
-// is either already canonical and is preserved byte for byte, or it is refused.
+// canonical form. Rewriting it meant stripping every non-digit and re-prefixing,
+// which round-trips only for the one id shape that happens to survive it and
+// silently corrupts any other. It is a pure function so the contract can be
+// exercised directly rather than by reading the source: the id is either already
+// canonical and is preserved byte for byte, or it is refused.
 function canonicalResourceId(id) {
   const raw = (id || "").trim();
   if (!/^ResourceId::\d+$/.test(raw)) {
@@ -205,7 +204,7 @@ function canonicalResourceId(id) {
 async function showEv(id) {
   const c = canonicalResourceId(id);
   if (!showOk(c)) return;
-  const r = await api(`/api/resource?id=${encodeURIComponent(c.data.id)}`);`/api/resource?id=${encodeURIComponent(canonical)}`);
+  const r = await api(`/api/resource?id=${encodeURIComponent(c.data.id)}`);
   if (!showOk(r)) return;
   $("evdetail").style.display = "block";
   $("evdetail").textContent = "loading…";
