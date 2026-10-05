@@ -522,3 +522,57 @@ proc.terminate()  ->  exit_code = 1
 
 **边界保持**：Q1a PASS 不等于页面 JS 能执行（Q1b 属 P9b）；
 未对 `.banner` 可见性作任何判断；Q2–Q7 未执行。
+
+## Q2 `bad_request` HTTP 往返 — PASS / VERIFIED
+
+隔离进程启动真实 IDE，仅观察 wire contract：**status、Content-Type、body 结构**。未解释结果，未判断页面行为。**7/7 案例全部符合预期。**
+
+| 案例 | 期望 | 实测 | `kind` | body keys | 文案 |
+| --- | --- | --- | --- | --- | --- |
+| trace malformed eid | 400 | **400** | `bad_request` | `error, kind` | `eid must be an integer; got: abc` |
+| trace illegal eid | 400 | **400** | `bad_request` | `error, kind, tool` | `context event 99999 is not an event in this capture (events 1..12)` |
+| trace valid eid (11) | 200 | **200** | — | `edges, nodes, resourceFlows, summary` | — |
+| trace 无 eid | 200 | **200** | — | 同上 | — |
+| diff **带** `eid=abc` | 200 | **200** | — | `a,b,comparison,equal,evidence,firstDivergence,layers` | — |
+| diff 无 eid | 200 | **200** | — | 同上，**21090 bytes 逐字节相同** | — |
+| resource malformed eid | 400 | **400** | `bad_request` | `error, kind` | `eid must be an integer` |
+
+全部 `application/json; charset=utf-8`，全部可解析为 JSON。
+
+### 三项 Contract 级在线证据
+
+**1. `bad_request → HTTP 400` 跨三个边界实测成立，且两条来源都在**：
+
+* IDE 参数层（`_eid_param` → `QueryError(kind=...)`）→ body keys `["error","kind"]`
+* **worker 子进程层**（action-tree membership → 跨进程保留 kind）→ body keys `["error","kind","tool"]`
+
+多出的 `tool` 正是**跨进程分类保留**的痕迹，与 `workers.py:288` 的实现吻合。
+
+**2. P3 E1'（eid 作用范围）获得正面证据**：`diff?eid=abc` 与无 eid 的 diff
+结果**逐字节相同**（21090 bytes）。这是「Diff 不受 eid 影响」的**证明**，而非「静默忽略」的猜测。
+
+**3. 稀疏 eid 得到第三次实测确认**：错误文案仍写 `events 1..12`，
+而 Q8 已测得该 capture 仅 **4 个**合法 event id。**若 UI 按文案区间校验，会放过不存在的 event。**
+
+### 残留进程：本次 run 未观察到泄漏
+
+后置检查曾瞬时报告 1 个持有 `.rdc` 的进程。未据此下结论，
+改为 **30 秒连续采样**，结果全部为 0。判定为**收尾竞态**（worker 子进程晚于父进程退出）。
+
+记录口径：这是**本次 run 的观察**，**不声称已证明绝无泄漏**。
+
+## Q3 — NOT_OBSERVABLE_IN_P9a / DEFERRED_TO_P9b
+
+Q3 同时要求三类 failure 的现状，而它们在不同层：
+
+| Q3 子项 | P9a HTTP 客户端能否观测 |
+| --- | --- |
+| HTTP / API error | **能**（已由 Q2 覆盖） |
+| `api()` 的 `transport_error` | **不能** |
+| `api()` 的 `malformed` | **不能** |
+
+后两者是 **IDE 浏览器端 `api()` 函数的客户端分类**，服务器无此概念。
+在 P9a 执行 Q3 只能得到「HTTP/API failure path observed」，而不能得到 Contract 要求的
+「transport_error / malformed 在真实客户端执行中正确呈现」。
+
+**这是能力边界，不是产品缺陷。** 不标 FAIL，也不为完成 Q3 引入浏览器。
