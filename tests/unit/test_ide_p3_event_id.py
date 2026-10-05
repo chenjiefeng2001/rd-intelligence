@@ -6,12 +6,32 @@ import tempfile
 import unittest
 
 from rdebug.errors import RDebugError
-from rdebug_ide.app import _eid_param, api_info
 
 PAGE = (pathlib.Path(__file__).resolve().parent.parent.parent
         / "src" / "rdebug_ide" / "static" / "index.html")
 APP = (pathlib.Path(__file__).resolve().parent.parent.parent
        / "src" / "rdebug_ide" / "app.py")
+
+
+def eid_param():
+    """Fetch the IDE's eid handling, failing as a property rather than a crash.
+
+    A module-level import would turn a reverted phase into a collection error,
+    and a collection error says only that the module is gone. It is not evidence
+    that the malformed-input behaviour stopped holding.
+    """
+    try:
+        from rdebug_ide.app import _eid_param as impl
+    except ImportError as exc:
+        raise AssertionError(
+            "the IDE exposes no event-id parameter handling, so the transport "
+            "and classification properties cannot hold: %s" % exc)
+    return impl
+
+
+def api_info(query):
+    from rdebug_ide.app import api_info as impl
+    return impl(query)
 
 
 def page() -> str:
@@ -90,20 +110,20 @@ class TestEventIdFormat(unittest.TestCase):
     job, so nothing here may encode a range or a membership rule."""
 
     def test_absent_or_blank_means_no_event_context(self):
-        self.assertIsNone(_eid_param({}))
-        self.assertIsNone(_eid_param({"eid": [""]}))
-        self.assertIsNone(_eid_param({"eid": ["   "]}))
+        self.assertIsNone(eid_param()({}))
+        self.assertIsNone(eid_param()({"eid": [""]}))
+        self.assertIsNone(eid_param()({"eid": ["   "]}))
 
     def test_a_well_formed_integer_is_carried_through_exactly(self):
-        self.assertEqual(_eid_param({"eid": ["100"]}), 100)
-        self.assertEqual(_eid_param({"eid": [" 100 "]}), 100)
-        self.assertEqual(_eid_param({"eid": ["0"]}), 0)
+        self.assertEqual(eid_param()({"eid": ["100"]}), 100)
+        self.assertEqual(eid_param()({"eid": [" 100 "]}), 100)
+        self.assertEqual(eid_param()({"eid": ["0"]}), 0)
 
     def test_a_malformed_value_is_a_parameter_error(self):
         for bad in ("abc", "1.5", "1e3", "+5", "0x10", "100 200", "١٠٠"):
             with self.subTest(value=bad):
                 with self.assertRaises(RDebugError) as ctx:
-                    _eid_param({"eid": [bad]})
+                    eid_param()({"eid": [bad]})
                 self.assertEqual(getattr(ctx.exception, "kind", None),
                                  "bad_request",
                                  f"{bad!r} must be classified, not guessed")
