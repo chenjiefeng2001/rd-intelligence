@@ -421,3 +421,54 @@ valid 范围 = [1, 12]
 1. 首次探测调用了不存在的 `CaptureSession.open()`（实际是 `__init__` + context manager）——探测脚本错，非 Q8 failure。
 2. 隔离性检查我写成了「无 python 进程」，而约束的正确表述是「无并发**打开 capture** 的进程」。
    实际核验按正确口径重做，结果为 0，前置条件成立。
+
+## Q8b Representative Semantic-Query Probe — PASS
+
+隔离进程、单 capture (`w00001_frame11.rdc`)、无 HTTP server、无浏览器、未修改任何冻结代码。
+前置条件：无并发持有 `.rdc` 的进程（0）。坐标采用 **IDE 自身默认值**
+A=(320,240)、B=(10,10)，资源 id 由只读枚举取得。结果经 `to_json()` 校验——
+即 IDE worker 在返回前实际用到的序列化路径。
+
+| 查询 | 结果 | 证据 |
+| --- | --- | --- |
+| `trace_pixel` | **PASS** | 6 edges；summary 含 `truncatedDraws` / `contextEventId` / `modificationCount` |
+| `diff_pixel` | **PASS** | 6 layers，`comparison="different"` |
+| `trace_resource` | **PASS** | keys: `readers` / `writers` / `other` / `evidence` / `summary` / `contextEventId` |
+
+关闭干净，进程退出码 **0**。
+
+### 实际数据定义了 P3 的两个假设
+
+**1. D8 的 resource ID 格式**——实际枚举得到：
+
+    ResourceId::1000000000000000182
+
+完全匹配 `canonicalResourceId()` 的 `^ResourceId::\d+$`。该纯函数在 P2-D 被提出为可行为
+Contract，目前已由真实 replay 数据证实。
+
+**2. 合法 eid 稀疏**（Q8 已录宗）——`valid_event_ids=4` 但范围 `[1,12]`。
+
+### 这一轮我的探测脚本结错三次（均非产品缺陷）
+
+三次失败的全部是我的探测脚本而非 capture 能力，且若不查证就会形成严重的假结论：
+
+| # | 错误 | 若未发现会得出的错误结论 |
+| --- | --- | --- |
+| 1 | `diff_pixel` 返回 `DiffResult` 包装，我按 dict 检查 | “Diff 查询无法完成” |
+| 2 | 资源 id 属性名猜错，查询**根未执行** | “Resource 查询无法完成” |
+| 3 | `to_json()` 返回 **字符串**，未 `json.loads` | “返回结构不合法” |
+
+**最危险的是第 4 次探查才显现的邻近错误**：若直接对 `DiffResult` 调 `to_json()`，
+`sanitize()` 会 `return str(value)`，产生字符串——很容易得出「IDE 的 diff 路径返回字符串而非 diff 对象」
+这个**严重但完全虚假**的结论。查证后才发现 worker 的 `_df` 先调 `.to_dict()`，
+产品路径完好。
+
+**新原则（已记录）**：探测必须镜像**产品实际的组合**，而不是各分析函数。
+直接调 `diff_pixel` 而不调 worker 封装，就是在探测一个产品不使用的组合。
+
+### Q8b PASS 不意味着什么
+
+* **不意味着 Track A `verified repair` 已建立**；Acceptance 3/4 的 CDB 同名模块寻址 gap 不受影响。
+* 本 capture 仅 `draw_rows=1`。三类查询可完成，**但仅在这个薄 capture 上**；未证明更复杂场景。
+* 未执行 `pixel_history`（按授权不为覆盖度而扩展）。
+* Q1a–Q7 仍未授权。
