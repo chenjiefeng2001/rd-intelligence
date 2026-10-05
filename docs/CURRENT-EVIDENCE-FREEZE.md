@@ -816,3 +816,64 @@ IDE **无法区分**「用户显式传了空」与「没传」。
 若 `max_draws` 无效，四项主张可能空洞成立。
 
 这直接在线上证实 **P2-A / D2**：截断经真实 HTTP 边界可见，且 `truncatedDraws` 被如实报告。
+
+## Q7 `eid` 作用范围经 HTTP 边界保持 — PASS（全部子命题确证）
+
+主对比 `11`（draw / 默认 context）vs `12`（合法但非 draw）。**你预设的 B 类（非 draw 语义约束）未发生**：
+`12` 正常工作，且 `mods=2 / analyzed=2`，与 draw event `11` 的分析深度相同。
+
+### Trace：`summary.contextEventId`
+
+| eid | status | `contextEventId` | analyzedDraws | bytes |
+| --- | --- | --- | --- | --- |
+| 无 eid | 200 | **11** | 2 | 8365 |
+| 1 | 200 | **1** | 1 | 3164 |
+| 2 | 200 | **2** | 1 | 3164 |
+| 11 | 200 | **11** | 2 | 8365 |
+| 12 | 200 | **12** | 2 | 8365 |
+
+四个合法 eid **逐一等于所请求的值**（无重写、无偏移）；**无 eid ≡ eid=11**（= `last_draw_event_id`）；
+`1`/`2` 与 `11`/`12` 的 `analyzedDraws` 不同（1 vs 2），说明 context **真的改变了工作量**，不只是标签。
+
+### Resource：顶层 `contextEventId`（读回位置已修正）
+
+| eid | status | 顶层 `contextEventId` | bytes |
+| --- | --- | --- | --- |
+| 无 eid | 200 | **11** | 729 |
+| 1 | 200 | **1** | 727 |
+| 2 | 200 | **2** | 727 |
+| 11 | 200 | **11** | 729 |
+| 12 | 200 | **12** | 729 |
+
+`all_legal_echo_their_own_context = 4/4`，`default_matches_last_draw = True`。
+
+首次运行读 `summary` 得到全 `None`，是**探针取值位置错误**，与产品无关；
+Q8b 的 key 集合本已提示该字段位于顶层。修正读回位置后 4/4 成立。
+
+### 全部子命题
+
+| 子命题 | 证据来源 |
+| --- | --- |
+| Diff/Explain 不受 eid 影响 | **Q2**：`diff?eid=abc` 与无 eid 逐字节相同（21090 B） |
+| Trace 非法 eid → 400 | **Q2**：`eid=99999` |
+| Resource 非法 eid → 400 | **Q2**：`eid=abc` |
+| Trace context 随合法 eid 改变 | 本轮，5/5 |
+| Resource context 随合法 eid 改变 | 本轮，4/4 + 默认 ≡ 11 |
+
+→ **Q7 = PASS**
+
+### 结构性观察（不是 defect）
+
+```
+/api/trace     ->  summary.contextEventId
+/api/resource  ->  顶层 contextEventId
+```
+
+两个端点把该字段放在**不同层级**。目前**无跨端点共享 response-shape Contract**，
+因此**不足以判定违反 Contract**，**不主张为 defect，不新开 workstream**。
+
+**保留的工程风险说明**：客户端若假定所有 endpoint 都把 `contextEventId` 放在 `summary`，
+Resource 会**静默得到 `undefined`**。这属于未来客户端实现的 **shape-consistency trap**，
+不改变 Q7 判定。
+
+字节差异（729 vs 727）仅作辅助观察，**不作为 context 证据**——判定依据为字段级取值。
