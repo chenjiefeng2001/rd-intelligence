@@ -97,12 +97,34 @@ class TestFailureCannotReachARenderer(unittest.TestCase):
 
     def test_every_guard_still_reaches_the_containment(self):
         # A guard that does not delegate is not containment, and the previous
-        # literal assertion could not tell the difference.
-        for name in ("enterSeq", "enter"):
-            body = self._body(name)
+        # literal assertion could not tell the difference. The guard set is
+        # enumerated rather than hardcoded: containment is a P2-C property, so
+        # this control must not come to depend on whichever guards a later
+        # phase happens to add.
+        found = [n for n in ("enter", "enterSeq", "showOk")
+                 if f"function {n}(" in page()]
+        self.assertIn("enter", found)
+        guards = ("enter", "enterSeq", "showOk")
+        for name in found:
             with self.subTest(guard=name):
-                self.assertRegex(body, r"(showFailure|\benter\()",
-                                 f"{name} no longer reports and stops")
+                # Transitive: a guard may reach the reporter by delegating to
+                # another guard, so the closure is walked rather than the body
+                # of the outermost function being inspected.
+                seen, stack, reached = set(), [name], False
+                while stack:
+                    cur = stack.pop()
+                    if cur in seen:
+                        continue
+                    seen.add(cur)
+                    body = self._body(cur)
+                    if "showFailure" in body:
+                        reached = True
+                        break
+                    for g in guards:
+                        if f"{g}(" in body:
+                            stack.append(g)
+                self.assertTrue(reached,
+                                f"{name} never reaches showFailure: {seen}")
 
     def _body(self, name):
         src = page()
