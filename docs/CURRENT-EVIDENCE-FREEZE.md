@@ -658,3 +658,161 @@ Q2 的 PASS 成立，但范围应表述为：
 该问题属 **Replay / transport / API semantics**，与 P9a 目标不同，且相关区域已冻结。
 故记为 **OBSERVATION / OPEN DESIGN QUESTION**，**不开新 workstream**，
 **不定性为 defect**。
+
+## eid 可用性前置探测 — MET（prerequisite，不是 Q7 PASS）
+
+只读探测，**未启动 IDE、未走 HTTP**。Q8 既有记录仅保存 `count=4` 与 `range=[1,12]`，
+**未保存完整集合**，故按授权补一次探测。
+
+```
+valid_event_ids    = [1, 2, 11, 12]
+distinct           = 4
+range              = [1, 12]
+draw_event_ids     = [11]
+last_draw_event_id = 11
+last_event_id      = 12
+legal_but_not_draw = [1, 2, 12]
+prerequisite       = MET
+```
+
+### 与错误文案范围的精确对照（第四次实证，本次首次给出精确数量）
+
+```
+真实合法:  1, 2, 11, 12
+文案宣称:  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
+不存在:    3, 4, 5, 6, 7, 8, 9, 10          ← 8 个
+```
+
+**8 个 eid 在文案所宣称的区间内，但不在 action tree 中**，对其发起查询必然得到
+`bad_request`。若客户端按错误文案校验区间，将放过这 8 个。
+
+### 本 capture 的结构事实
+
+`draw_event_ids = [11]` —— **仅一个 draw event**，且它正是默认 context（`last_draw_event_id = 11`）。
+`12` 是合法但**非 draw** 的 event。
+
+**对后续的既定含义**：
+
+* **Q6（`max_draws`）**：只有 1 个 draw 时 `max_draws=1` 与 `max_draws=16` 很可能无可观察差异，
+  即 **capture-degenerate**。即使日后比较出相同响应，也**不得直接判 PASS**——
+  须先判定这是语义等价还是 capture 不足导致的退化。
+* **Q7 剩余项**（合法 eid 是否可观测改变 context）：prerequisite 已 MET，`11` 与 `12` 是合适候选
+  （覆盖 draw → 合法非-draw 边界）。但**失败不得预先定性为 defect**，可能是既有语义约束。
+
+**本记录为可执行性 prerequisite，不是 Q7 结论。**
+
+## Q5 `deep` 语义经 HTTP 边界保持 — PASS
+
+隔离进程、真实 IDE、真实 diff 查询。**仅比较 HTTP status / body / 语义响应**；
+未启动浏览器、未修改生产代码、未执行 Q6/Q7。
+
+### 三项核心主张
+
+| 主张 | 结果 | 证据 |
+| --- | --- | --- |
+| `deep=1` ≡ `deep=true` | **OK** | 两者均 200，body 均 **14139 bytes** |
+| `deep=0` ≡ `deep=false` | **OK** | 两者均 200，body 均 **12780 bytes** |
+| **`deep=1` ≠ `deep=0`（反向对照）** | **OK** | **14139 vs 12780，相差 1359 bytes** |
+
+**反向对照是本次判定的关键**。若 `deep` 毫无效果，前两条等价性会**空洞成立**——
+两个请求都成功而已。实测 `deep=1` 比 `deep=0` 多 1359 bytes，
+说明 `include_shader_values` 确实生效，等价性因此**非平凡**。
+
+这直接在线上证实 **P2-A / D1 的修复**：UI 发 `deep=1`、手写 URL 发 `deep=true`，
+两者现在语义一致——**而 D1 的缺陷正是它们曾不一致**（服务端只读 `"1"`，`"true"` 落入 falsy 分支）。
+
+### 非法值
+
+| 值 | status |
+| --- | --- |
+| `yes` | **400** |
+| `2` | **400** |
+| `0x1` | **400** |
+| `on` | **400** |
+
+### 两项输入边界行为（原 spec 误列为非法值，已修正）
+
+| 输入 | status | 实际语义 |
+| --- | --- | --- |
+| `deep=`（空） | 200 | `parse_qs` 默认丢弃空值 → `_bool_param` 视为**未提供** → 取默认 `false` |
+| `deep=True `（尾随空白） | 200 | `_bool_param` 有 `.strip()` → 解析为 `true` |
+
+**两者在实现契约下均非非法**，且**确定性地落到有文档的语义**，**不构成 Silent Wrong-Answer**。
+
+**一项值得留痕的边界行为**：`deep=`（空参数）**静默等价于「未提供」**，即 shallow。
+IDE **无法区分**「用户显式传了空」与「没传」。
+
+这与 D1/D7 属同一族（输入形态未如实反映），但**严重度低得多**：它落到**有文档的默认值**，
+而非替换成另一个**不同的值**（D7 的缺陷是 `100` → `(100,0)`，查询了错误位置）。
+**不主张为缺陷，不新增 workstream，仅记录。**
+
+### 一致性观察
+
+5 个非法案例的 `kind` **均为 `null`**——走的是「`RDebugError` 无分类 → 400 但无 `kind`」路径，
+与 Q4 观察到的 `bad_xy_trace`（400，keys `["error","endpoint"]`）同族。
+**再次印证 status 不是唯一判别依据。** 不改变 Q5 判定。
+
+## Q6 feasibility probe — DIFFERENCE_POSSIBLE（推翻了先前推断）
+
+只判定「差异是否可能存在」，不判定 Q6。**未扩 corpus、未启新 capture 工作流。**
+
+```
+(320,240)  any_diff = TRUE
+   max_draws=1   analyzedDraws=1  truncatedDraws=true    8364 bytes
+   max_draws=2   analyzedDraws=2  truncatedDraws=false   8365 bytes
+   max_draws=16  analyzedDraws=2  truncatedDraws=false   8365 bytes
+
+(10,10) / (0,0) / (100,100)   any_diff = False（analyzedDraws 恒为 1）
+```
+
+### 被实测推翻的推断
+
+先前依据 `draw_event_ids = [11]`（**仅 1 个**）推断「Q6 必然 degenerate」。**该推断错误。**
+
+原因是**维度混淆**——两个量不是同一件事：
+
+| 量 | 值 | 含义 |
+| --- | --- | --- |
+| `draw_event_ids` | `[11]` | **带 drawcall 的 event** |
+| `totalWriteEvents` / `analyzedDraws` | **2** | **被分析的 modification 序列长度** |
+
+`max_draws` 约束的是**后者**。`draw_event_ids=[11]` **不足以推断 `max_draws` 是否退化**。
+
+> **方法学教训**：**不要用 capture 的 event-level draw 数量替代 query-level analysis cardinality。**
+
+### 一处影响判定方式的观察
+
+截断边界处响应仅相差 **1 byte**（8364 vs 8365）。截断确实发生
+（`truncatedDraws` 由 `true` 变 `false`），但**字节长度是真实却极易忽略的信号**。
+判定必须基于 `analyzedDraws` / `truncatedDraws` **字段**。
+
+### 探测自身两处缺陷（方法学记录，不升格为产品缺陷）
+
+1. 编辑残留一行**未带 base URL 的重复请求**，报 `MissingSchema`
+2. readiness 循环无标志位，服务器未起时抛同类错误
+
+两者都会把「探测坏了」伪装成「环境不可用」。修正后 `DIFFERENCE_POSSIBLE` 成立。
+
+## Q6 `max_draws` 语义经 HTTP 边界保持 — PASS
+
+主判定坐标 `(320,240)`（IDE 自身默认 A）。**5/5 主张成立。**
+
+| max_draws | status | analyzedDraws | truncatedDraws | bytes |
+| --- | --- | --- | --- | --- |
+| **1** | 200 | **1** | **true** | 8364 |
+| **2** | 200 | **2** | **false** | 8365 |
+| **16** | 200 | **2** | **false** | 8365 |
+
+| 主张 | 结果 |
+| --- | --- |
+| `max_draws=1` 截断（`truncatedDraws=true`, `analyzedDraws=1`） | **OK** |
+| `max_draws=2` 不截断且分析 2 个 | **OK** |
+| `max_draws=16` 不截断且分析 2 个（无天花板效应） | **OK** |
+| `max_draws=2` 与 `16` 在所有 summary 字段上一致 | **OK** |
+| **辅助反向对照**：无可截断内容的坐标保持稳定 | **OK**（3/3 stable） |
+
+**反向对照的作用**：三个 `analyzedDraws` 恒为 1 的坐标在 `max_draws` 变化时**完全不变**。
+这证明响应差异来自**数据本身**（存在可截断序列），而非参数被忽略——
+若 `max_draws` 无效，四项主张可能空洞成立。
+
+这直接在线上证实 **P2-A / D2**：截断经真实 HTTP 边界可见，且 `truncatedDraws` 被如实报告。
