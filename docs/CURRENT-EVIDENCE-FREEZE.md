@@ -525,6 +525,9 @@ proc.terminate()  ->  exit_code = 1
 
 ## Q2 `bad_request` HTTP 往返 — PASS / VERIFIED
 
+> **范围限定（不得外推）**：仅限于**已分类**的 `bad_request` 案例。
+> **HTTP status 单独不是充分的错误判别依据**（见下方观察）。
+
 隔离进程启动真实 IDE，仅观察 wire contract：**status、Content-Type、body 结构**。未解释结果，未判断页面行为。**7/7 案例全部符合预期。**
 
 | 案例 | 期望 | 实测 | `kind` | body keys | 文案 |
@@ -576,3 +579,82 @@ Q3 同时要求三类 failure 的现状，而它们在不同层：
 「transport_error / malformed 在真实客户端执行中正确呈现」。
 
 **这是能力边界，不是产品缺陷。** 不标 FAIL，也不为完成 Q3 引入浏览器。
+
+## Q4 合法空结果 — NOT_ESTABLISHED（no suitable legal empty-result case）
+
+隔离进程、真实 IDE、普通查询（未制造特殊语义场景）。结果：
+
+| 候选 | status | 分类 |
+| --- | --- | --- |
+| `/api/trace?x=0&y=0` | 200 | **non-empty**（3146 B） |
+| `/api/trace?x=1&y=1` | 200 | **non-empty**（3146 B） |
+| `/api/trace?x=5&y=5` | 200 | **non-empty**（3146 B） |
+| `/api/trace?x=100&y=100` | 200 | **non-empty**（3166 B） |
+| `/api/resource?id=<absent>` | 200 | **error body** |
+| `/api/ci`（无 baseline） | 200 | `{"enabled": false}` |
+
+**trace 在任意被测坐标都返回非空**（输出目标自身的写入总在 edges 中）。
+
+因此本 capture **不存在自然的合法空结果**，`Q4 = NOT_ESTABLISHED`。按 Contract 要求**未制造特殊场景**，
+**未为 Q4 扩充 corpus**。
+
+`/api/ci` 的 `{"enabled": false}` **不被主张为合法空结果**：它是**能力标志**（CI baseline 未配置），
+而非「查询无结果」，据此判 PASS 属于放宽标准。
+
+## 观察：HTTP status 不是充分的错误判别依据（INSUFFICIENT / OBSERVED）
+
+Q4 的附带探测发现四类真实响应：
+
+```
+classified error:      HTTP 400   body.error   body.kind
+unclassified error:    HTTP 200   body.error   （无 body.kind）
+parameter error:       HTTP 400   body.error   body.endpoint
+valid result:          HTTP 200   正常结果 body
+```
+
+具体证据：
+
+| 案例 | status | body keys | `kind` |
+| --- | --- | --- | --- |
+| absent resource | **200** | `error, tool` | **null** |
+| malformed resource id | **200** | `error, tool` | **null** |
+| `y=notanumber` | 400 | `error, endpoint` | null |
+| `diff&eid=abc` | 200 | 正常 diff keys | — |
+
+`absent_resource` 的 body：
+
+> `unknown resource id 'ResourceId::999999999999999999'; use an id from 'rdebug resources'`
+
+成因可在 `app.py:304` 见到：`if payload.get("error") and payload.get("kind")` —— **需要 `kind`**。
+worker 仅在 `RDebugError` 带分类时附加 `kind`；未分类错误因此返回 **200**。
+
+**正确的客户端 Contract 因此是三者合取**：
+
+```
+HTTP status  +  response body shape / error 字段  +  kind（若存在）
+```
+
+而**不是** `status == 200 → success`。
+
+**这与 P2-C 已冻结的 `api()` 行为一致**（同时检查 `r.ok` 与 `body.error`），
+因此**本次未发现 P2-C 回归，也未发现 Silent Wrong-Answer**。
+
+### 对 Q2 结论范围的收窄
+
+Q2 的 PASS 成立，但范围应表述为：
+
+> **The tested classified `bad_request` cases produce HTTP 400 end-to-end.
+> HTTP status alone is not a sufficient error discriminator for all current error responses.**
+
+**不得**写成「errors always produce HTTP 400」。Q2 的两个错误案例**恰好都带 `kind`**，
+因此未触及未分类路径；仅看 Q2 会误以为「错误 → 400」是普遍规律。
+
+### `unclassified error → HTTP 200`：OPEN DESIGN QUESTION，不是缺陷
+
+现有证据只能建立**这是当前实现的实际语义**，**不能**建立**这是错误的 API Contract**。
+要判断后者需回答一个尚未授权的问题：未分类 worker error 是否本应映射为 4xx/5xx，
+抑或 `200 + error body` 是有意设计。
+
+该问题属 **Replay / transport / API semantics**，与 P9a 目标不同，且相关区域已冻结。
+故记为 **OBSERVATION / OPEN DESIGN QUESTION**，**不开新 workstream**，
+**不定性为 defect**。
