@@ -7,7 +7,6 @@ records. So the rule bans emoji and pictographs, permits structure and semantics
 and applies to the entry-point documents rather than to the archive.
 """
 import pathlib
-import re
 import unittest
 
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -74,10 +73,10 @@ class TestNoEmojiInEntryPointDocs(unittest.TestCase):
             with self.subTest(doc=path.name):
                 self.assertEqual(
                     bad, {},
-                    "%s contains emoji: %s"
-                    % (path.name,
-                       ", ".join("L%d U+%04X %s" % (ln, o, lb)
-                                 for (ln, o, lb) in sorted(bad))))
+                    "{} contains emoji: {}".format(
+                        path.name,
+                        ", ".join(f"L{ln} U+{o:04X} {lb}"
+                                  for (ln, o, lb) in sorted(bad))))
 
     def test_structure_and_semantics_stay_permitted(self):
         """The rule must not be so broad that it deletes tables and flow."""
@@ -93,16 +92,43 @@ class TestNoEmojiInEntryPointDocs(unittest.TestCase):
                     o = ord(c)
                     self.assertFalse(
                         any(b_lo <= o <= b_hi for b_lo, b_hi, _ in BANNED),
-                        "%s: U+%04X is both permitted and banned (%s)"
-                        % (path.name, o, why))
+                        f"{path.name}: U+{o:04X} is both permitted and banned ({why})")
 
     def test_banned_and_permitted_ranges_do_not_overlap(self):
         for lo, hi, why in PERMITTED:
             for blo, bhi, label in BANNED:
                 self.assertFalse(
                     lo <= bhi and blo <= hi,
-                    "range overlap: permitted U+%04X-U+%04X (%s) vs banned "
-                    "%s U+%04X-U+%04X" % (lo, hi, why, label, blo, bhi))
+                    f"range overlap: permitted U+{lo:04X}-U+{hi:04X} ({why}) vs banned "
+                    f"{label} U+{blo:04X}-U+{bhi:04X}")
+
+
+class TestCleanupPreservesStructure(unittest.TestCase):
+    """Removing emoji must not cost anything else. A cleanup that also collapses
+    indentation destroys diagrams and nested quotes, so the boundary is checked
+    rather than assumed."""
+
+    def _shape(self, name):
+        text = (REPO / name).read_text(encoding="utf-8")
+        lines = text.splitlines()
+        return {
+            "indented": sum(1 for ln in lines if ln.startswith((" ", "\t"))),
+            "tables": text.count("| --- |"),
+            "boxes": sum(ln.count(c) for ln in lines for c in "\u250c\u2510\u2514\u2518"),
+            "lines": len(lines),
+        }
+
+    def test_readme_structure_is_intact(self):
+        shape = self._shape("README.md")
+        self.assertGreater(shape["indented"], 50,
+                           "README lost its indented block content")
+        self.assertGreater(shape["tables"], 5, "README lost tables")
+        self.assertGreater(shape["boxes"], 10, "README lost its architecture diagram")
+
+    def test_docs_index_structure_is_intact(self):
+        shape = self._shape("docs/README.md")
+        self.assertGreater(shape["tables"], 4, "docs index lost tables")
+        self.assertGreater(shape["lines"], 60, "docs index collapsed")
 
 
 class TestPolicyIsEnforceable(unittest.TestCase):
