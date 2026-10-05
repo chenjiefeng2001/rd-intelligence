@@ -172,8 +172,8 @@ class TestInARealBrowser(unittest.TestCase):
         cls._pw.stop()
         cls.live.stop()
 
-    def page(self):
-        ctx = self.browser.new_context()
+    def page(self, color_scheme="dark"):
+        ctx = self.browser.new_context(color_scheme=color_scheme)
         page = ctx.new_page()
         self.addCleanup(ctx.close)
         page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
@@ -246,14 +246,21 @@ class TestInARealBrowser(unittest.TestCase):
         # is_visible() can be satisfied by layout alone. A computed colour is
         # what distinguishes "the element exists" from "the user can see it",
         # which is the exact gap the frozen record calls out.
-        page = self.page()
+        #
+        # Pinned to the dark scheme explicitly. Asserting one literal RGB while
+        # inheriting whatever colour scheme the browser happens to default to
+        # would make this a test of the default rather than of the page.
+        page = self.page(color_scheme="dark")
         page.click("#btnTrace")
         page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
         colour = page.eval_on_selector(
             '[data-testid="failure-banner"]',
             "el => getComputedStyle(el).color")
-        self.assertNotEqual(colour, "rgba(0, 0, 0, 0)")
+        background = page.eval_on_selector(
+            '[data-testid="failure-banner"]',
+            "el => getComputedStyle(el).backgroundColor")
         self.assertEqual(colour, "rgb(232, 196, 104)")
+        self.assertNotEqual(background, "rgba(0, 0, 0, 0)")
 
     def test_a_bad_coordinate_is_refused_before_any_request(self):
         page = self.page()
@@ -270,6 +277,213 @@ class TestInARealBrowser(unittest.TestCase):
         page.reload(wait_until="networkidle")
         page.wait_for_timeout(1500)
         self.assertEqual(errors, [])
+
+
+@needs_browser
+@needs_bundle
+class TestRestoredFeatures(unittest.TestCase):
+    """The React page shipped without two controls the old page has.
+
+    That was a functional regression dressed as a rewrite: `btnExplain` and
+    `btnCopy` were simply absent. These assert they exist and that the D9
+    availability contract still holds -- copy follows the prompt, not the diff.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls._pw = sync_playwright().start()
+        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+        cls.live = Live()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls._pw.stop()
+        cls.live.stop()
+
+    def page(self):
+        ctx = self.browser.new_context(
+            permissions=["clipboard-read", "clipboard-write"])
+        page = ctx.new_page()
+        self.addCleanup(ctx.close)
+        page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                  wait_until="networkidle")
+        return page
+
+    def test_the_explain_control_exists(self):
+        page = self.page()
+        self.assertTrue(page.is_visible("#btnExplain"))
+        self.assertEqual(page.text_content("#btnExplain").strip(),
+                         "Generate AI Prompt")
+
+    def test_the_copy_control_exists(self):
+        page = self.page()
+        self.assertTrue(page.is_visible("#btnCopy"))
+
+    def test_copy_is_unavailable_while_there_is_no_prompt(self):
+        # Availability follows the prompt that exists rather than the fact that
+        # a diff happened. Copying an empty prompt as if it were real is the
+        # failure this rule exists to prevent.
+        page = self.page()
+        self.assertTrue(page.is_disabled("#btnCopy"))
+
+    def test_a_failed_explain_leaves_copy_unavailable(self):
+        # The capture is unconfigured, so explain fails. An empty prompt must not
+        # become copyable.
+        page = self.page()
+        page.click("#btnExplain")
+        page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
+        self.assertEqual(page.input_value("#prompt"), "")
+        self.assertTrue(page.is_disabled("#btnCopy"))
+
+    def test_the_eid_scope_note_is_rendered(self):
+        page = self.page()
+        note = page.inner_text('[data-testid="eid-scope"]')
+        self.assertIn("Applies to", note)
+        self.assertIn("Does not apply to", note)
+        self.assertIn("Generate AI Prompt", note)
+
+    def test_the_scope_note_travels_with_the_language(self):
+        page = self.page()
+        page.click("#btnLang")
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"eid-scope\"]')"
+            ".textContent.includes('生效于')", timeout=10000)
+        self.assertIn("生效于", page.inner_text('[data-testid="eid-scope"]'))
+
+    def test_the_stream_badge_reads_live(self):
+        page = self.page()
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"stream-status\"]')"
+            ".className.includes('stream-live')", timeout=15000)
+        self.assertIn("live", page.inner_text('[data-testid="stream-status"]'))
+
+
+@needs_browser
+@needs_bundle
+class TestAccessibilityAndLayout(unittest.TestCase):
+    """Modernisation claims, each one asserted rather than asserted-by-name."""
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls._pw = sync_playwright().start()
+        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+        cls.live = Live()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls._pw.stop()
+        cls.live.stop()
+
+    def page(self, width=1280, height=900):
+        ctx = self.browser.new_context(viewport={"width": width, "height": height})
+        page = ctx.new_page()
+        self.addCleanup(ctx.close)
+        page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                  wait_until="networkidle")
+        return page
+
+    def test_every_input_has_an_accessible_name(self):
+        # A placeholder is not a name: it disappears as soon as the field has a
+        # value, and it is not reliably announced.
+        page = self.page()
+        unnamed = page.evaluate("""() => {
+          const out = [];
+          for (const el of document.querySelectorAll('input, textarea, select')) {
+            const label = el.labels && el.labels[0];
+            const aria = el.getAttribute('aria-label')
+              || el.getAttribute('aria-labelledby');
+            if (!label && !aria && !el.getAttribute('title')) {
+              out.push(el.id || el.tagName);
+            }
+          }
+          return out;
+        }""")
+        self.assertEqual(unnamed, [])
+
+    def test_the_result_region_is_a_live_region(self):
+        # The result arrives after the click that asked for it. Without a live
+        # region a screen reader announces nothing.
+        page = self.page()
+        self.assertEqual(
+            page.get_attribute("#result", "aria-live"), "polite")
+
+    def test_a_failure_is_announced_assertively(self):
+        page = self.page()
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
+        self.assertEqual(
+            page.get_attribute('[data-testid="failure-banner"]', "role"), "alert")
+
+    def test_a_long_capture_name_does_not_break_the_layout(self):
+        # Long resource ids are the normal case here, not the exception.
+        page = self.page()
+        page.evaluate("""() => {
+          document.getElementById('capture').textContent =
+            'D:/very/long/path/that/keeps/going/' + 'x'.repeat(120) + '.rdc';
+        }""")
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth"
+            " > document.documentElement.clientWidth + 1")
+        self.assertFalse(overflow, "the page scrolls sideways")
+
+    def test_a_narrow_viewport_does_not_scroll_sideways(self):
+        page = self.page(width=420, height=800)
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth"
+            " > document.documentElement.clientWidth + 1")
+        self.assertFalse(overflow, "narrow viewport forces a horizontal scroll")
+
+    def test_a_very_long_resource_id_wraps_instead_of_escaping(self):
+        page = self.page()
+        page.set_content("""<style>
+          .mono { overflow-wrap: anywhere; word-break: break-word; }
+        </style><div class="mono" id="probe">""" + "R" * 300 + "</div>""")
+        overflow = page.evaluate(
+            "() => document.getElementById('probe').scrollWidth"
+            " > document.getElementById('probe').clientWidth + 1")
+        self.assertFalse(overflow)
+
+    def test_focus_is_visible_on_the_keyboard_path(self):
+        page = self.page()
+        page.keyboard.press("Tab")
+        outline = page.evaluate("""() => {
+          const el = document.activeElement;
+          if (!el || el === document.body) return null;
+          const s = getComputedStyle(el);
+          return s.outlineStyle + ' ' + s.outlineWidth;
+        }""")
+        self.assertIsNotNone(outline, "Tab did not reach an interactive element")
+        self.assertNotEqual(outline, "none 0px")
+
+    def test_enter_in_a_coordinate_field_runs_the_query(self):
+        page = self.page()
+        page.fill("#a", "not-a-coordinate")
+        page.press("#a", "Enter")
+        page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
+        self.assertIn("x,y", page.inner_text('[data-testid="failure-banner"]'))
+
+    def test_the_banner_is_readable_in_the_light_scheme_too(self):
+        # The light palette is a second set of claims, so it is checked rather
+        # than assumed: a media query that renders white-on-white would pass
+        # every other test here.
+        ctx_light = self.browser.new_context(color_scheme="light")
+        self.addCleanup(ctx_light.close)
+        light = ctx_light.new_page()
+        light.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                   wait_until="networkidle")
+        light.click("#btnTrace")
+        light.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
+        painted = light.evaluate("""() => {
+          const el = document.querySelector('[data-testid="failure-banner"]');
+          const s = getComputedStyle(el);
+          return {fg: s.color, bg: s.backgroundColor};
+        }""")
+        self.assertNotEqual(painted["bg"], "rgba(0, 0, 0, 0)")
+        self.assertNotEqual(painted["fg"], painted["bg"])
 
 
 if __name__ == "__main__":

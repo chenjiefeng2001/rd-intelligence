@@ -116,6 +116,13 @@ React 页面复用同一套 `/api/*` 端点，并通过 `GET /api/events`（SSE�
 `Last-Event-ID`，若该修订号已被缓冲淘汰，服务端返回 `resync` 而不是给一段有缺口的
 事件列表 —— 静默续传正是让调试工具自信地显示过期数据的成因。
 
+React 页面与原页面的功能对等：五个按钮（对比 / 追踪 / 生成 AI 提示词 / 复制 /
+语言）以及 capture、CI 徽标、结果、证据、prompt、eid 适用范围说明都在。可访问性
+方面每个控件都有可访问名称，结果区是 `aria-live`，失败横幅是 `role="alert"`，
+坐标输入框回车即查询；布局在窄视口下折行而不横向滚动，跟随系统的浅色/深色配色。
+这些断言由 `tests/unit/test_ide_ui_browser.py` 在真实浏览器中执行，详见
+[`docs/IDE-INTERFACE-CONTRACT.md`](docs/IDE-INTERFACE-CONTRACT.md)。
+
 前端源码在 `src/rdebug_ide/static/ui/`，构建：
 
 ```bash

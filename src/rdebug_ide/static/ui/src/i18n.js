@@ -23,6 +23,7 @@ export const I18N = {
       trace: "Trace A",
       explain: "Generate AI Prompt",
       copy: "Copy prompt",
+      copied: "Copied",
     },
     eidScope:
       "Applies to: <b>Trace</b>, <b>Resource</b>. Does not apply to: <b>Diff</b>, <b>Generate AI Prompt</b> (they use the default event).",
@@ -80,6 +81,7 @@ export const I18N = {
       trace: "追踪 A",
       explain: "生成 AI 提示词",
       copy: "复制提示词",
+      copied: "已复制",
     },
     eidScope:
       "生效于：<b>追踪</b>、<b>资源</b>。不生效于：<b>对比</b>、<b>生成 AI 提示词</b>（二者使用默认事件）。",

@@ -1,12 +1,15 @@
 :root {
   --bg: #14161a;
   --panel: #1d2026;
+  --panel-2: #23262d;
   --fg: #d8dce3;
   --dim: #8a919d;
   --accent: #5aa2ff;
   --bad: #ff6b6b;
   --good: #69d58c;
   --warn: #e8c468;
+  --border: #33373f;
+  --radius: 8px;
 }
 
 * {
@@ -17,53 +20,103 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+  font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.mono {
+  font-family: Consolas, "SF Mono", ui-monospace, monospace;
+}
+
+/* Long resource ids are the normal case in this tool, not the exception.
+   Without this they push the whole card wide and the page scrolls sideways
+   while the user is trying to read a value. */
+#capture,
+.layer-name,
+.chip,
+.tree,
+.mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#capture {
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 header {
   padding: 10px 16px;
   background: var(--panel);
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: center;
+  /* Without this the header wraps badly once the capture name is long, because
+     a flex row will shrink text but not replace it with an ellipsis. */
+  flex-wrap: wrap;
 }
 
 header h1 {
   font-size: 15px;
   margin: 0;
   font-weight: 600;
+  flex: none;
 }
 
 .badge {
   padding: 2px 10px;
   border-radius: 10px;
   font-weight: 600;
-  margin-left: auto;
+  flex: none;
+  white-space: nowrap;
 }
 
-.stream-live {
+.stream-live,
+.ci-pass {
   background: #123b24;
   color: var(--good);
 }
 
-.stream-down {
+.stream-down,
+.ci-fail {
   background: #3b1216;
   color: var(--bad);
 }
 
+header #btnLang {
+  margin-left: auto;
+}
+
+/* flex-wrap plus a min-width floor is what lets three cards become a column on
+   a narrow window. min-width alone (the previous layout) forced a horizontal
+   scroll instead, which is the opposite of adapting. */
 main {
   display: flex;
   gap: 12px;
   padding: 12px 16px;
   flex-wrap: wrap;
+  align-items: flex-start;
 }
 
 .card {
   background: var(--panel);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px 14px;
-  min-width: 340px;
-  flex: 1;
+  flex: 1 1 320px;
+  min-width: min(320px, 100%);
+}
+
+.card-query {
+  flex: 0 1 380px;
+}
+
+.card-result {
+  flex: 2 1 380px;
+}
+
+.card-evidence {
+  flex: 1 1 300px;
 }
 
 .card h2,
@@ -76,43 +129,103 @@ main {
 }
 
 .sub {
-  margin-top: 10px;
+  margin-top: 14px;
+}
+
+.fields {
+  display: grid;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.field label {
+  min-width: 11ch;
+}
+
+.field-check label {
+  min-width: 0;
 }
 
 input,
 button,
 textarea {
-  background: #23262d;
+  background: var(--panel-2);
   color: var(--fg);
-  border: 1px solid #33373f;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 6px 10px;
   font: inherit;
+}
+
+input:focus-visible,
+button:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 button {
   cursor: pointer;
 }
 
-button:hover {
+button:hover:not(:disabled) {
   border-color: var(--accent);
+}
+
+/* A disabled button that looks merely quiet invites a click that does nothing.
+   Saying why it is unavailable is part of the state. */
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 textarea {
   width: 100%;
-  height: 180px;
-  font-family: Consolas, monospace;
+  height: 170px;
+  resize: vertical;
+  font-family: Consolas, "SF Mono", ui-monospace, monospace;
   font-size: 12px;
 }
 
-.kv {
-  display: grid;
-  grid-template-columns: 130px 1fr;
-  gap: 2px 10px;
+.note {
+  margin: 0;
+  font-size: 12px;
 }
 
-.kv .k {
+/* A definition list rather than a grid of spans: the term/value relationship
+   is real, and a screen reader should announce it as one. */
+.kv {
+  display: grid;
+  grid-template-columns: minmax(8ch, max-content) 1fr;
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.kv dt {
   color: var(--dim);
+}
+
+.kv dd {
+  margin: 0;
+}
+
+.layers,
+.reads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .layer {
@@ -122,8 +235,7 @@ textarea {
 }
 
 .layer-name {
-  width: 190px;
-  display: inline-block;
+  flex: 1 1 auto;
 }
 
 .st-same {
@@ -138,23 +250,29 @@ textarea {
   color: var(--warn);
 }
 
+.st {
+  font-weight: 600;
+}
+
 .tree {
-  margin: 4px 0 4px 10px;
-  border-left: 1px solid #33373f;
+  list-style: none;
+  margin: 2px 0 6px 10px;
   padding-left: 10px;
+  border-left: 1px solid var(--border);
 }
 
 .chip {
   display: inline-block;
   margin: 2px 4px 2px 0;
-  font-family: Consolas, monospace;
   font-size: 12px;
+  max-width: 100%;
 }
 
 /* The failure banner is styled here on purpose. The frozen page has no CSS rule
    for .banner / .banner-warn, which is why its visual visibility is recorded as
    NOT ESTABLISHED. Having the rule here is what makes the new page's visibility
-   checkable rather than assumed. */
+   checkable rather than assumed, and the browser controls assert the computed
+   colour so the claim cannot rot into a class-name convention. */
 .banner {
   border-radius: 6px;
   padding: 8px 10px;
@@ -167,6 +285,11 @@ textarea {
   color: var(--warn);
 }
 
+.banner-detail {
+  margin-top: 4px;
+  color: var(--fg);
+}
+
 .muted {
   color: var(--dim);
 }
@@ -174,4 +297,70 @@ textarea {
 footer {
   padding: 4px 16px 12px;
   font-size: 12px;
+}
+
+/* Visible to assistive technology, not to the eye. The prompt textarea needs a
+   name that is not a visible duplicate of the heading above it. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  main {
+    padding: 10px;
+  }
+
+  .kv {
+    grid-template-columns: 1fr;
+    gap: 0 0;
+  }
+
+  .kv dd {
+    margin-bottom: 6px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --panel-2: #f0f2f5;
+    --fg: #1d2026;
+    --dim: #5c6470;
+    --accent: #0b5fd0;
+    --border: #d3d7de;
+  }
+
+  .stream-live,
+  .ci-pass {
+    background: #e2f5e9;
+    color: #1a6b3c;
+  }
+
+  .stream-down,
+  .ci-fail {
+    background: #fbe6e8;
+    color: #a01b28;
+  }
+
+  .banner-warn {
+    background: #fdf3dc;
+    border-color: #b8860b;
+    color: #7a5c00;
+  }
 }

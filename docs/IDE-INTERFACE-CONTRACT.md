@@ -112,7 +112,53 @@ than assumed.
 | The four-outcome envelope in the browser | **PARTIAL** — error paths verified; a successful trace render is not |
 | CI runs the browser controls | **NOT ESTABLISHED** — the CI job has no browser installed, so they skip there |
 
-## 5. Serving the bundle
+## 5. The React page owes the old page parity
+
+The first React build dropped two controls the old page has: **Generate AI
+Prompt** and **Copy prompt**. That was a functional regression wearing the
+costume of a rewrite — nothing failed, because no test covered them. Both are
+back, and `TestRestoredFeatures` asserts they exist *and* that the D9
+availability contract still holds: copy is available when there is a prompt, not
+because a diff happened, so an empty prompt cannot be copied as if it were real.
+
+Restoring them also surfaced a second defect. The explain failure path did
+`setPrompt("")` and returned, so a failed explain was **silently swallowed**. The
+old page routed it through `enterSeq`, which reports the failure and then clears
+the prompt. `applyPrompt()` now does both: report, then clear.
+
+Parity is therefore a list, not an adjective:
+
+| Old page | React page |
+| --- | --- |
+| `/` root | `/ui/` |
+| `btnDiff`, `btnTrace`, `btnExplain`, `btnCopy`, `btnLang` | all five |
+| `capture`, `cibase`, `result`, `evidence`, `prompt`, `eidscope` | all six |
+| truncation banner | present, `role="alert"` |
+
+## 6. Modernisation, and what each claim is checked by
+
+| Change | Why | Checked by |
+| --- | --- | --- |
+| `AbortController` on every request | a request the user moved past is cancelled, not left running replay work nobody reads | wired to the same claim as the stale check; `api()` returns `kind:"cancelled"`, which never renders |
+| `htmlFor` on every control | a placeholder is not an accessible name; it vanishes once the field has a value | every `input`/`textarea` has a label, `aria-label` or `title` |
+| `aria-live="polite"` on the result | the result arrives after the click that asked for it; without it a screen reader announces nothing | attribute asserted |
+| `role="alert"` on the banner | a failure that arrives after the user looked away is what an assertive region is for | attribute asserted |
+| `.sr-only` label on the prompt | the textarea needs a name that is not a visible duplicate of its heading | covered by the accessible-name sweep |
+| `<dl>` for term/value pairs | the relationship is real and should be announced as one | — |
+| `overflow-wrap: anywhere` | long resource ids are the normal case here, not the exception | a 120-char capture name must not cause horizontal scroll |
+| `flex-wrap` + `min-width: min(320px, 100%)` | the previous `min-width:340px` on every card forced a sideways scroll instead of adapting | 420px viewport does not scroll sideways |
+| focus-visible outline | keyboard operation needs to be visible, not merely possible | Tab reaches a control with a non-zero outline |
+| Enter in a coordinate field | a debug tool is typed into | Enter with a bad coordinate produces the parse failure |
+| `prefers-color-scheme: light` | a second palette is a second set of claims | banner has a non-transparent background and a foreground that differs from it |
+| `prefers-reduced-motion` | transitions are suppressed when asked for | — |
+| no `dangerouslySetInnerHTML` | the strings are ours, but an innerHTML sink in a debugging tool is one nobody should have to audit later | translated prose is React elements |
+
+One control was pinned more tightly because it was looser than it looked: the
+banner-colour assertion now sets `color_scheme="dark"` explicitly. Asserting one
+literal RGB while inheriting whatever scheme the browser defaults to is a test of
+the default, not of the page.
+
+## 7. Serving the bundle
 
 `/ui/` resolves inside `static/ui/dist` and the resolved path is checked to be
 inside that root. A server that concatenates a request path onto a directory
@@ -130,11 +176,13 @@ alone renders a page with no script in it — so at least one built asset is
 required too. The asset filename is content-hashed, which is why the requirement
 is a prefix rather than a literal name.
 
-## 6. What is not established
+## 8. What is not established
 
 | Item | Status |
 | --- | --- |
-| Accessibility of either page | **NOT ESTABLISHED** — `lang` is asserted; nothing else is |
-| React page against a real capture with real trace data | **NOT ESTABLISHED** — see section 4 |
+| A screen-reader run of either page | **NOT ESTABLISHED** — the semantics are asserted in a browser; nobody has listened to one |
+| React page against a real capture with real trace data | **NOT ESTABLISHED** — the browser controls run unconfigured, so they exercise error paths |
+| Keyboard operation beyond Tab and Enter | **NOT ESTABLISHED** — no arrow-key navigation of the evidence chips or the read tree |
 | Long-running stream stability over hours | **NOT ESTABLISHED** — heartbeat and bounded history are unit-tested, not endurance-tested |
 | Browser controls in CI | **NOT ESTABLISHED** — no browser in the CI image |
+| Contrast ratios of either palette | **NOT ESTABLISHED** — colours are asserted as not-transparent, not measured against WCAG |
