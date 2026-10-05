@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "External debug intelligence layer for RenderDoc: thin adapter (Layer 1), query engine and lazy-graph analysis (Layer 2)"
 readme = "README.md"
 requires-python = ">=3.8"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "rd-intelligence contributors" }]
 keywords = ["renderdoc", "graphics-debugging", "replay", "analysis"]
 dependencies = [

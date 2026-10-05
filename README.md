@@ -272,6 +272,17 @@ tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与�
 - [ ] Runtime Isolation（§2.9 WorkerManager 模型）—— **代码已写但未提交、未接线、
   无测试覆盖**。详见下方「Runtime Isolation 实现状态」。
 
+- [x] **P0/P1** Baseline Freeze + UX Readiness 审计（11 项缺陷，全部静默失败）
+- [x] **P2-A** D1 `deep` 语义一致 + D2 trace scope 可见
+- [x] **P2-C/F1** 客户端 failure containment + 消费者入口守卫
+- [x] **P2-D** D7 坐标 + D8 resource ID 输入 Contract
+- [x] **P2-E** D11 请求身份 + stale-result 抑制
+- [x] **P2-F** D9 Explain 产物态诚实化
+- [x] **P3-EID v1** 事件上下文可达性（Trace / Resource）
+- [x] **P9a** HTTP / Semantic 边界取证（6 PASS / 3 非 PASS）
+- [ ] **P9b** Browser Rendering（需引入 Playwright；当前 `browser-level UI propagation = NOT_ESTABLISHED`）
+- [ ] **P10** Human Acceptance
+
 ### Runtime Isolation 实现状态（2026-09-29 核对并修复）
 
 `DESIGN_SPEC.md` §2.9 冻结了「一 worker 进程 = 一 replay runtime = 一 capture」的
@@ -424,3 +435,150 @@ from rdebug import trace_pixel, trace_resource, debug_pixel, diff_pixel
 ## 许可证
 
 MIT。RenderDoc 本体为其自身的 MIT 许可证；两者通过稳定 API 解耦，许可证边界即架构边界。
+
+---
+
+## 正确性与证据治理（P0–P9a，2026-10）
+
+本节记录 2026-10 开展的一轮**正确性修复与证据治理**工作。它与上文的 Phase 1–5（能力构建）性质不同：
+Phase 1–5 增加了能力，本轮**修正已存在的能力在 UI 中产生错误或误导的方式**，并为每一项建立可反驳的证据。
+
+### 治理类别：Silent Wrong-Answer Prevention
+
+核心原则一句话：
+
+> **不允许一个表面成功的结果，对应于用户实际上没有请求过的输入或分析范围。**
+
+| 缺陷 | 静默行为 | 维度 |
+| --- | --- | --- |
+| D1 | 复选框发 `true`，服务端只读 `"1"` → 得到不完整 diff | 输入语义 |
+| D2 | IDE 硬编码覆盖 trace scope → 得到不完整 trace | 分析范围 |
+| D7 | `split(",")[0]` + `y \|\| "0"` → 输入 `100` 被解释为 pixel (100,0) | 输入 |
+| D8 | `"ResourceId::" + id.replace(/\D/g,"")` → 请求 A 变成请求 B | 对象身份（High） |
+| D11 | diff 与 trace 并发写同一区域 → 显示哪个取决于网络时序 | 时间 |
+| D9-c | explain 失败静默清空 prompt → 空 prompt 与真实 prompt 不可区分 | 失败可见性 |
+
+这六项**不是六个独立的 UI bug**，而是一个类别。`D8` 定级 High，因为它改变的是**对象身份**，
+而不仅是结果精度。
+
+### 验证阶梯（本轮的核心方法论贡献）
+
+一次真实的教训驱动了它的建立：某阶段的实现引入了整页 JavaScript 语法错误、`showEv` 重复声明，
+而 **573 项测试全部通过**——因为每个测试都把**单个纯函数抽出后隔离执行**，从未问过
+「它们所在的页面能否解析」。
+
+由此确立的阶梯：
+
+```
+pure-function semantics        纯函数语义
+      ↓
+whole-script parseability      整页 <script> 可解析
+      ↓
+static/unit integration        静态 / 单元集成
+      ↓
+real HTTP / IDE execution      真实 HTTP 与 IDE 执行
+      ↓
+browser propagation            浏览器传播
+      ↓
+human acceptance               人工验收
+```
+
+**跨越中间层级是无效的。** 停在第一层却宣称完成，正是那次冻结失效的原因。
+
+### 冻结流程
+
+每一阶段固定走同一条路径：
+
+```
+implementation
+  → targeted behavior tests
+  → reversible mutation（可逆缺陷注入）
+  → revert-only 分层独立性
+  → restore → full regression → freeze
+```
+
+两条由此确立的判定原则：
+
+1. **控制层先证明自己能抓住错误，绿色结果才有意义。**
+   `588 passed` 不是冻结依据；可逆缺陷注入 + revert-only 分层独立性 + 动态行为证据才是。
+2. **区分「修复存在性控制」与「防止过度实现控制」。**
+   前者随修复回退而失败；后者（如禁止引入状态机）在回退后**必须继续通过**。
+
+### 阶段矩阵
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| P0 | Baseline Freeze | **COMPLETE / VERIFIED / FROZEN** |
+| P1 | Automated UX Readiness（11 项缺陷审计） | **COMPLETE / VERIFIED / FROZEN** |
+| P2-A | D1 + D2 | **IMPLEMENTED / VERIFIED** |
+| P2-C / F1 | 客户端 failure containment + 消费者入口守卫 | **FROZEN** |
+| P2-D | D7 坐标 + D8 resource ID 输入 Contract | **FROZEN** |
+| P2-E | D11 请求身份 + stale-result | **FROZEN** |
+| P2-F | D9 Explain 产物态诚实化 | **FROZEN** |
+| P3-EID v1 | 事件上下文可达性（Trace / Resource） | **FROZEN** |
+| **P9a** | **HTTP / Semantic 边界取证** | **COMPLETE / FROZEN** |
+| P9b | Browser Rendering | **DEFERRED**（需引入浏览器自动化） |
+| P10 | Human Acceptance | **NOT STARTED** |
+
+### P9a 账本（6 PASS / 3 非 PASS）
+
+| 项 | 状态 |
+| --- | --- |
+| Q1a 页面与静态资源经真实 HTTP 完整取得 | **PASS** |
+| Q2 已分类 `bad_request` → HTTP 400 → JSON | **PASS** |
+| Q5 `deep` 语义经 HTTP 边界保持 | **PASS** |
+| Q6 `max_draws` 语义经 HTTP 边界保持 | **PASS** |
+| Q7 `eid` 作用范围 | **PASS** |
+| Q8 / Q8b 真实 capture + 三类代表性查询 | **PASS / PASS** |
+| Q1c 干净关闭 | **NOT_ESTABLISHED**（能力边界） |
+| Q3 `transport_error` / `malformed` | **NOT_OBSERVABLE_IN_P9a** → P9b |
+| Q4 合法空结果 | **NOT_ESTABLISHED**（无合适合法案例） |
+
+**三项非 PASS 的性质互不相同，不得合并**：Q1c 是**能力边界**（当前探测手段无法执行
+`dispose()`）；Q3 是**结构性不可观测**（这两个分类只存在于浏览器端 `api()`，服务器无此概念）；
+Q4 是**证据不足**（本 capture 无自然案例，**未制造特殊场景、未扩 corpus**）。
+
+### 当前未建立的事项（如实列出）
+
+* **`browser-level UI propagation = NOT_ESTABLISHED`。**
+  所有 UI 层结论目前建立在**源码层断言与 Node 中执行的页面自身函数**之上，
+  从未在真实浏览器中渲染观察过。
+* **失败横幅的可见性未建立。** `showFailure()` 写入 DOM 已 VERIFIED，
+  但样式表中**不存在** `.banner` / `.banner-warn` 规则，`#result` 带 `class="muted"`。
+  这**不作为 UX defect 定性**——静态检查无法在浏览器渲染前判定可见性；
+  也**刻意不在验证过程中补 CSS**，否则会把验证工作流变成实现修改工作流。
+* **HTTP status 不是充分的错误判别依据。** 已分类错误返回 400；**未分类**错误返回
+  **200 + error body**（无 `kind`）。正确契约是 `status + body 形状 + kind（若存在）` 三者合取。
+  这与已冻结的客户端行为一致，**未发现回归**；记为开放设计问题，**不定性为缺陷**。
+
+### 两条从错误中固化的判定原则
+
+1. **event-level draw 数量 ≠ query-level analysis cardinality。**
+   `draw_event_ids=[11]`（带 drawcall 的 event）**不能**用于推导 `max_draws` 是否退化；
+   `max_draws` 约束的是被分析的 modification 序列。「单 draw ⇒ 参数无效」这一推断**已被实测推翻**。
+
+2. **字段级语义证据优先于 payload 大小。**
+   trace 截断边界处响应**仅相差 1 byte**；以字节长度为判据会漏掉真实信号。
+   判定必须基于 `analyzedDraws` / `truncatedDraws` 等**字段**。
+
+### 未启动的工作流
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| D3b | **DEFERRED** | event-scoped diff 属 semantic capability expansion，需独立 Contract |
+| D4 | **DEFERRED** | capture 切换属运行时 ownership / 生命周期变更，非 UI 增量 |
+| eid discovery | **DEFERRED** | 属 discoverability，不应与 capability 绑死 |
+| `/api/info` 扩展 | **DEFERRED** | 端点冻结 |
+| A8 capability discovery | **DEFERRED** | 同上 |
+| Q1c graceful shutdown | **NOT AUTHORIZED** | 需新建进程生命周期观测能力 |
+
+### 相关文档
+
+| 主题 | 文档 |
+| --- | --- |
+| 当前证据冻结与全部阶段记录 | `docs/CURRENT-EVIDENCE-FREEZE.md` |
+| P0/P1 UX 就绪度审计（11 项缺陷） | `docs/P0-P1-UX-READINESS.md` |
+| teardown 证据案例与能力边界 | `docs/TEARDOWN-EVIDENCE-CASE.md`、`docs/OBSERVABILITY-CAPABILITY-MATRIX.md` |
+| 设计规范（MUST / MUST-NOT） | `docs/DESIGN_SPEC.md` |
+| 待决问题 | `docs/OPEN-DECISIONS.md` |
+| 文档分类契约 | `docs/DOCUMENT-CLASSIFICATION-CONTRACT.md` |
