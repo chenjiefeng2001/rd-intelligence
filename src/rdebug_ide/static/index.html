@@ -61,7 +61,7 @@
       <div>
         <button id="btnDiff">Diff A vs B</button>
         <button id="btnTrace">Trace A</button>
-        <button id="btnExplain" disabled>Explain with AI</button>
+        <button id="btnExplain" disabled>Generate AI Prompt</button>
       </div>
     </div>
     <div id="ci" style="margin-top:10px"></div>
@@ -75,7 +75,7 @@
     <div id="evidence" class="muted">—</div>
     <div id="evdetail" style="display:none"></div>
     <h2 style="margin-top:12px">AI Prompt (grounded)</h2>
-    <textarea id="prompt" readonly placeholder="[Explain with AI] 生成…"></textarea>
+    <textarea id="prompt" readonly placeholder="[Generate AI Prompt] 先运行一次 diff"></textarea>
     <button id="btnCopy" style="margin-top:6px" disabled>Copy prompt</button>
   </div>
 </main>
@@ -203,7 +203,11 @@ function renderDiff(d) {
     : "—";
   $("evidence").querySelectorAll(".chip").forEach(ch => ch.onclick = () => showEv(ch.dataset.id));
   $("btnExplain").disabled = false;
-  $("btnCopy").disabled = false;
+  // Availability follows the prompt that actually exists rather than the fact
+  // that a diff happened, so an empty prompt cannot be copied as if it were a
+  // real one. There is no capability probe: the state comes from what has
+  // already happened, not from a prediction about the service.
+  $("btnCopy").disabled = !$("prompt").value;
 }
 
 // The id arrives from the evidence chips, which the server already rendered in
@@ -261,17 +265,43 @@ function renderTrace(g) {
   $("prompt").value = ""; $("evidence").innerHTML = "—";
 }
 
+// Applying an explain response is the only thing that writes the prompt. A
+// failure is reported rather than swallowed, and the prompt is emptied so a
+// prompt describing an earlier diff cannot be mistaken for this one. A stale
+// response writes nothing at all, which is what keeps A6 true here too.
+function applyExplain(data) {
+  $("prompt").value = (data && data.prompt) || "";
+  $("btnCopy").disabled = !$("prompt").value;
+}
+
+function clearExplain() {
+  $("prompt").value = "";
+  $("btnCopy").disabled = true;
+}
+
+// E2: this asks only for the prompt. It deliberately does not re-run the diff,
+// because the previous wiring made the button a second diff button and the user
+// asking for an explanation lost the result they were looking at.
+async function doExplain() {
+  const seq = claim();
+  const a = $("a").value, b = $("b").value, deep = $("deep").checked ? 1 : 0;
+  const p = await api(`/api/explain?a=${a}&b=${b}&deep=${deep}`);
+  if (isStale(seq)) return;
+  if (!enterSeq(seq, p, applyExplain)) clearExplain();
+}
+
 async function doDiff() {
   const seq = claim();
   const a = $("a").value, b = $("b").value, deep = $("deep").checked ? 1 : 0;
   $("result").innerHTML = "…";
   const d = await api(`/api/diff?a=${a}&b=${b}&deep=${deep}`);
   if (!enterSeq(seq, d, renderDiff)) return;
-  // Explain is a follow-up rather than a result, so it is only a stale write
-  // if it lands after the user has already moved on to another request.
+  // The prompt is still generated as part of a diff. This being a follow-up
+  // rather than a result only means it is a stale write once the user has moved
+  // on; it does not make its failure invisible.
   const p = await api(`/api/explain?a=${a}&b=${b}&deep=${deep}`);
   if (isStale(seq)) return;
-  $("prompt").value = (p.ok && p.data && p.data.prompt) || "";
+  if (!enterSeq(seq, p, applyExplain)) clearExplain();
 }
 
 // Coordinate input contract: the value is either a well formed "x,y" or it is
@@ -320,7 +350,7 @@ async function loadCi() {
 
 $("btnDiff").onclick = doDiff;
 $("btnTrace").onclick = doTrace;
-$("btnExplain").onclick = doDiff;
+$("btnExplain").onclick = doExplain;
 $("btnCopy").onclick = () => { navigator.clipboard.writeText($("prompt").value); };
 
 api("/api/info").then(i => { if (i.ok) $("capture").textContent = i.data.capture; });
