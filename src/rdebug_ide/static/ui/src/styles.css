@@ -92,7 +92,8 @@ body {
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
   grid-template-areas:
     "query result"
-    "query evidence";
+    "query evidence"
+    "history history";
   gap: var(--s-4);
   padding: var(--s-4) var(--s-5);
   align-content: start;
@@ -108,14 +109,282 @@ body {
   grid-area: evidence;
 }
 
+/* History spans the full width. It is a list of comparable records, and a
+   two-column layout halves the row width for no benefit -- the alternative is
+   horizontal scrolling inside a table that is meant to be scanned. */
+.workspace > .panel--history {
+  grid-area: history;
+}
+
 @media (max-width: 1080px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "query"
       "result"
-      "evidence";
+      "evidence"
+      "history";
   }
+}
+
+/* ---------------------------------------------------------------- stats -- */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--s-3);
+}
+
+.stat {
+  display: grid;
+  gap: var(--s-1);
+  padding: var(--s-3) var(--s-4);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--border-strong);
+  border-radius: var(--r-2);
+}
+
+.stat--bad {
+  border-left-color: var(--bad);
+}
+
+.stat--warn {
+  border-left-color: var(--warn);
+}
+
+/* Tabular figures so a number does not shift width as its digits change: a
+   latency that jitters while you read across it stops being trusted. */
+.stat__value {
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat--bad .stat__value {
+  color: var(--bad);
+}
+
+.stat--warn .stat__value {
+  color: var(--warn);
+}
+
+.stat__label {
+  font-size: 11px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.stat__hint {
+  font-size: 11px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- filters -- */
+
+.filters {
+  display: flex;
+  gap: var(--s-4);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fg);
+}
+
+.toggle input {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+.toggle input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.select select {
+  background: var(--panel-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  padding: var(--s-2) var(--s-3);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.select select:hover {
+  border-color: var(--border-strong);
+}
+
+/* ---------------------------------------------------------------- table -- */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-3);
+  color: var(--dim);
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background var(--t-fast) var(--ease);
+}
+
+.table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.table tbody tr:hover {
+  background: var(--panel-2);
+}
+
+.table td {
+  padding: var(--s-2) var(--s-3);
+  vertical-align: top;
+}
+
+.table .nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.table .request {
+  color: var(--dim);
+  max-width: 46ch;
+}
+
+.row__error {
+  margin-left: var(--s-3);
+  color: var(--bad);
+  font-weight: 600;
+}
+
+/* Both the mark and the number are shown. A failure that arrived as HTTP 200 is
+   the documented trap, so a chip reading only "200" would let the most
+   interesting row in this table look like a success. */
+.chip-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-weight: 600;
+}
+
+.chip-status.ok {
+  color: var(--good);
+}
+
+.chip-status.bad {
+  color: var(--bad);
+}
+
+/* ------------------------------------------------------------ breakdown -- */
+
+.breakdown {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.breakdown__row {
+  display: grid;
+  grid-template-columns: 16ch minmax(0, 1fr) 4ch 4ch;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.breakdown__name {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breakdown__bar {
+  height: 6px;
+  background: var(--panel-2);
+  border-radius: var(--r-pill);
+  overflow: hidden;
+}
+
+.breakdown__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--r-pill);
+}
+
+.breakdown__count {
+  text-align: right;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown__fail {
+  text-align: right;
+  color: var(--bad);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------- errors -- */
+
+.errors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.errors__item {
+  display: grid;
+  grid-template-columns: 3ch minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: baseline;
+}
+
+.errors__count {
+  color: var(--bad);
+  font-weight: 650;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.errors__text {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .statusbar {

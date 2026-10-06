@@ -360,9 +360,15 @@ def api_history_summary(query):
         raw = query.get(name, [None])[0]
         return None if raw in (None, "") else raw
 
-    return {"enabled": recorder.enabled(),
+    if not recorder.enabled():
+        # Not a zero. A summary of zeroes under `enabled: false` is something a
+        # UI will happily render as "0 requests in this session", which is a
+        # measurement that was never taken.
+        return {"enabled": False, "store": None, "summary": None}
+    return {"enabled": True, "store": recorder.stats(),
             "summary": recorder.aggregate(endpoint=one("endpoint"),
-                                          since=one("since"), until=one("until"))}
+                                          since=one("since"),
+                                          until=one("until"))}
 
 
 _ROUTES = {
@@ -711,8 +717,14 @@ class Handler(BaseHTTPRequestHandler):
         if os.path.isdir(target):
             target = os.path.join(target, "index.html")
         if not os.path.isfile(target):
-            # Client-side routing falls back to the app shell rather than
-            # answering 404 for a path the bundler would have handled.
+            # The app shell, but only for paths that look like client-side
+            # routes. Falling back for everything means a missing .js or .ico
+            # is answered with 200 and a page of HTML, which turns "the bundle
+            # did not load" into a parse error several layers away.
+            if os.path.splitext(rel)[1]:
+                self.send_response(404)
+                self.end_headers()
+                return
             target = os.path.join(root, "index.html")
             if not os.path.isfile(target):
                 self.send_response(404)

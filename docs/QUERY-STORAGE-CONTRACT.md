@@ -124,7 +124,48 @@ pointing a browser at the running server, which is why
 | JSONL telemetry queryable | **NOT IMPLEMENTED** | **STILL NOT IMPLEMENTED** — the JSONL format is unchanged; the store is a separate thing |
 | store size bounded | n/a | **VERIFIED**, both bounds tested |
 | retention enforced without a query | n/a | **VERIFIED** |
-| browser-level view of the history | n/a | **NOT IMPLEMENTED** — the endpoints exist; no UI panel reads them yet |
+| browser-level view of the history | n/a | **VERIFIED** — `/ui/` renders it; see section 8 |
 
-The last row is the honest limit: this change makes the data reachable and adds
-no view for it. The React page has no history panel.
+## 8. The history panel
+
+`/ui/` carries a fourth panel spanning the full width. Full width rather than a
+column, because it is a list of comparable records and halving the row width
+buys nothing.
+
+| Piece | What it is |
+| --- | --- |
+| `components/display.jsx` | `StatTile`, `ObservationTable`, `EndpointBreakdown`, `ErrorRanking` |
+| `panels/HistoryPanel.jsx` | the panel and its three states |
+| `filters` | failures only, this pixel, one endpoint |
+| `store` badge | rows held, and dropped count when non-zero |
+
+Three states are kept visibly distinct, because collapsing any two produces a
+claim nobody can check:
+
+| State | What it says |
+| --- | --- |
+| **not configured** | "Set RDEBUG_STORE and restart". **No stat tiles and no table** |
+| loading | a skeleton |
+| loaded but empty | "nothing recorded yet", with a hint |
+
+The disabled branch is the one that matters most: `/api/history/summary` returns
+`summary: null` rather than a summary of zeroes, because zeroes under "not
+configured" are a measurement nobody took, and a UI will happily render them as
+"0 requests in this session".
+
+The status column shows **both** a mark and the HTTP status. A row that failed
+with HTTP 200 is the documented trap from section 2.9, so a chip reading only
+"200" would let the most interesting row in this table look like a success.
+
+A history read that fails is recorded in the panel's own state and nowhere else.
+Feeding it to the shared query-failure path would replace a result the user is
+still reading with a message about the panel they did not ask for.
+
+| Claim | Status |
+| --- | --- |
+| The panel renders recorded queries, tiles, breakdown and errors | **VERIFIED** in a browser against a real store |
+| Not-configured shows no figures | **VERIFIED** |
+| Filters reduce the row set | **VERIFIED** |
+| The panel translates | **VERIFIED** |
+| Long-session behaviour over hours | **NOT ESTABLISHED** |
+| Store contention with many concurrent queries | **NOT ESTABLISHED** — the recorder is unit-tested for concurrency, the panel is not |

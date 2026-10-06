@@ -62,7 +62,8 @@ class TestComponentBoundaries(unittest.TestCase):
         # Guards against the split becoming duplication: only App holds state
         # that spans panels.
         for rel in ("panels/QueryPanel.jsx", "panels/EvidencePanel.jsx",
-                    "views/ResultPanel.jsx", "components/primitives.jsx"):
+                    "panels/HistoryPanel.jsx", "views/ResultPanel.jsx",
+                    "components/primitives.jsx", "components/display.jsx"):
             with self.subTest(module=rel):
                 self.assertNotIn("useState(", read(rel),
                                  rel + " holds state; it should be a view")
@@ -81,7 +82,12 @@ class TestVisualHierarchy(unittest.TestCase):
     """One primary action, and one focal panel."""
 
     def test_exactly_one_primary_action(self):
-        panels = read("panels/QueryPanel.jsx") + read("panels/EvidencePanel.jsx")
+        # Read every panel, including the history panel: a control added to the
+        # newest panel is exactly where a second "primary" would appear.
+        panels = "".join(read(rel) for rel in (
+            "panels/QueryPanel.jsx", "panels/EvidencePanel.jsx",
+            "panels/HistoryPanel.jsx", "views/ResultPanel.jsx",
+            "components/primitives.jsx"))
         # Counted as a prop, not as a word: the prose in the panels explains what
         # primary means, and a substring count would trip over its own comment.
         used = re.findall(r"<Button[^>]*\bprimary\b", panels)

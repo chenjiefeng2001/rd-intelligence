@@ -11,6 +11,7 @@ import { I18N, translator } from "./i18n.js";
 import { TopBar, QueryPanel, StatusBar } from "./panels/QueryPanel.jsx";
 import { ResultPanel } from "./views/ResultPanel.jsx";
 import { EvidencePanel } from "./panels/EvidencePanel.jsx";
+import { HistoryPanel, scopeOf } from "./panels/HistoryPanel.jsx";
 import "./theme.css";
 import "./styles.css";
 
@@ -42,6 +43,20 @@ export function App() {
   const [copied, setCopied] = useState(false);
   const [ci, setCi] = useState(null);
   const [serverState, setServerState] = useState(null);
+
+  // History. Separate from `result` because it has its own failure modes: a
+  // store that is not configured is not an error, and a history read that fails
+  // must not touch the query result panel.
+  const [history, setHistory] = useState({
+    enabled: false,
+    loading: false,
+    rows: [],
+    summary: null,
+    store: null,
+  });
+  const [failuresOnly, setFailuresOnly] = useState(false);
+  const [scopePixel, setScopePixel] = useState(false);
+  const [endpointFilter, setEndpointFilter] = useState("");
 
   const t = translator(lang);
 
@@ -106,6 +121,40 @@ export function App() {
   );
 
   const canCopy = prompt.length > 0;
+
+  /**
+   * Read the history.
+   *
+   * A failure here is recorded in the history panel's own state and nowhere
+   * else. Feeding it to `fail()` would replace a query result the user is still
+   * reading with a message about the panel they did not ask for -- two unrelated
+   * surfaces sharing one error path is how a good result gets lost.
+   */
+  const loadHistory = useCallback(async () => {
+    setHistory((h) => ({ ...h, loading: true }));
+    const scope = scopePixel ? scopeOf(a, b) : { a: null, b: null };
+    const params = new URLSearchParams({ limit: "50" });
+    if (endpointFilter) params.set("endpoint", endpointFilter);
+    if (failuresOnly) params.set("failures", "1");
+    if (scope.a) {
+      params.set("x", String(scope.a.x));
+      params.set("y", String(scope.a.y));
+    } else if (scope.b) {
+      params.set("x", String(scope.b.x));
+      params.set("y", String(scope.b.y));
+    }
+    const [rows, totals] = await Promise.all([
+      api("/api/history?" + params.toString()),
+      api("/api/history/summary"),
+    ]);
+    setHistory({
+      enabled: rows.ok ? rows.data.enabled : false,
+      loading: false,
+      rows: rows.ok ? rows.data.observations || [] : [],
+      summary: totals.ok ? totals.data.summary : null,
+      store: totals.ok ? totals.data.store : null,
+    });
+  }, [a, b, failuresOnly, scopePixel, endpointFilter]);
 
   async function run(kind) {
     const seq = ++seqRef.current;
@@ -216,6 +265,15 @@ export function App() {
     return () => abortRef.current?.abort();
   }, []);
 
+  // Loaded once on mount, then whenever the filters change. Reading history does
+  // not record history, so there is no feedback loop here to guard against.
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const scope = scopeOf(a, b);
+  const scopeAvailable = Boolean(scope.a || scope.b);
+
   return (
     <div className="app">
       <TopBar
@@ -257,6 +315,24 @@ export function App() {
           copied={copied}
           onOpen={openResource}
           onCopy={copyPrompt}
+        />
+
+        <HistoryPanel
+          t={t}
+          enabled={history.enabled}
+          loading={history.loading}
+          rows={history.rows}
+          summary={history.summary}
+          store={history.store}
+          failuresOnly={failuresOnly}
+          scopePixel={scopePixel}
+          endpointFilter={endpointFilter}
+          scopeAvailable={scopeAvailable}
+          scopePixelText={scope.a ? a : b}
+          onRefresh={loadHistory}
+          onToggleFailures={() => setFailuresOnly((v) => !v)}
+          onToggleScope={() => setScopePixel((v) => !v)}
+          onEndpoint={setEndpointFilter}
         />
       </main>
 

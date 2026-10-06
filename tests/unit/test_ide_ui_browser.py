@@ -14,9 +14,12 @@ recorded as a verified one.
 """
 import http.client
 import importlib.util
+import os
 import pathlib
+import shutil
 import socket
 import sys
+import tempfile
 import threading
 import unittest
 
@@ -25,6 +28,7 @@ UI = REPO / "src" / "rdebug_ide" / "static" / "ui"
 DIST = UI / "dist"
 
 sys.path.insert(0, str(REPO / "src"))
+import rdebug.recorder as recorder  # noqa: E402 -- the repo src layout needs the path added above before an import can resolve
 import rdebug_ide.app as app  # noqa: E402 -- the repo src layout needs the path before the import, and E402 is that cost
 
 CHROME_CANDIDATES = (
@@ -61,18 +65,55 @@ class Live:
     Deliberately unconfigured: `/api/info` then answers ready:false, so a query
     returns a real error body. That is the case the containment controls care
     about, and it needs no replay runtime.
+
+    `store` points RDEBUG_STORE at a temporary database, which is the only way
+    the history controls can see the enabled branch. A server without it serves
+    the disabled branch, which is what CI gets and what a default install gets.
     """
 
-    def __init__(self):
+    def __init__(self, store=False):
+        self._store = store
+        self._previous = None
+        if store:
+            self._dir = tempfile.mkdtemp()
+            self._previous = os.environ.get("RDEBUG_STORE")
+            os.environ["RDEBUG_STORE"] = os.path.join(self._dir, "h.db")
+            recorder.close()
         self.port = free_port()
         self.httpd = app.ThreadingHTTPServer(("127.0.0.1", self.port), app.Handler)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.thread.start()
 
+    def seed(self, count=6):
+        """Write observations directly, so the panel has something to render.
+
+        Two endpoints on purpose. A single-endpoint seed made the filter control
+        depend on whether the page's own /api/info and /api/ci requests had been
+        recorded before the panel first read the history, so the control passed
+        or failed on a race rather than on the behaviour it was checking.
+        """
+        for i in range(count):
+            trace = i % 2 == 0
+            recorder.record(
+                "ide", "/api/trace" if trace else "/api/diff",
+                ok=i % 3 != 0,
+                status=200 if i % 3 != 0 else 400,
+                error=None if i % 3 != 0 else "unknown resource id",
+                latency_ms=5.0 + i,
+                query={"x": "320", "y": "240"} if trace
+                else {"a": "320,240", "b": "10,10", "deep": "0"})
+
     def stop(self):
         self.httpd.shutdown()
         self.httpd.server_close()
         self.thread.join(timeout=5)
+        recorder.close()
+        if self._store:
+            shutil.rmtree(self._dir, ignore_errors=True)
+            if self._previous is None:
+                os.environ.pop("RDEBUG_STORE", None)
+            else:
+                os.environ["RDEBUG_STORE"] = self._previous
 
     def __enter__(self):
         return self
@@ -484,6 +525,220 @@ class TestAccessibilityAndLayout(unittest.TestCase):
         }""")
         self.assertNotEqual(painted["bg"], "rgba(0, 0, 0, 0)")
         self.assertNotEqual(painted["fg"], painted["bg"])
+
+
+@needs_browser
+@needs_bundle
+class TestTheHistoryPanelWhenNoStoreIsConfigured(unittest.TestCase):
+    """The default. This is the branch CI exercises and the branch a plain
+    install gets, so it is tested first and tested as a first-class state."""
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls._pw = sync_playwright().start()
+        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+        cls.live = Live(store=False)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls._pw.stop()
+        cls.live.stop()
+
+    def page(self):
+        ctx = self.browser.new_context()
+        page = ctx.new_page()
+        self.addCleanup(ctx.close)
+        page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                  wait_until="networkidle")
+        return page
+
+    def test_the_panel_is_present(self):
+        page = self.page()
+        self.assertTrue(page.is_visible(".panel--history"))
+
+    def test_it_says_the_store_is_not_configured(self):
+        page = self.page()
+        page.wait_for_selector('[data-testid="history-disabled"]', timeout=15000)
+        text = page.inner_text('[data-testid="history-disabled"]')
+        self.assertIn("RDEBUG_STORE", text)
+
+    def test_it_does_not_claim_zero_requests(self):
+        # The whole point of the disabled branch: a summary of zeroes under
+        # "not configured" is a measurement nobody took.
+        page = self.page()
+        page.wait_for_selector('[data-testid="history-disabled"]', timeout=15000)
+        self.assertEqual(page.query_selector_all('[data-testid="stat"]'), [])
+        self.assertEqual(page.query_selector_all('[data-testid="history-table"]'), [])
+
+    def test_it_is_announced_politely_not_alerted(self):
+        # A missing optional store is not an error the user must interrupt for.
+        page = self.page()
+        page.wait_for_selector('[data-testid="history-disabled"]', timeout=15000)
+        self.assertEqual(
+            page.get_attribute('[data-testid="history-disabled"]', "role"), "status")
+
+    def test_refresh_is_unavailable_while_disabled(self):
+        page = self.page()
+        page.wait_for_selector('[data-testid="history-disabled"]', timeout=15000)
+        refresh = page.query_selector(".panel--history button")
+        if refresh is not None:
+            self.assertTrue(refresh.is_disabled())
+
+
+@needs_browser
+@needs_bundle
+class TestTheHistoryPanelWithAStore(unittest.TestCase):
+    """The enabled branch, against a real store on a real server."""
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls._pw = sync_playwright().start()
+        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+        cls.live = Live(store=True)
+        cls.live.seed(6)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls._pw.stop()
+        cls.live.stop()
+
+    def page(self):
+        ctx = self.browser.new_context()
+        page = ctx.new_page()
+        self.addCleanup(ctx.close)
+        page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                  wait_until="networkidle")
+        page.wait_for_selector('[data-testid="history-table"]', timeout=15000)
+        return page
+
+    def test_it_renders_the_recorded_queries(self):
+        page = self.page()
+        self.assertGreaterEqual(
+            len(page.query_selector_all('[data-testid="history-row"]')), 5)
+
+    def test_it_shows_four_stat_tiles(self):
+        page = self.page()
+        self.assertEqual(len(page.query_selector_all('[data-testid="stat"]')), 4)
+
+    def test_the_failure_tile_is_present_and_counted(self):
+        page = self.page()
+        page.wait_for_selector(".stat--bad", timeout=10000)
+
+    def test_a_failure_shows_both_the_mark_and_the_status(self):
+        # The documented trap: an unclassified error arrives as HTTP 200, so a
+        # row that showed only the number would read as a success.
+        page = self.page()
+        page.wait_for_selector(".chip-status.bad", timeout=10000)
+        text = page.inner_text(".chip-status.bad")
+        self.assertNotEqual(text.strip(), "200")
+
+    def test_the_request_column_shows_what_was_sent(self):
+        page = self.page()
+        body = page.inner_text('[data-testid="history-table"]')
+        self.assertIn("x=320", body)
+        self.assertIn("y=240", body)
+
+    def test_it_offers_an_endpoint_filter(self):
+        page = self.page()
+        options = page.eval_on_selector_all(
+            "#histEndpoint option", "els => els.map(e => e.value)")
+        self.assertIn("", options)
+        self.assertIn("/api/trace", options)
+
+    def test_filtering_to_one_endpoint_reduces_the_rows(self):
+        page = self.page()
+        before = page.eval_on_selector_all(
+            '[data-testid="history-row"] td:nth-child(2)',
+            "els => els.map(e => e.textContent.trim())")
+        self.assertGreater(len(before), 1, "the fixture has two endpoints")
+        page.select_option("#histEndpoint", "/api/trace")
+        # Wait for a non-empty result whose endpoints are all the chosen one.
+        # `.every(...)` alone is vacuously true on an empty list, so it passes
+        # while the table is still loading and the assertion below then fails on
+        # an empty set. The length check is what makes the wait mean something.
+        page.wait_for_function(
+            "() => { const tds = Array.from(document.querySelectorAll("
+            "'[data-testid=\"history-row\"] td:nth-child(2)'));"
+            "  return tds.length > 0 &&"
+            "    tds.every(td => td.textContent.trim() === '/api/trace'); }",
+            timeout=10000)
+        after = page.eval_on_selector_all(
+            '[data-testid="history-row"] td:nth-child(2)',
+            "els => els.map(e => e.textContent.trim())")
+        self.assertGreater(len(after), 0)
+        self.assertLess(len(after), len(before))
+
+    def test_the_failures_filter_keeps_only_failures(self):
+        page = self.page()
+        page.check("#histFailures")
+        page.wait_for_selector(".chip-status.bad", timeout=10000)
+        marks = page.eval_on_selector_all(
+            ".chip-status", "els => els.map(e => e.className)")
+        self.assertTrue(marks)
+        for name in marks:
+            with self.subTest(chip=name):
+                self.assertIn("bad", name)
+
+    def test_the_pixel_scope_follows_whether_a_pixel_is_entered(self):
+        # Both coordinates count: the scope uses whichever one is well formed, so
+        # it is only unavailable when neither is. Clearing one field and finding
+        # the toggle still available is correct, not a bug -- and the label has
+        # to name the pixel actually being used, or the scope is a mystery.
+        page = self.page()
+        self.assertFalse(page.is_disabled("#histScope"))
+        # inner_text on a checkbox returns its value, which is empty; the text
+        # that names the pixel lives on the wrapping label.
+        self.assertIn("320,240", page.inner_text("label:has(#histScope)"))
+        page.fill("#a", "")
+        page.wait_for_function(
+            "() => document.querySelector('#histScope').closest('label')"
+            ".textContent.includes('10,10')", timeout=10000)
+        self.assertFalse(page.is_disabled("#histScope"))
+        page.fill("#b", "")
+        page.wait_for_function(
+            "() => document.getElementById('histScope').disabled", timeout=10000)
+        self.assertTrue(page.is_disabled("#histScope"))
+        page.fill("#a", "320,240")
+        page.wait_for_function(
+            "() => !document.getElementById('histScope').disabled", timeout=10000)
+        self.assertFalse(page.is_disabled("#histScope"))
+
+    def test_a_malformed_coordinate_does_not_count_as_a_pixel(self):
+        page = self.page()
+        page.fill("#a", "not-a-pixel")
+        page.fill("#b", "")
+        page.wait_for_function(
+            "() => document.getElementById('histScope').disabled", timeout=10000)
+        self.assertTrue(page.is_disabled("#histScope"))
+
+    def test_the_breakdown_lists_the_endpoints(self):
+        page = self.page()
+        page.wait_for_selector('[data-testid="breakdown"]', timeout=10000)
+        text = page.inner_text('[data-testid="breakdown"]')
+        self.assertIn("/api/trace", text)
+
+    def test_it_translates(self):
+        page = self.page()
+        page.click("#btnLang")
+        page.wait_for_function(
+            "() => document.querySelector('.panel--history .panel__title')"
+            ".textContent.trim() === '会话历史'", timeout=10000)
+        self.assertEqual(
+            page.inner_text(".panel--history .panel__title").strip(), "会话历史")
+
+    def test_the_panel_spans_the_full_width(self):
+        # A two-column layout for a comparable-records table halves the row width
+        # for nothing.
+        page = self.page()
+        width = page.eval_on_selector(".panel--history",
+                                      "el => el.getBoundingClientRect().width")
+        column = page.eval_on_selector(".panel--result",
+                                       "el => el.getBoundingClientRect().width")
+        self.assertGreater(width, column)
 
 
 if __name__ == "__main__":
