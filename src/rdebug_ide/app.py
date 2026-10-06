@@ -21,7 +21,6 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from rdebug.analysis.pixel_trace import MAX_DRAWS_DEFAULT
 from rdebug.errors import QueryError, RDebugError
 from rdebug.jsonutil import to_json
 from rdebug.worker_manager import RecyclePolicy, WorkerManager
@@ -197,12 +196,20 @@ def api_trace(query):
     # than a silently tighter number. Truncation is not hidden here: the
     # semantic layer already reports summary.truncatedDraws, and the UI is
     # required to surface it.
-    max_draws = _int_param(query, "max_draws", MAX_DRAWS_DEFAULT)
+    #
+    # When the client says nothing about max_draws the argument is omitted
+    # rather than filled in from a constant imported out of the analysis layer.
+    # Importing one was a Rule 2.6 violation -- a transport may import the four
+    # semantic entry points and nothing else -- and copying the number instead
+    # would have been a second copy of a default that the semantic layer already
+    # owns, free to drift. Letting the layer apply its own default is both the
+    # legal answer and the one that cannot disagree.
+    requested = _int_param(query, "max_draws", None)
+    scope = {} if requested is None else {"max_draws": requested}
     # Only trace and resource accept an event context. diff_pixel has no
     # such parameter and always uses the library default event, so the UI
     # must not offer one here: sending it would be silently ignored.
-    return _run("trace_pixel", x=x, y=y, max_draws=max_draws,
-                eid=_eid_param(query))
+    return _run("trace_pixel", x=x, y=y, eid=_eid_param(query), **scope)
 
 
 def api_diff(query):

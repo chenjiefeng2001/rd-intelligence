@@ -285,16 +285,20 @@ tests/                            # 核心：74 tests（unit 65 + integration 9�
 └── workload/                     # 10 tests；需 corpus + RDEBUG_RENDERDOC_PATH
     └── ...
 
-tests_transport/                  # 31 tests；MCP/IDE 传输层不变量，与核心完全隔离
+tests_transport/                  # 58 tests；MCP/IDE 传输层不变量，与核心完全隔离
+├── capture_support.py           # 一个能通过 capture 策略的真实路径
 ├── test_transport.py
 ├── test_session_manager.py
 ├── test_observability.py
 └── test_ide_app.py
 ```
 
-> Note: `tests_transport/` 没有 `__init__.py`，且不在 `pyproject.toml` 的
-> `testpaths = ["tests"]` 之内——默认 `pytest` 会**静默跳过**这 31 个测试。
-> 需显式运行：`python -m unittest discover -s tests_transport`。
+> Note: 传输层的每个工具调用都会先过 capture 策略（路径必须在允许的根下，且文件必须
+> 存在）。这些测试伪造 session，但不伪造这一步，所以需要一个**真实存在**的文件；见
+> `tests_transport/capture_support.py`。
+> 门禁用 `python -m unittest discover -s tests_transport` 运行；`pyproject.toml` 的
+> `testpaths` 也包含该目录，根目录 `conftest.py` 把 `sys.path` 对齐到门禁的导入方式，
+> 因此默认 `pytest` 同样会收集并运行这 58 个测试。
 
 ## Roadmap
 

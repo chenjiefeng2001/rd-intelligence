@@ -3,11 +3,25 @@ import os
 import tempfile
 import unittest
 
+import capture_support
+from capture_support import CAPTURE
 from test_transport import FakeSession
 
 from rdebug import errors, observability
 from rdebug.session_cache import SessionManager
 
+_POLICY = None
+
+def setUpModule():
+    global _POLICY
+    _POLICY = capture_support.widened()
+    _POLICY.__enter__()
+
+def tearDownModule():
+    global _POLICY
+    if _POLICY is not None:
+        _POLICY.__exit__(None, None, None)
+        _POLICY = None
 
 class TestObservability(unittest.TestCase):
     def setUp(self):
@@ -147,7 +161,7 @@ class TestResultShape(unittest.TestCase):
             prev_workers = server._WORKERS
             server._WORKERS = RecordingWorkers(FakeSession())
             try:
-                server.diff_pixel("cap.rdc", 1, 2, 3, 4)
+                server.diff_pixel(CAPTURE, 1, 2, 3, 4)
             finally:
                 server._WORKERS = prev_workers
             with open(self.path2, encoding="utf-8") as f:

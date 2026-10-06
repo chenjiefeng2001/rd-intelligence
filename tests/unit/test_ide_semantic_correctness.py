@@ -1,7 +1,8 @@
 import unittest
 
+from rdebug.analysis.pixel_trace import MAX_DRAWS_DEFAULT
 from rdebug.errors import RDebugError
-from rdebug_ide.app import MAX_DRAWS_DEFAULT, _bool_param, _int_param, api_diff, api_explain
+from rdebug_ide.app import _bool_param, _int_param, api_diff, api_explain
 
 
 def q(s):
@@ -92,12 +93,26 @@ class TestTraceAndDiffRouteThroughTheNormalisers(unittest.TestCase):
         api_diff(q("a=1,2&b=3,4&deep=false"))
         self.assertFalse(got["kwargs"]["include_shader_values"])
 
-    def test_trace_scope_is_explicit_rather_than_implicitly_tight(self):
+    def test_trace_leaves_the_scope_to_the_semantic_layer(self):
+        # The IDE used to import MAX_DRAWS_DEFAULT out of the analysis layer and
+        # pass it explicitly. That is a Rule 2.6 violation -- a transport may
+        # import the four semantic entry points and nothing else -- and copying
+        # the number would have been a second copy of a default free to drift.
+        # The client said nothing, so the IDE now says nothing, and the layer
+        # applies the same default it would have applied anyway.
         got = {}
         self._stub_worker(got)
         from rdebug_ide.app import api_trace
         api_trace(q("x=1&y=2"))
-        self.assertEqual(got["kwargs"]["max_draws"], MAX_DRAWS_DEFAULT)
+        self.assertNotIn("max_draws", got["kwargs"])
+
+    def test_trace_passes_an_explicit_scope_through(self):
+        got = {}
+        self._stub_worker(got)
+        from rdebug_ide.app import api_trace
+        api_trace(q("x=1&y=2&max_draws=64"))
+        self.assertEqual(got["kwargs"]["max_draws"], 64)
+        self.assertNotEqual(64, MAX_DRAWS_DEFAULT)
 
     def test_explain_honours_deep_too(self):
         # D1 was duplicated in api_explain; both call sites had to be fixed.

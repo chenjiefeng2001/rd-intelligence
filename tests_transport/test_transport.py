@@ -3,6 +3,9 @@ import re
 import unittest
 from pathlib import Path
 
+import capture_support
+from capture_support import CAPTURE
+
 from rdebug import errors
 from rdebug.model import PixelHistoryResult
 from rdebug_mcp import server
@@ -12,6 +15,19 @@ try:  # unittest discover puts tests_transport/ on sys.path; pytest does not
 except ImportError:  # pragma: no cover - runner-dependent
     from tests_transport.worker_stub import RecordingWorkers
 
+
+_POLICY = None
+
+def setUpModule():
+    global _POLICY
+    _POLICY = capture_support.widened()
+    _POLICY.__enter__()
+
+def tearDownModule():
+    global _POLICY
+    if _POLICY is not None:
+        _POLICY.__exit__(None, None, None)
+        _POLICY = None
 
 class FakeAction:
     def __init__(self, eid, name):
@@ -68,7 +84,7 @@ USAGE = {"ResourceId::47": [{"eventId": 2, "usage": "CopyDst", "usageRaw": 0}]}
 
 
 class FakeSession:
-    path = "cap.rdc"
+    path = CAPTURE
 
     def pixel_history(self, rid, x, y, mip=0, slice_=0, sample=0,
                       comp_type=None, context_eid=None):
@@ -106,7 +122,7 @@ class ToolCallTests(unittest.TestCase):
         server._WORKERS = self._prev
 
     def test_trace_pixel_passthrough_with_evidence(self):
-        raw = server.trace_pixel("cap.rdc", 1, 2)
+        raw = server.trace_pixel(CAPTURE, 1, 2)
         payload = json.loads(raw)
         self.assertEqual(payload["summary"]["target"], "ResourceId::35")
         evidence_ids = [e["id"] for e in payload["summary"]["evidence"]]
@@ -114,19 +130,19 @@ class ToolCallTests(unittest.TestCase):
         self.assertEqual(evidence_ids, [e["id"] for e in payload["summary"]["evidence"]])
 
     def test_trace_resource_passthrough(self):
-        payload = json.loads(server.trace_resource("cap.rdc", "ResourceId::47"))
+        payload = json.loads(server.trace_resource(CAPTURE, "ResourceId::47"))
         self.assertEqual(payload["summary"]["writerCount"], 1)
         ev = payload["writers"][0]["evidence"][0]
         self.assertEqual(ev["operation"], "usage:CopyDst")
 
     def test_diff_pixel_states(self):
-        payload = json.loads(server.diff_pixel("cap.rdc", 1, 2, 3, 4))
+        payload = json.loads(server.diff_pixel(CAPTURE, 1, 2, 3, 4))
         self.assertEqual(payload["comparison"], "same")
         self.assertIn("shader_input_values",
                       [ly["layer"] for ly in payload["layers"]])
 
     def test_operational_error_returned_as_json(self):
-        raw = server.debug_pixel("cap.rdc", 1, 2)
+        raw = server.debug_pixel(CAPTURE, 1, 2)
         payload = json.loads(raw)
         self.assertIn("error", payload)
 
@@ -134,7 +150,7 @@ class ToolCallTests(unittest.TestCase):
         # Guards the mapping MCP -> rdebug.workers._dispatch. A rename on
         # either side must fail here rather than silently changing
         # behaviour in production.
-        server.trace_pixel("cap.rdc", 7, 9, mip=2, slice=1, max_writers=3,
+        server.trace_pixel(CAPTURE, 7, 9, mip=2, slice=1, max_writers=3,
                            expand_reads=False, eid=11, target="ResourceId::1")
         _capture, tool, args = server._WORKERS.calls[-1]
         self.assertEqual(tool, "trace_pixel")
@@ -150,7 +166,7 @@ class ToolCallTests(unittest.TestCase):
         # Forwarding target=None would override the worker's default with a
         # null it never expects (sample=None in place of 0). Falsy-but-meaningful
         # values such as expand_reads=False must survive.
-        server.trace_pixel("cap.rdc", 1, 2, target=None, expand_reads=False)
+        server.trace_pixel(CAPTURE, 1, 2, target=None, expand_reads=False)
         _capture, _tool, args = server._WORKERS.calls[-1]
         self.assertNotIn("target", args)
         self.assertIs(args["expand_reads"], False)
@@ -159,9 +175,9 @@ class ToolCallTests(unittest.TestCase):
         # workers.py refuses a capture it is not bound to. That check reads
         # args["capture"], so if MCP stopped forwarding it the guard would
         # pass vacuously.
-        server.trace_pixel("cap.rdc", 1, 2)
+        server.trace_pixel(CAPTURE, 1, 2)
         _capture, _tool, args = server._WORKERS.calls[-1]
-        self.assertEqual(args["capture"], "cap.rdc")
+        self.assertEqual(args["capture"], CAPTURE)
 
 
 class TransportInvariants(unittest.TestCase):

@@ -9,8 +9,23 @@ except ImportError:  # pragma: no cover - runner-dependent
     from tests_transport.test_transport import FakeSession
     from tests_transport.worker_stub import RecordingWorkers
 
+import capture_support
+from capture_support import CAPTURE
+
 from rdebug_ide import app
 
+_POLICY = None
+
+def setUpModule():
+    global _POLICY
+    _POLICY = capture_support.widened()
+    _POLICY.__enter__()
+
+def tearDownModule():
+    global _POLICY
+    if _POLICY is not None:
+        _POLICY.__exit__(None, None, None)
+        _POLICY = None
 
 class TestIdeOwnership(unittest.TestCase):
     """M1.4 acceptance invariants I1-I3 at the unit level.
@@ -107,7 +122,7 @@ class TestIdeApi(unittest.TestCase):
         # configure() takes a worker registry, not a session factory: it now
         # establishes ownership eagerly and dispose() is its counterpart.
         self.workers = RecordingWorkers(FakeSession())
-        app.configure("cap.rdc", workers=self.workers)
+        app.configure(CAPTURE, workers=self.workers)
 
     def tearDown(self):
         app.dispose()
@@ -115,7 +130,7 @@ class TestIdeApi(unittest.TestCase):
     def test_info_and_unknown_route(self):
         status, payload = app.route("/api/info", {})
         self.assertEqual(status, 200)
-        self.assertTrue(payload["capture"].endswith("cap.rdc"))
+        self.assertEqual(payload["capture"], CAPTURE)
         status, payload = app.route("/api/nope", {})
         self.assertEqual(status, 404)
 

@@ -1,6 +1,8 @@
 import json
 import unittest
 
+import capture_support
+from capture_support import CAPTURE
 from test_transport import FakeSession
 
 from rdebug import errors
@@ -11,6 +13,18 @@ from rdebug import errors
 from rdebug.session_cache import SessionManager
 from rdebug_mcp import server
 
+_POLICY = None
+
+def setUpModule():
+    global _POLICY
+    _POLICY = capture_support.widened()
+    _POLICY.__enter__()
+
+def tearDownModule():
+    global _POLICY
+    if _POLICY is not None:
+        _POLICY.__exit__(None, None, None)
+        _POLICY = None
 
 class CountingFactory:
     def __init__(self, sessions=None):
@@ -28,9 +42,9 @@ class TestSessionManager(unittest.TestCase):
     def test_same_capture_reused(self):
         factory = CountingFactory()
         mgr = SessionManager(factory_provider=lambda: factory)
-        with mgr.use("cap.rdc") as s1:
+        with mgr.use(CAPTURE) as s1:
             pass
-        with mgr.use("cap.rdc") as s2:
+        with mgr.use(CAPTURE) as s2:
             pass
         self.assertEqual(len(factory.calls), 1)
         self.assertIs(s1, s2)
@@ -69,9 +83,9 @@ class TestSessionManager(unittest.TestCase):
         factory = CountingFactory([broken])
         mgr = SessionManager(factory_provider=lambda: factory,
                              health_probe=bad_probe)
-        with mgr.use("cap.rdc") as s:
+        with mgr.use(CAPTURE) as s:
             self.assertIs(s, broken)
-        with mgr.use("cap.rdc") as s:
+        with mgr.use(CAPTURE) as s:
             self.assertIsNot(s, broken)
         self.assertEqual(len(factory.calls), 2)
         self.assertEqual(mgr.recoveries, 1)
@@ -88,10 +102,10 @@ class TestSessionManager(unittest.TestCase):
 
         mgr = SessionManager(factory_provider=lambda: FlakyFactory())
         with self.assertRaises(errors.CaptureOpenError):
-            with mgr.use("cap.rdc"):
+            with mgr.use(CAPTURE):
                 pass
         self.assertEqual(mgr.stats()["count"], 0)
-        with mgr.use("cap.rdc"):
+        with mgr.use(CAPTURE):
             pass
         self.assertEqual(mgr.stats()["count"], 1)
 
@@ -134,9 +148,9 @@ class TestTransportReuse(unittest.TestCase):
         server._WORKERS = self._prev
 
     def test_sequential_tools_share_one_worker(self):
-        server.trace_pixel("cap.rdc", 1, 2)
-        server.trace_resource("cap.rdc", "ResourceId::47")
-        server.diff_pixel("cap.rdc", 1, 2, 3, 4)
+        server.trace_pixel(CAPTURE, 1, 2)
+        server.trace_resource(CAPTURE, "ResourceId::47")
+        server.diff_pixel(CAPTURE, 1, 2, 3, 4)
         self.assertEqual(len(self.workers.spawned), 1,
                          "three calls on one capture must reuse one worker")
         self.assertEqual(len(self.workers.query_log), 3)
@@ -146,9 +160,9 @@ class TestTransportReuse(unittest.TestCase):
         # lifetime. Previously "cold vs warm" was first call vs later calls
         # on the same session; it is now first call vs later calls on the
         # same worker process.
-        cold = json.loads(server.diff_pixel("cap.rdc", 1, 2, 3, 4))
-        server.trace_pixel("cap.rdc", 5, 6)
-        warm = json.loads(server.diff_pixel("cap.rdc", 1, 2, 3, 4))
+        cold = json.loads(server.diff_pixel(CAPTURE, 1, 2, 3, 4))
+        server.trace_pixel(CAPTURE, 5, 6)
+        warm = json.loads(server.diff_pixel(CAPTURE, 1, 2, 3, 4))
         self.assertEqual(cold, warm)
         self.assertEqual(len(self.workers.spawned), 1)
 
