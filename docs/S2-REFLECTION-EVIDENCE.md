@@ -36,7 +36,7 @@ reflection reachability）。**未修改任何生产代码。**
 | actions | 4（eid 1 clear、eid 2、**eid 11 唯一 draw**、eid 12 Present） |
 | pixel shader | 存在，`entryPoint='main'`，`debuggable=True`（eid 11 实测） |
 | 资源绑定 | `ResourceId::35` 640x480 颜色目标；`ResourceId::47` 64x64（writer `CopyDst`，出现在因果图中） |
-| provenance | 合成三角形 fixture（D3D11），登记于本仓库 `tests/workload/corpus`；生成器源码不在本仓库，故生成者 commit **无法登记**——如实标注为未知 |
+| provenance | 合成三角形 fixture（D3D11），登记于本仓库 `tests/workload/corpus`；生成器源码**在本仓库**：`scripts/workload_corpus.py` 与 `tests/integration/fixtures/triangle_app.cpp`（两者均早于本文档日期入库，故原「生成器源码不在本仓库」的表述不成立）；生成者 commit 由此可登记，但**这 14 个文件具体由该脚本的哪一版本产出仍未建立**——如实标注为未知 |
 
 **满足 §2.11.5**：PS 写入像素 ✅ / reflection 路径被执行 ✅ /
 失败可注入或可观测 → 见 §2（本轮未获得，见下）。
