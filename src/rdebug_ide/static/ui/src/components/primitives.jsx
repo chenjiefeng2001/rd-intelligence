@@ -140,9 +140,26 @@ export function KeyValues({ rows }) {
       {rows.map(([term, value]) => (
         <React.Fragment key={term}>
           <dt>{term}</dt>
-          <dd className={typeof value === "string" ? "mono" : undefined}>{value}</dd>
+          {/* A value that is neither a string nor a node is rendered as JSON
+              rather than handed to React as a child. React throws on an object
+              child, an uncaught render error unmounts the tree, and the whole
+              page goes blank -- so one unexpected field in one payload took the
+              app down. A stringified object is dull and cannot do that. */}
+          <dd className={isScalar(value) ? "mono" : undefined}>
+            {isScalar(value) ? value : JSON.stringify(value)}
+          </dd>
         </React.Fragment>
       ))}
     </dl>
+  );
+}
+
+function isScalar(value) {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    value == null ||
+    React.isValidElement(value)
   );
 }

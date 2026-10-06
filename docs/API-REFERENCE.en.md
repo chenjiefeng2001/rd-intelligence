@@ -278,7 +278,7 @@ single-line JSON**.
 | `hello` | `null` | on connect with an empty backlog, carrying `state` and `revision` |
 | `configured` | the capture path | `configure()` succeeded |
 | `disposed` | `null` | `dispose()` |
-| `query` | `endpoint`, `ok`, `status`, `latencyMs`, `recorded` | **once per served query** |
+| `query` | `endpoint`, `ok`, `status`, `latencyMs`, `recorded` | **once per served query**; `recorded` is whether **that row itself** was stored |
 | `resync` | `null` | the gap predates the buffer, or the revision belongs to an earlier server lifetime |
 
 The `query` event came later: the stream carried only the two lifecycle
@@ -289,6 +289,12 @@ history again, fail, and announce once more.
 
 Clients should coalesce `query` events: a diff issues a second request for the
 prompt, so refreshing per event turns the observer into load.
+
+`recorded` is the return value of the call that wrote that row, **not** the
+recorder's cumulative drop counter. It was once expressed as the counter: after
+any single write failure -- a store pointed at a directory that has since been
+removed is enough -- every later event was marked unrecorded, including the rows
+that were written. A log that lies about its own storage is worse than no log.
 
 **Reconnect semantics.** `retry: 2000` is sent up front. The buffer keeps the
 most recent **256** events and drops the oldest past that. A client passes the
@@ -392,7 +398,7 @@ client implementation avoids them:
 | Browser-level UI propagation | **NOT ESTABLISHED** |
 | Visual visibility of the failure banner (`.banner` / `.banner-warn` have **no CSS rule**) | **NOT ESTABLISHED** (the DOM write is VERIFIED) |
 | Clean shutdown / execution of `dispose()` | **NOT ESTABLISHED** (a limit of the probe) |
-| History panel rendering a successful result from a real capture | **NOT ESTABLISHED** — the browser controls run against an unconfigured server and cover error paths |
+| History panel rendering a successful result from a real capture | **VERIFIED** — a browser control configures a real capture and asserts the panel and the evidence chain render real observations |
 | Model invocation from the tool side | **NOT AUTHORIZED** (violates Rule 2.2 / DESIGN_SPEC MUST-NOT) |
 | A shared cross-endpoint response-shape contract | **does not exist** — which is why the difference in 2.5 is not a defect |
 

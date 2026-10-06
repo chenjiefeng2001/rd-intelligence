@@ -25,6 +25,15 @@ body {
   font-size: 12px;
 }
 
+/* Secondary text. Four components were already asking for this class and the
+   stylesheet never defined it, so every "dimmed" label in the page rendered at
+   full strength and the hierarchy the components were reaching for was not
+   there. `--dim` rather than `--faint`, because these labels carry values
+   (resource ids, endpoints) and have to stay readable. */
+.muted {
+  color: var(--dim);
+}
+
 /* Long resource ids are the normal case in this tool, not the exception. */
 .mono,
 .chip,
@@ -89,24 +98,49 @@ body {
 .workspace {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  /* Elastic, not fixed: the rail takes what it needs between these bounds and
+     the content column takes the rest. `minmax(0, 1fr)` on the second column is
+     what keeps a long resource id from widening the page instead of wrapping --
+     a grid track's default minimum is its content, which is how one long id
+     used to be able to push every other panel around. */
+  grid-template-columns: minmax(260px, 24rem) minmax(0, 1fr);
   grid-template-areas:
     "query result"
+    "query chain"
     "query evidence"
+    "log log"
     "history history";
   gap: var(--s-4);
   padding: var(--s-4) var(--s-5);
   align-content: start;
 }
 
+/* Every panel is allowed to shrink below its content width. Without this a grid
+   item refuses to go narrower than its widest child, and one long value in one
+   panel becomes a horizontal scrollbar for the whole page. */
+.workspace > * {
+  min-width: 0;
+}
+
 .workspace > .panel--query {
   grid-area: query;
+  /* The rail spans three rows, and a grid item stretches to fill the rows it
+     spans by default -- which left a card three times taller than its content
+     and a column of empty space beside the answer. Hugging its own height keeps
+     the rail a rail. */
+  align-self: start;
 }
 .workspace > .panel--result {
   grid-area: result;
 }
+.workspace > .panel--chain {
+  grid-area: chain;
+}
 .workspace > .panel--evidence {
   grid-area: evidence;
+}
+.workspace > .panel--log {
+  grid-area: log;
 }
 
 /* History spans the full width. It is a list of comparable records, and a
@@ -122,7 +156,9 @@ body {
     grid-template-areas:
       "query"
       "result"
+      "chain"
       "evidence"
+      "log"
       "history";
   }
 }
@@ -773,6 +809,21 @@ textarea:focus-visible,
   border-color: var(--accent);
 }
 
+/* A chip inside the evidence chain. Same affordance as any other chip -- it
+   navigates -- but quieter, because the chain already carries accent-coloured
+   structure and a row of full-weight chips would read as the page's buttons. */
+.chip--link {
+  font-size: 11px;
+  padding: 0 var(--s-2);
+  background: transparent;
+  border-color: var(--border);
+  color: var(--dim);
+}
+
+.chip--link:hover {
+  color: var(--fg);
+}
+
 /* ---------------------------------------------------------------- alert -- */
 
 .alert {
@@ -906,6 +957,262 @@ textarea.prompt:focus-visible {
   border: 0;
 }
 
+/* -------------------------------------------------- evidence chain / log -- */
+
+/* These two panels observe; the result is the subject. They deliberately carry
+   no elevation -- same background, same border, same shadow as every other
+   panel -- so adding two more surfaces did not add two more things competing
+   for the first glance. */
+.panel--chain,
+.panel--log {
+  background: var(--panel);
+}
+
+/* The chain reads top to bottom as a derivation. The left rule is the spine;
+   each step hangs off it, so the eye can follow one line down rather than
+   re-reading each row as an unrelated fact. */
+.chain__ladder,
+.chain__path {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.chain__ladder {
+  border-left: 2px solid var(--border);
+  padding-left: var(--s-4);
+}
+
+.chain__step {
+  display: grid;
+  grid-template-columns: 8ch minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  min-width: 0;
+}
+
+.chain__step--first {
+  /* The one step that ends the search. Marked by weight and a marker rather
+     than by colour alone, so it survives a palette change or a monochrome
+     rendering. */
+  font-weight: 650;
+}
+
+.chain__stepName {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chain__marker {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+/* Each hop: cause -> label -> effect, then the observation that establishes it.
+   The label sits on the arrow because it is the relation, not a field of either
+   end. */
+.chain__hop {
+  border-left: 2px solid var(--border);
+  padding-left: var(--s-4);
+  padding-bottom: var(--s-3);
+  min-width: 0;
+}
+
+.chain__hopHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.chain__node {
+  color: var(--fg-strong);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.chain__arrow {
+  color: var(--faint);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s-1);
+}
+
+.chain__label {
+  color: var(--dim);
+}
+
+.chain__evlist {
+  list-style: none;
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--s-1);
+  min-width: 0;
+}
+
+/* An observation. The grid lets the operation keep its width so the column of
+   operations lines up and can be scanned, while everything else wraps instead
+   of overflowing. */
+.chain__ev {
+  display: grid;
+  grid-template-columns: minmax(9ch, max-content) minmax(0, 1fr);
+  gap: var(--s-1) var(--s-3);
+  align-items: baseline;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.chain__op {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.chain__src {
+  grid-column: 2;
+  font-size: 11px;
+}
+
+.chain__ev .chip--link {
+  grid-column: 2;
+  justify-self: start;
+  max-width: 100%;
+}
+
+.chain__id {
+  grid-column: 2;
+  font-size: 11px;
+}
+
+.chain__none {
+  margin: var(--s-2) 0 0;
+  font-size: 12px;
+}
+
+.chain__path {
+  color: var(--fg);
+}
+
+.chain__sides {
+  display: grid;
+  /* Two columns that can each shrink to nothing. A single fixed column here is
+     what makes a long value push the other side out of the panel. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--s-4);
+  margin-top: var(--s-3);
+  min-width: 0;
+}
+
+.chain__side {
+  min-width: 0;
+  padding: var(--s-3);
+  border-radius: var(--r-2);
+  background: var(--panel-2);
+  border-left: 2px solid var(--border-strong);
+}
+
+.chain__side--good {
+  border-left-color: var(--good);
+}
+
+.chain__side--bad {
+  border-left-color: var(--bad);
+}
+
+.chain__sideLabel {
+  margin: 0 0 var(--s-2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+}
+
+.chain__value {
+  margin: 0 0 var(--s-2);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------------- log -- */
+
+/* Capped height with its own scroll. This is the rule that stops one growing
+   panel from pushing the rest of the page: the list scrolls inside itself and
+   the page below it never moves. */
+.log__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  max-height: 20rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  background: var(--panel-2);
+  min-width: 0;
+}
+
+.log__row {
+  display: grid;
+  /* Fixed, narrow, monospaced columns for the two things that are compared
+     across rows; the detail takes what is left and wraps. */
+  grid-template-columns: 5ch 9ch minmax(0, 1fr) 8ch;
+  gap: var(--s-3);
+  align-items: baseline;
+  padding: var(--s-2) var(--s-3);
+  background: var(--panel-2);
+  min-width: 0;
+  font-size: 12px;
+}
+
+.log__rev {
+  color: var(--faint);
+}
+
+.log__kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.log__kind--query {
+  color: var(--accent);
+}
+
+.log__kind--gap {
+  /* A gap means the client missed something. It is the one row that should be
+     findable by scanning the column rather than by reading each line. */
+  color: var(--warn);
+  font-weight: 650;
+}
+
+.log__detail {
+  color: var(--fg);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.log__time {
+  text-align: right;
+  font-size: 11px;
+}
+
+.log__foot {
+  margin: var(--s-2) 0 0;
+  font-size: 11px;
+  min-height: 1em;
+}
+
 @media (max-width: 720px) {
   .workspace {
     padding: var(--s-3);
@@ -923,6 +1230,21 @@ textarea.prompt:focus-visible {
   .field {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s-1);
+  }
+
+  .log__row {
+    /* The revision and the clock are the first things to go on a narrow
+       screen: the kind and the detail are what the row is for. */
+    grid-template-columns: 9ch minmax(0, 1fr);
+  }
+
+  .log__rev,
+  .log__time {
+    display: none;
+  }
+
+  .chain__step {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

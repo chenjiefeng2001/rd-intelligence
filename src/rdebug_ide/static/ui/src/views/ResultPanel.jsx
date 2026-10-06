@@ -1,6 +1,7 @@
 import React from "react";
 import {
   Panel,
+  Section,
   KeyValues,
   EmptyState,
   Skeleton,
@@ -98,6 +99,70 @@ export function TraceView({ data, t }) {
   );
 }
 
+/**
+ * The resource view.
+ *
+ * A third result shape, not a flavour of one of the other two. `/api/resource`
+ * answers with `{resource, contextEventId, writers, readers, other, summary,
+ * evidence}` -- it has a `summary` but no `edges` and no `layers`. Dispatching
+ * on `summary && edges` therefore sent it to DiffView, which read
+ * `data.layers.map` and threw. React unmounts the tree on an uncaught render
+ * error, so opening any resource id -- from the evidence chips or from the
+ * chain -- blanked the page. It is recorded here because the shape was assumed
+ * to be one of two, and nothing tested the third.
+ */
+export function ResourceView({ data, t }) {
+  const s = data.summary || {};
+  // `resource` arrives as `{id, name}`, not as a string. Rendering it as a child
+  // is what produced React error #31 and a blank page; naming the two fields is
+  // both the fix and the honest description of what came back.
+  const res = data.resource;
+  const resourceId =
+    res == null ? "—" : typeof res === "string" ? res : res.id || "—";
+  const resourceName = res && typeof res === "object" ? res.name : null;
+  const groups = [
+    ["write", data.writers, t("res", "writers")],
+    ["read", data.readers, t("res", "readers")],
+    ["other", data.other, t("res", "other")],
+  ];
+  return (
+    <>
+      <KeyValues
+        rows={[
+          [t("res", "resource"), resourceId],
+          ...(resourceName ? [[t("res", "resourceName"), resourceName]] : []),
+          [t("res", "usageCount"), String(s.usageCount ?? 0)],
+          [
+            t("res", "contextEid"),
+            data.contextEventId != null ? String(data.contextEventId) : "—",
+          ],
+        ]}
+      />
+      {groups.map(([kind, list, label]) => (
+        <Section key={kind} title={label + " (" + ((list && list.length) || 0) + ")"}>
+          {!list || list.length === 0 ? (
+            <EmptyState>{t("res", "noneInGroup")}</EmptyState>
+          ) : (
+            <ul className="list" data-testid={"resource-" + kind}>
+              {list.map((item, i) => (
+                <li key={item.eventId != null ? item.eventId : i}>
+                  <span className="mono">
+                    {t("res", "event")} {item.eventId}
+                  </span>
+                  <span className="muted mono"> {item.usage || "—"}</span>
+                  {item.actionName ? (
+                    <span className="muted"> {item.actionName}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      ))}
+    </>
+  );
+}
+
 function StatusPill({ status }) {
   return <span className={"st st-" + status}>{status}</span>;
 }
@@ -130,8 +195,17 @@ function ResultBody({ result, t }) {
       </div>
     );
   }
-  if (result.data?.summary && result.data?.edges) {
-    return <TraceView data={result.data} t={t} />;
+  // Told apart by the payload's own shape, and every shape is handled
+  // explicitly. The fallback is an empty state rather than a guess: a view
+  // handed a shape it does not know must say so, because reading undefined
+  // fields out of it throws, and a throw here unmounts the whole page.
+  const data = result.data || {};
+  if (Array.isArray(data.edges)) return <TraceView data={data} t={t} />;
+  if (Array.isArray(data.writers) || Array.isArray(data.readers)) {
+    return <ResourceView data={data} t={t} />;
   }
-  return <DiffView data={result.data} t={t} />;
+  if (Array.isArray(data.layers)) return <DiffView data={data} t={t} />;
+  return (
+    <EmptyState hint={t("res", "unknownShape")}>{t("res", "blank")}</EmptyState>
+  );
 }

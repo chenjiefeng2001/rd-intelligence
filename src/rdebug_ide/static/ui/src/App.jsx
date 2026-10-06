@@ -12,10 +12,18 @@ import { TopBar, QueryPanel, StatusBar } from "./panels/QueryPanel.jsx";
 import { ResultPanel } from "./views/ResultPanel.jsx";
 import { EvidencePanel } from "./panels/EvidencePanel.jsx";
 import { HistoryPanel, scopeOf } from "./panels/HistoryPanel.jsx";
+import { EvidenceChain } from "./panels/EvidenceChain.jsx";
+import { EventLog } from "./panels/EventLog.jsx";
 import "./theme.css";
 import "./styles.css";
 
 const MAX_DRAWS = 16; // explicit scope; truncation is surfaced, not hidden
+
+// The stream log is capped. A session that runs for hours would otherwise grow
+// it without limit, and the panel that exists to explain the tool must not be
+// the thing that eventually makes the page unusable. The count of what fell off
+// is kept so the log can say it is truncated rather than looking idle.
+const LOG_LIMIT = 200;
 
 function collectEvidenceIds(node) {
   let out = [];
@@ -58,6 +66,29 @@ export function App() {
   const [scopePixel, setScopePixel] = useState(false);
   const [endpointFilter, setEndpointFilter] = useState("");
 
+  // The server's own announcements, newest last in the store and rendered
+  // newest first. `logDropped` counts entries evicted by the cap.
+  const [logEvents, setLogEvents] = useState([]);
+  const [logDropped, setLogDropped] = useState(0);
+  const [logFilter, setLogFilter] = useState("all");
+  const logSeq = useRef(0);
+
+  const pushLogEvent = useCallback((event) => {
+    logSeq.current += 1;
+    const entry = {
+      seq: logSeq.current,
+      at: Date.now(),
+      kind: event.kind,
+      revision: event.revision,
+      detail: event.detail,
+    };
+    setLogEvents((prev) => {
+      if (prev.length < LOG_LIMIT) return prev.concat(entry);
+      setLogDropped((n) => n + 1);
+      return prev.slice(prev.length - LOG_LIMIT + 1).concat(entry);
+    });
+  }, []);
+
   const t = translator(lang);
 
   // The declared language has to follow the rendered language, or assistive
@@ -74,6 +105,7 @@ export function App() {
     // panel observes the session rather than logging this tab's own clicks, so it
     // refreshes from the stream and not only after a local action.
     onQuery: () => loadHistoryRef.current?.(),
+    onEvent: pushLogEvent,
   });
 
   // One claim per user action, shared by every render target. A response that is
@@ -313,6 +345,11 @@ export function App() {
 
         <ResultPanel result={result} t={t} />
 
+        {/* The chain sits directly under the result: it is the reasoning for
+            what is above it, and separating them would make the reader hold
+            two things in mind to connect one. */}
+        <EvidenceChain result={result} t={t} onOpen={openResource} />
+
         <EvidencePanel
           t={t}
           evidence={evidence}
@@ -339,6 +376,18 @@ export function App() {
           onToggleFailures={() => setFailuresOnly((v) => !v)}
           onToggleScope={() => setScopePixel((v) => !v)}
           onEndpoint={setEndpointFilter}
+        />
+
+        <EventLog
+          events={logEvents}
+          dropped={logDropped}
+          filter={logFilter}
+          onFilter={setLogFilter}
+          onClear={() => {
+            setLogEvents([]);
+            setLogDropped(0);
+          }}
+          t={t}
         />
       </main>
 

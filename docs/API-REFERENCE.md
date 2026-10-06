@@ -237,7 +237,7 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | `hello` | `null` | 连接时缓冲区为空，携带当前 `state` 与 `revision` |
 | `configured` | capture 路径 | `configure()` 成功 |
 | `disposed` | `null` | `dispose()` |
-| `query` | `endpoint`, `ok`, `status`, `latencyMs`, `recorded` | **每个已服务的查询一次** |
+| `query` | `endpoint`, `ok`, `status`, `latencyMs`, `recorded` | **每个已服务的查询一次**；`recorded` 是**该行自身**是否写入成功 |
 | `resync` | `null` | 断点缺口早于缓冲区，或 revision 属于上一次服务器生命周期 |
 
 `query` 事件是后加的：流原本只广播 `configure`/`dispose` 两个生命周期迁移，而长会话
@@ -246,6 +246,10 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 客户端应当合并 `query` 事件：`diff` 会为 prompt 发起第二个请求，逐事件刷新会把观察者
 变成负载。
+
+`recorded` 取自写入该行的那次调用的返回值，**不是** recorder 的累计丢弃计数。用累计计数
+表达过一次：任何一次写入失败（store 指向一个已被删除的目录即可）之后，之后**每一条**都被
+标记为未记录，包括确实写进去的那些。一个对自己的存储状态撒谎的日志比没有日志更糟。
 
 **重连语义。** `retry: 2000` 在流开头给出。缓冲区保留最近 **256** 个事件；超出即从最旧
 处丢弃。客户端可用 `Last-Event-ID` 头或 `lastEventId` 查询参数传入上次 revision：为空
@@ -334,7 +338,7 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | Browser-level UI propagation | **NOT ESTABLISHED** |
 | 失败横幅的**视觉**可见性（`.banner`/`.banner-warn` **无 CSS 规则**） | **NOT ESTABLISHED**（DOM 写入已 VERIFIED） |
 | 干净关闭 / `dispose()` 执行 | **NOT ESTABLISHED**（探测手段限制） |
-| 历史面板对真实 capture 的成功渲染 | **NOT ESTABLISHED** — 浏览器控制跑在未配置服务器上，只覆盖错误路径 |
+| 历史面板对真实 capture 的成功渲染 | **VERIFIED** — 浏览器控制会配置真实 capture，并断言面板与证据链渲染出真实观察结果 |
 | 工具侧模型调用 | **NOT AUTHORIZED**（违反 Rule 2.2 / DESIGN_SPEC MUST-NOT） |
 | 跨端点统一 response-shape Contract | **不存在** —— 故 §2.5 的差异未被定性为缺陷 |
 

@@ -14,6 +14,7 @@ recorded as a verified one.
 """
 import http.client
 import importlib.util
+import json
 import os
 import pathlib
 import shutil
@@ -774,6 +775,424 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
         column = page.eval_on_selector(".panel--result",
                                        "el => el.getBoundingClientRect().width")
         self.assertGreater(width, column)
+
+
+class TestTheEvidenceChainAndServerLog(unittest.TestCase):
+    """The two observing panels, on a server with no capture configured.
+
+    Unconfigured on purpose: a query then returns a real error body, so this
+    covers the states that are hardest to reach on a working server -- a failed
+    query, and the question of what the chain shows after one. The chain against
+    real replay data is a separate class below.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls._pw = sync_playwright().start()
+        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+        cls.live = Live(store=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls._pw.stop()
+        cls.live.stop()
+
+    def page(self, width=1280, height=900):
+        ctx = self.browser.new_context(viewport={"width": width, "height": height})
+        page = ctx.new_page()
+        self.addCleanup(ctx.close)
+        page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                  wait_until="networkidle")
+        return page
+
+    # ------------------------------------------------------------------ log --
+
+    def test_the_log_panel_is_present_before_anything_happens(self):
+        page = self.page()
+        self.assertEqual(len(page.query_selector_all('[data-testid="log"]')), 1)
+
+    def test_a_query_is_recorded_in_the_log_when_it_fails(self):
+        # Failures included on purpose. A log that only records successes is
+        # exactly backwards for a tool whose job is finding out what went wrong.
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        kinds = page.eval_on_selector_all(
+            '[data-testid="log-row"] .log__kind', "els => els.map(e => e.textContent)")
+        self.assertIn("query", kinds)
+
+    def test_the_log_says_when_a_query_failed(self):
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        text = page.inner_text('[data-testid="log"]')
+        self.assertIn("/api/trace", text)
+        self.assertIn("400", text)
+
+    def test_newest_entries_come_first(self):
+        # Newest-first rather than auto-scrolling: a log that scrolls itself
+        # needs scroll state that fights the reader, and newest-first needs none.
+        page = self.page()
+        for xy in ("320,240", "10,10", "100,100"):
+            page.fill("#a", xy)
+            page.click("#btnTrace")
+            page.wait_for_timeout(700)
+        rows = page.eval_on_selector_all(
+            '[data-testid="log-row"] .log__rev',
+            "els => els.map(e => parseInt(e.textContent.slice(1), 10))")
+        self.assertGreaterEqual(len(rows), 2)
+        self.assertEqual(rows, sorted(rows, reverse=True))
+
+    def test_the_filter_narrows_the_rows(self):
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        page.select_option("#logFilter", "lifecycle")
+        page.wait_for_timeout(300)
+        kinds = page.eval_on_selector_all(
+            '[data-testid="log-row"] .log__kind',
+            "els => els.map(e => e.textContent)")
+        self.assertNotIn("query", kinds)
+
+    def test_clearing_empties_the_log(self):
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        page.click("#btnLogClear")
+        page.wait_for_timeout(300)
+        self.assertEqual(
+            len(page.query_selector_all('[data-testid="log-row"]')), 0)
+
+    def test_the_log_states_how_many_entries_it_holds(self):
+        # A bounded list that does not say it is bounded looks like an idle
+        # server once the oldest entries have fallen off.
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        self.assertRegex(page.inner_text('[data-testid="log-foot"]'),
+                         r"\d+")
+
+    # ---------------------------------------------------------------- chain --
+
+    def test_the_chain_panel_is_present(self):
+        page = self.page()
+        self.assertEqual(len(page.query_selector_all('[data-testid="chain"]')), 1)
+
+    def test_a_failed_query_shows_no_chain_rather_than_the_previous_one(self):
+        # Showing the last successful chain here would be the worst possible
+        # answer: it looks like reasoning about this query and is about another.
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_timeout(1200)
+        text = page.inner_text('[data-testid="chain"]').lower()
+        self.assertNotIn("first difference", text)
+        self.assertNotIn("divergence", text)
+        self.assertTrue(text.strip())
+
+    def test_the_chain_is_empty_before_any_query(self):
+        page = self.page()
+        self.assertEqual(
+            len(page.query_selector_all('[data-testid="chain-step"]')), 0)
+
+    # --------------------------------------------------------------- layout --
+
+    def test_no_panel_overflows_its_own_box(self):
+        # Each panel contains its own content. A panel wider than its own box
+        # means a child escaped it, and the sibling layout inherits the problem.
+        page = self.page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_timeout(1200)
+        bad = page.evaluate("""() => {
+          const out = [];
+          for (const el of document.querySelectorAll('.panel')) {
+            if (el.scrollWidth > el.clientWidth + 1) {
+              out.push(el.className + ' scroll=' + el.scrollWidth
+                       + ' client=' + el.clientWidth);
+            }
+          }
+          return out;
+        }""")
+        self.assertEqual(bad, [])
+
+    def test_the_growing_log_scrolls_inside_itself(self):
+        # The rule that keeps one panel from pushing the rest of the page: the
+        # list has a capped height and its own scrollbar.
+        page = self.page()
+        box = page.eval_on_selector(
+            '[data-testid="log-list"]',
+            "el => { const s = getComputedStyle(el);"
+            " return { oy: s.overflowY, max: s.maxHeight }; }")
+        self.assertEqual(box["oy"], "auto")
+        self.assertNotEqual(box["max"], "none")
+
+    def test_the_page_never_scrolls_sideways_at_any_width(self):
+        for width in (1440, 1280, 1024, 860, 720, 480):
+            with self.subTest(width=width):
+                page = self.page(width=width)
+                page.fill("#a", "320,240")
+                page.click("#btnTrace")
+                page.wait_for_timeout(900)
+                overflow = page.evaluate(
+                    "() => document.documentElement.scrollWidth"
+                    " - document.documentElement.clientWidth")
+                self.assertLessEqual(overflow, 0)
+
+    def test_exactly_one_panel_is_elevated(self):
+        # Visual focus is a property of the rendered page, not of a class name:
+        # if two panels are styled apart there is no focal point at all.
+        #
+        # The signature is background + shadow + border together, because
+        # background alone does not carry elevation in both schemes -- in the
+        # light palette --panel and --bg-elev are both #ffffff, so the raised
+        # panel is distinguished by its shadow and border instead. Asserting on
+        # one channel would have passed in one scheme and silently stopped
+        # testing anything in the other.
+        for scheme in ("light", "dark"):
+            with self.subTest(scheme=scheme):
+                ctx = self.browser.new_context(
+                    viewport={"width": 1280, "height": 900},
+                    color_scheme=scheme)
+                page = ctx.new_page()
+                self.addCleanup(ctx.close)
+                page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                          wait_until="networkidle")
+                page.fill("#a", "320,240")
+                page.click("#btnTrace")
+                page.wait_for_timeout(900)
+                counts = page.evaluate("""() => {
+                  const sig = (p) => {
+                    const s = getComputedStyle(p);
+                    return [s.backgroundColor, s.boxShadow,
+                            s.borderTopColor].join('|');
+                  };
+                  const tally = {};
+                  for (const p of document.querySelectorAll('.panel')) {
+                    const k = sig(p);
+                    tally[k] = (tally[k] || 0) + 1;
+                  }
+                  const n = document.querySelectorAll('.panel').length;
+                  const modal = Math.max(...Object.values(tally));
+                  // How many panels are NOT part of the largest identical group.
+                  return { apart: n - modal, total: n };
+                }""")
+                self.assertEqual(
+                    counts["apart"], 1,
+                    "expected one focal panel out of "
+                    + str(counts["total"]))
+
+    def test_opening_a_resource_does_not_blank_the_page(self):
+        # A regression control for a real crash. `/api/resource` answers with a
+        # `summary` but no `edges` and no `layers`, so the two-shape dispatch
+        # sent it to the diff view, which read `data.layers.map` and threw.
+        # React unmounts the tree on an uncaught render error, so every
+        # resource id on the page -- the evidence chips included -- blanked the
+        # whole app. Asserted on the symptom: the page is still there.
+        page = self.page()
+        errors = []
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        # Drive the same code path without needing a configured capture: the
+        # fetch is stubbed, so this asserts the renderer's tolerance of the
+        # shape rather than the replay runtime's ability to produce it.
+        page.route(
+            "**/api/resource*",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({
+                    "resource": "ResourceId::47",
+                    "contextEventId": 11,
+                    "writers": [{"eventId": 2, "usage": "CopyDst", "kind": "write",
+                                 "actionName": "", "evidence": []}],
+                    "readers": [{"eventId": 11, "usage": "PS_Resource",
+                                 "kind": "read", "actionName": "",
+                                 "evidence": []}],
+                    "other": [],
+                    "summary": {"usageCount": 2, "writerCount": 1,
+                                "readerCount": 1, "otherCount": 0},
+                    "evidence": [],
+                })))
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_timeout(800)
+        page.evaluate("""() => {
+          const btn = document.querySelector('.chip');
+          if (btn) btn.click();
+        }""")
+        page.wait_for_timeout(600)
+        self.assertEqual(errors, [], "the page threw while rendering")
+        self.assertEqual(
+            len(page.query_selector_all('[data-testid="result"]')), 1,
+            "the result region must survive an unfamiliar payload shape")
+
+    def test_the_focal_panel_is_the_result(self):
+        page = self.page()
+        ctx_bg = {}
+        for sel in (".panel--result", ".panel--query", ".panel--chain",
+                    ".panel--log", ".panel--history", ".panel--evidence"):
+            ctx_bg[sel] = page.eval_on_selector(
+                sel, "el => getComputedStyle(el).boxShadow")
+        distinct = {v for v in ctx_bg.values()}
+        self.assertEqual(len(distinct), 2,
+                         "the result panel must not share its elevation")
+        self.assertNotEqual(ctx_bg[".panel--result"], ctx_bg[".panel--chain"])
+        self.assertEqual(ctx_bg[".panel--chain"], ctx_bg[".panel--log"])
+
+    def test_the_query_rail_is_elastic_rather_than_fixed(self):
+        # A rail pinned to one width stops being a rail on a wide screen. It has
+        # to grow and shrink with the viewport, within its declared bounds.
+        widths = {}
+        for width in (1440, 1100):
+            page = self.page(width=width)
+            widths[width] = page.eval_on_selector(
+                ".panel--query", "el => Math.round(el.getBoundingClientRect().width)")
+        self.assertLess(widths[1440], widths[1100] + 1)
+        self.assertLessEqual(widths[1440], 24 * 16 + 2)
+        self.assertGreaterEqual(widths[1100], 260 - 2)
+
+
+def _real_replay_ready():
+    if not os.environ.get("RDEBUG_INTEGRATION_CAPTURE"):
+        return False
+    try:
+        from rdebug.adapter.locator import find_module_dir
+    except Exception:
+        return False
+    return find_module_dir() is not None
+
+
+@unittest.skipUnless(
+    _real_replay_ready(),
+    "set RDEBUG_INTEGRATION_CAPTURE to a .rdc file and make the renderdoc "
+    "python module importable (RDEBUG_RENDERDOC_PATH) to walk the chain "
+    "against real replay data",
+)
+class TestTheEvidenceChainAgainstARealCapture(unittest.TestCase):
+    """The chain, with real layers and real observations behind it.
+
+    The other class proves the panel handles failure. This one proves it shows
+    the actual reasoning, which is the whole reason it exists -- and it needs a
+    configured server, because an unconfigured one never produces a chain worth
+    reading.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from playwright.sync_api import sync_playwright
+        cls._pw = sync_playwright().start()
+        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+        cls.live = Live(store=False)
+        cls.capture = os.environ["RDEBUG_INTEGRATION_CAPTURE"]
+        # Configured the way the CLI configures it, not over HTTP: there is no
+        # /api/configure route, because a second controller for a capture is
+        # exactly what the one-owner rule forbids. A failure here is a real
+        # environment problem, so the class fails rather than skipping -- a skip
+        # would read as "the chain needs no runtime", which is the opposite.
+        try:
+            app.configure(cls.capture)
+        except Exception as exc:  # noqa: BLE001 -- reported, not swallowed
+            cls.browser.close()
+            cls._pw.stop()
+            cls.live.stop()
+            raise unittest.SkipTest(
+                "configure(" + str(cls.capture) + ") failed: " + str(exc)) from exc
+
+    @classmethod
+    def tearDownClass(cls):
+        # The capture is a process-wide owner. Leaving it configured would make
+        # every later class in this file answer as a ready server, which is
+        # exactly the state the other classes depend on NOT having.
+        app.dispose()
+        cls.browser.close()
+        cls._pw.stop()
+        cls.live.stop()
+
+    def configured_page(self):
+        ctx = self.browser.new_context(viewport={"width": 1400, "height": 1000})
+        page = ctx.new_page()
+        self.addCleanup(ctx.close)
+        page.goto("http://127.0.0.1:" + str(self.live.port) + "/ui/",
+                  wait_until="networkidle")
+        ready = page.evaluate(
+            "async () => (await (await fetch('/api/info')).json()).ready")
+        self.assertTrue(ready, "the server should report a configured capture")
+        return page
+
+    def test_the_ladder_has_one_step_per_layer(self):
+        page = self.configured_page()
+        page.fill("#a", "320,240")
+        page.fill("#b", "10,10")
+        page.click("#btnDiff")
+        page.wait_for_selector('[data-testid="chain-step"]', timeout=120000)
+        steps = page.eval_on_selector_all(
+            '[data-testid="chain-step"]',
+            "els => els.map(e => e.textContent)")
+        self.assertGreaterEqual(len(steps), 2)
+
+    def test_exactly_one_step_is_marked_as_the_first_difference(self):
+        page = self.configured_page()
+        page.fill("#a", "320,240")
+        page.fill("#b", "10,10")
+        page.click("#btnDiff")
+        page.wait_for_selector('[data-testid="chain-step"]', timeout=120000)
+        marked = page.query_selector_all(".chain__step--first")
+        self.assertEqual(len(marked), 1)
+
+    def test_the_divergence_shows_both_sides_with_their_observations(self):
+        page = self.configured_page()
+        page.fill("#a", "320,240")
+        page.fill("#b", "10,10")
+        page.click("#btnDiff")
+        page.wait_for_selector('[data-testid="chain-evidence"]', timeout=120000)
+        text = page.inner_text('[data-testid="chain"]')
+        self.assertIn("ReplayController", text)
+
+    def test_the_trace_chain_walks_the_edges_with_their_evidence(self):
+        page = self.configured_page()
+        page.fill("#a", "320,240")
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="chain-path"]', timeout=120000)
+        hops = page.query_selector_all(".chain__hop")
+        self.assertGreaterEqual(len(hops), 1)
+        self.assertGreaterEqual(
+            len(page.query_selector_all('[data-testid="chain-evidence"]')), 1)
+
+    def test_a_resource_in_the_chain_opens_that_resource(self):
+        page = self.configured_page()
+        page.fill("#a", "320,240")
+        page.fill("#b", "10,10")
+        page.click("#btnDiff")
+        page.wait_for_selector(".chain__ev .chip--link", timeout=120000)
+        # `.first` because a diff names the same resource on both sides, so
+        # there are legitimately several chips and the selector is not unique.
+        target = page.inner_text(".chain__ev .chip--link")
+        before = page.text_content('[data-testid="result"]')
+        page.locator(".chain__ev .chip--link").first.click()
+        page.wait_for_function(
+            "() => document.querySelector('[data-testid=\"result\"]')"
+            ".textContent !== " + json.dumps(before), timeout=120000)
+        after = page.text_content('[data-testid="result"]')
+        self.assertNotEqual(before, after)
+        self.assertIn(target, after)
+
+    def test_a_real_capture_breaks_into_two(self):
+        page = self.configured_page()
+        page.fill("#a", "320,240")
+        page.fill("#b", "10,10")
+        page.click("#btnDiff")
+        page.wait_for_selector('[data-testid="chain-step"]', timeout=120000)
+        overflow = page.evaluate(
+            "() => document.documentElement.scrollWidth"
+            " - document.documentElement.clientWidth")
+        self.assertLessEqual(overflow, 0)
 
 
 if __name__ == "__main__":

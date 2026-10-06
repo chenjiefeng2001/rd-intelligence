@@ -202,7 +202,10 @@ src/
                               EmptyState Skeleton KeyValues
   panels/QueryPanel.jsx       TopBar, QueryPanel, StatusBar
   panels/EvidencePanel.jsx    evidence chips and the prompt
-  views/ResultPanel.jsx       DiffView, TraceView, ResultPanel
+  views/ResultPanel.jsx       DiffView, TraceView, ResourceView, ResultPanel
+ panels/HistoryPanel.jsx      the recorded history and its three states
+ panels/EvidenceChain.jsx     the derivation behind the answer
+ panels/EventLog.jsx          what the server announced, bounded
   theme.css                   tokens, including both colour schemes
   styles.css                  the primitives
 ```
@@ -231,6 +234,84 @@ destructured its props and dropped the rest, so `data-testid` never reached the
 DOM and the stream badge had no handle. Component boundaries make that class of
 mistake visible, which is most of the argument for having them.
 
+## 8a. The chain, the log, and one crash they found
+
+Two panels were added to answer a question the page could not: *why* is this the
+answer, and *what did the server actually say*. Neither replaces a panel; both
+observe.
+
+**The chain** walks what the server already returns. A diff payload carries
+`layers[]` in comparison order and `firstDivergence` with the evidence for each
+side, so the panel shows the ladder of checks, marks the one that parted, and
+lists the observations under each side -- each naming its `operation` and its
+`source`, which is where the observation came from. A trace payload carries
+`edges[]`, so the panel shows the hops with the evidence per hop. Nothing is
+reconstructed: a chain the server did not send is not drawn. Told apart by the
+payload's own shape, like ResultPanel, with the resource shape handled
+explicitly rather than falling through.
+
+**The log** records every frame the stream delivers, newest first, filtered by
+kind, capped at 200 entries with the count of what fell off stated in the panel.
+Its entries are not coalesced, unlike the refresh: dropping records to save a
+refresh would make it a summary of what the panel acted on, which is the
+opposite of what a log is. Frames the client declines to apply are recorded too,
+because the point of the panel is to catch the tool disagreeing with itself.
+
+**Layout.** The workspace grid gained a row for the chain under the result and a
+full-width row for the log. The query rail moved from a fixed `320-380px` to
+`minmax(260px, 24rem)`, so it is elastic rather than pinned. Every workspace
+child carries `min-width: 0`, which is what stops one long resource id from
+widening the page instead of wrapping: a grid track's default minimum is its
+content. The log's list has a capped height and its own scroll with
+`overscroll-behavior: contain`, so the one panel that grows cannot push the rest
+of the page down.
+
+**Visual focus** is unchanged and now asserted in a browser: exactly one panel
+is styled apart from the rest, and it is the result. The assertion uses
+background **and** shadow **and** border together, because background alone does
+not carry elevation in both schemes -- in the light palette `--panel` and
+`--bg-elev` are both `#ffffff`, so the raised panel is separated by its shadow
+and border. A control that looked only at background would have passed in one
+scheme and silently stopped testing anything in the other.
+
+Two incidental defects were corrected while wiring this up. `.muted` was used by
+four components and defined nowhere in the stylesheet, so every "dimmed" label
+rendered at full strength; it is now defined against `--dim`, which stays
+readable because these labels carry values.
+
+### A crash the chain found
+
+`/api/resource` answers with `{resource, contextEventId, writers, readers,
+other, summary, evidence}`. `ResultBody` dispatched on `summary && edges`, so a
+resource fell through to the diff view, which read `data.layers.map` and threw.
+React unmounts the tree on an uncaught render error, so **every resource id on
+the page blanked the app** -- the pre-existing evidence chips included. There is
+now a `ResourceView`, the dispatch handles all three shapes explicitly, and an
+unrecognised shape renders an empty state instead of a guess.
+
+`resource` is an **object** `{id, name}`, not a string; rendering it directly was
+React error #31 and the same blank page. `KeyValues` now stringifies any value
+that is not a scalar or a node, so one unexpected field in one payload cannot
+take the page down again.
+
+Two controls cover this: one drives a resource response through a stubbed fetch
+and asserts the page survives an unfamiliar shape, and one opens a real resource
+from the chain against a real capture.
+
+### Evidence added, and its boundary
+
+`TestTheEvidenceChainAgainstARealCapture` configures the server with a real
+capture and drives a real browser: the ladder has one step per layer, exactly
+one step is marked as the first difference, both sides show their observations,
+the trace chain walks the edges, and a resource in the chain opens. So **the
+React page rendering a successful diff and trace against a real capture in a real
+browser is now VERIFIED**, which the not-established table below previously
+could not claim.
+
+It still skips without `RDEBUG_INTEGRATION_CAPTURE` and an importable
+`renderdoc` module. A skip is not a pass, and the skip names the prerequisite
+that is missing.
+
 ## 9. Serving the bundle
 
 `/ui/` resolves inside `static/ui/dist` and the resolved path is checked to be
@@ -254,7 +335,7 @@ is a prefix rather than a literal name.
 | Item | Status |
 | --- | --- |
 | A screen-reader run of either page | **NOT ESTABLISHED** — the semantics are asserted in a browser; nobody has listened to one |
-| React page against a real capture with real trace data | **NOT ESTABLISHED** — the browser controls run unconfigured, so they exercise error paths |
+| React page against a real capture with real trace data | **VERIFIED** — `TestTheEvidenceChainAgainstARealCapture` configures a real capture and drives a real browser; skips without the capture and the renderdoc module |
 | Keyboard operation beyond Tab and Enter | **NOT ESTABLISHED** — no arrow-key navigation of the evidence chips or the read tree |
 | Long-running stream stability over hours | **NOT ESTABLISHED** — heartbeat and bounded history are unit-tested, not endurance-tested |
 | Browser controls in CI | **NOT ESTABLISHED** — no browser in the CI image |

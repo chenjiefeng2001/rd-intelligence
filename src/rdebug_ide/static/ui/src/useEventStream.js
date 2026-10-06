@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 const RESYNC_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 
-export function useEventStream({ onState, onResync, onQuery }) {
+export function useEventStream({ onState, onResync, onQuery, onEvent }) {
   const [connected, setConnected] = useState(false);
   const [lastRevision, setLastRevision] = useState(null);
   const retryRef = useRef(0);
@@ -29,9 +29,11 @@ export function useEventStream({ onState, onResync, onQuery }) {
   const onStateRef = useRef(onState);
   const onResyncRef = useRef(onResync);
   const onQueryRef = useRef(onQuery);
+  const onEventRef = useRef(onEvent);
   onStateRef.current = onState;
   onResyncRef.current = onResync;
   onQueryRef.current = onQuery;
+  onEventRef.current = onEvent;
 
   const connect = useCallback(async () => {
     const snapshot = await fetch("/api/state", { cache: "no-store" });
@@ -53,16 +55,21 @@ export function useEventStream({ onState, onResync, onQuery }) {
       retryRef.current = 0;
     };
 
-    const apply = (raw) => {
-      let event;
+    // Every frame is parsed exactly once, and a frame that is not JSON is
+    // neither applied nor logged: the client stays where it is, which is
+    // visible, rather than moving to a half-understood state, which is not.
+    // A log that silently omitted the frames it could not read would be worse
+    // than no log, because it would look complete.
+    const read = (raw) => {
       try {
-        event = JSON.parse(raw);
+        return JSON.parse(raw);
       } catch {
-        // A frame that is not JSON is not applied and not guessed at. The
-        // client stays where it is, which is visible, rather than moving to a
-        // half-understood state, which is not.
-        return;
+        return null;
       }
+    };
+
+    const apply = (event) => {
+      if (!event) return;
       if (typeof event.revision === "number") {
         // Out-of-order or replayed frames are ignored rather than applied: a
         // stream that reorders would otherwise move the UI backwards.
@@ -73,31 +80,41 @@ export function useEventStream({ onState, onResync, onQuery }) {
       if (event.state) onStateRef.current?.(event.state);
     };
 
-    source.addEventListener("configured", (e) => apply(e.data));
-    source.addEventListener("disposed", (e) => apply(e.data));
-    source.addEventListener("hello", (e) => apply(e.data));
+    // The log records what arrived, in arrival order, including frames the
+    // client then declined to apply. A debugging tool whose own stream cannot
+    // be inspected is missing the most basic instrument.
+    const handle = (raw) => {
+      const event = read(raw);
+      if (!event) return null;
+      apply(event);
+      onEventRef.current?.(event);
+      return event;
+    };
+
+    source.addEventListener("configured", (e) => handle(e.data));
+    source.addEventListener("disposed", (e) => handle(e.data));
+    source.addEventListener("hello", (e) => handle(e.data));
 
     // Queries are coalesced rather than acted on one by one. A diff issues a
     // second request for the prompt, and a script can issue dozens; refreshing
     // once per event would turn the observer into load. The window is short
     // enough that a single manual query still feels immediate.
+    //
+    // The log entry is not coalesced. Dropping records to save a refresh would
+    // make the log a summary of what the panel happened to act on, which is
+    // precisely the opposite of what a log is for.
     let pending = null;
     source.addEventListener("query", (e) => {
+      const event = handle(e.data);
       if (pending) clearTimeout(pending);
       pending = setTimeout(() => {
         pending = null;
-        let detail = null;
-        try {
-          detail = JSON.parse(e.data).detail;
-        } catch {
-          detail = null; // a frame that is not JSON is ignored, not guessed at
-        }
-        onQueryRef.current?.(detail);
+        onQueryRef.current?.(event ? event.detail : null);
       }, 250);
     });
 
     source.addEventListener("resync", (e) => {
-      apply(e.data);
+      handle(e.data);
       onResyncRef.current?.();
     });
 

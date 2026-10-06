@@ -519,12 +519,17 @@ def _remember(path, query, payload, status, latency_ms):
         return
 
     error = payload.get("error") if isinstance(payload, dict) else None
-    recorder.record("ide", path, ok=not error, status=status, error=error,
-                    latency_ms=latency_ms, query=query,
-                    summary=_shape(payload))
+    # `stored` is this row's own outcome, taken from the call that wrote it.
+    # Reading the recorder's cumulative drop counter here instead would report
+    # the state of the whole process: one failure anywhere -- a store pointed at
+    # a directory that has since been removed, say -- would then mark every
+    # later query as unrecorded, including the ones that were written. A log
+    # that cries wolf about its own storage is worse than one that says nothing.
+    stored = recorder.record("ide", path, ok=not error, status=status,
+                            error=error, latency_ms=latency_ms, query=query,
+                            summary=_shape(payload))
     publish("query", {"endpoint": path, "ok": not error, "status": status,
-                      "latencyMs": latency_ms,
-                      "recorded": recorder.dropped() == 0})
+                      "latencyMs": latency_ms, "recorded": bool(stored)})
 
 
 def _shape(payload):
