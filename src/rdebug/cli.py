@@ -161,6 +161,22 @@ def _build_parser():
     cichk.add_argument("--tolerance", type=float, default=1e-6)
     cichk.add_argument("--ignore-capture-hash", action="store_true")
 
+    hist = sub.add_parser(
+        "history",
+        help="query the recorded query history (needs RDEBUG_STORE; "
+             "read-only over its own file, no capture required)",
+    )
+    hist.add_argument("--limit", type=int, default=20)
+    hist.add_argument("--endpoint")
+    hist.add_argument("--x", type=int)
+    hist.add_argument("--y", type=int)
+    hist.add_argument("--since", type=float, help="unix timestamp")
+    hist.add_argument("--until", type=float, help="unix timestamp")
+    hist.add_argument("--failures", action="store_true")
+    hist.add_argument("--payloads", action="store_true")
+    hist.add_argument("--summary", action="store_true",
+                      help="aggregates instead of rows")
+
     indent = parser.add_argument("-i", "--indent", type=int, default=2)
     indent.help = "JSON indentation"
     return parser
@@ -201,6 +217,34 @@ def main(argv=None):
 
 def _dispatch(args, indent):
     cmd = args.command
+    if cmd == "history":
+        # No capture and no session: this reads a file the recorder already
+        # wrote. That is deliberate -- asking what happened over a long session
+        # must not require reopening it.
+        from rdebug import recorder
+
+        if not recorder.enabled():
+            _emit({"enabled": False,
+                   "error": "no store configured; set RDEBUG_STORE to the "
+                            "database the session wrote",
+                   "store": None,
+                   "summary" if args.summary else "observations": []}, indent)
+            return 1
+        if args.summary:
+            payload = {"enabled": True,
+                       "summary": recorder.aggregate(endpoint=args.endpoint,
+                                                     since=args.since,
+                                                     until=args.until)}
+        else:
+            payload = {"enabled": True,
+                       "store": recorder.stats(),
+                       "observations": recorder.recent(
+                           limit=args.limit, endpoint=args.endpoint,
+                           x=args.x, y=args.y, since=args.since,
+                           until=args.until, failures_only=args.failures,
+                           with_payload=args.payloads)}
+        _emit(payload, indent)
+        return 0
     if cmd == "info":
         with _open_session(args) as s:
             rows = s.action_rows(limit=None)

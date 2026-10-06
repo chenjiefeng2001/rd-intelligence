@@ -83,10 +83,26 @@ class TestMcpAndCliAgree(unittest.TestCase):
                 self.assertIn(sub, zh())
                 self.assertIn(sub, en())
 
-    def test_both_state_fifteen_subcommands(self):
+    def test_both_state_the_same_number_of_subcommands(self):
+        # Derived from the parser rather than written down here. A literal "15"
+        # in this test and in both documents is three places to update when a
+        # subcommand is added, and the day someone updates two of them the
+        # documents quietly disagree with the CLI.
+        from rdebug.cli import _build_parser
+
+        parser = _build_parser()
+        actions = [a for a in parser._actions
+                   if getattr(a, "choices", None) and hasattr(a, "_name_parser_map")]
+        names = sorted(actions[0].choices)
+        self.assertGreaterEqual(len(names), 16)
         for name, text in (("zh", zh()), ("en", en())):
             with self.subTest(lang=name):
-                self.assertIn("15", text)
+                self.assertIn(str(len(names)), text)
+        # And every subcommand is actually documented.
+        for name, text in (("zh", zh()), ("en", en())):
+            for sub in names:
+                with self.subTest(lang=name, subcommand=sub):
+                    self.assertIn("`" + sub + "`", text)
 
 
 class TestSemanticsAgree(unittest.TestCase):

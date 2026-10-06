@@ -17,6 +17,7 @@ import json
 import os
 import queue as queuelib
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -310,6 +311,60 @@ def api_stats(query):
             "telemetry": bool(os.environ.get("RDEBUG_TELEMETRY"))}
 
 
+def api_history(query):
+    """Recent recorded observations.
+
+    Read-only over the recorder's own file. It cannot change a query result,
+    which is the property Rule 2.8 exists to protect: this is a view of what
+    already happened, not an input to what happens next.
+    """
+    from rdebug import recorder
+
+    def one(name, default=None):
+        raw = query.get(name, [None])[0]
+        return default if raw in (None, "") else raw
+
+    def integer(name, default):
+        raw = one(name)
+        try:
+            return int(raw) if raw is not None else default
+        except (TypeError, ValueError):
+            raise RDebugError(f"{name} must be an integer")
+
+    limit = integer("limit", 50)
+    since = one("since")
+    until = one("until")
+    for name, raw in (("since", since), ("until", until)):
+        if raw is not None:
+            try:
+                float(raw)
+            except (TypeError, ValueError):
+                raise RDebugError(f"{name} must be a unix timestamp")
+    failures_only = str(one("failures", "")).lower() in ("1", "true", "yes")
+
+    return {
+        "enabled": recorder.enabled(),
+        "store": recorder.stats(),
+        "observations": recorder.recent(
+            limit=limit, endpoint=one("endpoint"), x=integer("x", None),
+            y=integer("y", None), since=since, until=until,
+            failures_only=failures_only,
+            with_payload=str(one("payloads", "")).lower() in ("1", "true", "yes")),
+    }
+
+
+def api_history_summary(query):
+    from rdebug import recorder
+
+    def one(name):
+        raw = query.get(name, [None])[0]
+        return None if raw in (None, "") else raw
+
+    return {"enabled": recorder.enabled(),
+            "summary": recorder.aggregate(endpoint=one("endpoint"),
+                                          since=one("since"), until=one("until"))}
+
+
 _ROUTES = {
     "/api/info": api_info,
     "/api/ci": api_ci,
@@ -318,6 +373,8 @@ _ROUTES = {
     "/api/resource": api_resource,
     "/api/explain": api_explain,
     "/api/stats": api_stats,
+    "/api/history": api_history,
+    "/api/history/summary": api_history_summary,
 }
 
 
@@ -419,23 +476,55 @@ def unsubscribe(q):
             _SUBSCRIBERS.remove(q)
 
 
+def _remember(path, query, payload, status, latency_ms):
+    """Record one served query in the durable store, best-effort.
+
+    Every failure is swallowed inside the recorder. A store that cannot be opened
+    must not turn a query into an error, which is Rule 2.8 and the reason this is
+    a separate function: it is the one place in the request path that knows about
+    persistence, so there is exactly one place to audit.
+    """
+    from rdebug import recorder
+
+    error = payload.get("error") if isinstance(payload, dict) else None
+    recorder.record("ide", path, ok=not error, status=status, error=error,
+                    latency_ms=latency_ms, query=query,
+                    summary=_shape(payload))
+
+
+def _shape(payload):
+    """Result-shape fields derived without mutating the payload."""
+    from rdebug.observability import summarize_result
+
+    return summarize_result(payload)
+
+
 def route(path, query):
     from rdebug.observability import record, record_result, timed
 
     fn = _ROUTES.get(path)
     if fn is None:
         return 404, {"error": "unknown endpoint", "path": path}
+    # Measured once and reused for both the JSONL telemetry and the store, so
+    # the two records of the same query cannot disagree about how long it took.
+    started = time.perf_counter()
     try:
         with timed("query", transport="ide", endpoint=path):
             payload = fn(query)
+        elapsed = round((time.perf_counter() - started) * 1000.0, 2)
         if isinstance(payload, dict):
-            # A classified error from the worker arrives as a result dict; it
-            # is still a 400, and must not be logged as a good result.
+            # A classified error from the worker arrives as a result dict; it is
+            # still a 400, and must not be logged as a good result.
             if payload.get("error") and payload.get("kind"):
                 record("query_error", transport="ide", endpoint=path,
                        error=payload["error"], kind=payload["kind"])
+                _remember(path, query, payload, 400, elapsed)
                 return 400, dict(payload)
             record_result("ide", path, payload)
+            if not path.startswith("/api/history"):
+                # The history endpoints read the recorder; recording them would
+                # make a history page grow the history it is showing.
+                _remember(path, query, payload, 200, elapsed)
         return 200, payload
     except RDebugError as e:
         # A QueryError may already be classified by the query layer (an
@@ -448,6 +537,8 @@ def route(path, query):
         body = {"error": str(e)}
         if kind:
             body["kind"] = kind
+        _remember(path, query, body, 400,
+                  round((time.perf_counter() - started) * 1000.0, 2))
         return 400, body
     except (KeyError, IndexError, ValueError, TypeError) as e:
         # Malformed query parameters (a missing "x", a non-numeric
@@ -458,8 +549,11 @@ def route(path, query):
         detail = f"{type(e).__name__}: {e}"
         record("query_error", transport="ide", endpoint=path, error=detail,
                kind="bad_request")
-        return 400, {"error": "invalid request parameters: " + detail,
-                     "endpoint": path}
+        body = {"error": "invalid request parameters: " + detail,
+                "endpoint": path}
+        _remember(path, query, body, 400,
+                  round((time.perf_counter() - started) * 1000.0, 2))
+        return 400, body
 
 
 _STATIC = os.path.join(os.path.dirname(__file__), "static")

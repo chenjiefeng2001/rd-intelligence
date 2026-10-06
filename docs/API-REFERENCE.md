@@ -27,7 +27,7 @@
 | --- | --- | --- | --- |
 | **Semantic API v1** | `rdebug.analysis.*` | 全部上层 | **FROZEN** |
 | **MCP transport** | `rdebug-mcp`（4 tools） | 外部 LLM / Agent | **FROZEN** |
-| **IDE HTTP** | `rdebug-ide`（7 endpoints） | 人 / 脚本 | 见下 |
+| **IDE HTTP** | `rdebug-ide`（9 endpoints） | 人 / 脚本 | 见下 |
 
 **[CODE]** 三者的分层由 `scripts/audit_boundaries.py` 强制：
 Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `anthropic` / `httpx` / `import requests` 出现在 `rdebug`、`rdebug_mcp`、`rdebug_ide` 任何位置**。
@@ -53,6 +53,8 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | `/api/explain` | `a`, `b`, `deep` | `diff_pixel` | 稳定 |
 | `/api/ci` | — | `ci_check` | 稳定 |
 | `/api/stats` | — | — | **资源所有权视图，非请求指标** |
+| `/api/history` | `limit`, `endpoint`, `x`, `y`, `since`, `until`, `failures`, `payloads` | — | 仅当 `RDEBUG_STORE` 已设置 |
+| `/api/history/summary` | `endpoint`, `since`, `until` | — | 同上 |
 
 ### 2.2 `/api/info`
 
@@ -180,6 +182,43 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 ---
 
+---
+
+## 2.11 查询历史（`/api/history`）
+
+**[CODE]** 需要 `RDEBUG_STORE` 指向一个数据库文件。未设置时返回 `{"enabled": false}`
+且 `observations: []` —— 不会静默创建，也不会假装有数据。
+
+**[CODE]** 返回体：
+
+```json
+{"enabled": true,
+ "store": {"recorded": 4, "dropped": 0, "rows": 4, "path": "...", "payloads": false},
+ "observations": [{"id": 4, "ts": 1791262090.14, "transport": "ide",
+                   "endpoint": "/api/trace", "ok": true, "status": 200,
+                   "latency_ms": 12.5, "query": {"x": "320", "y": "240"},
+                   "summary": {...}, "payload": null}]}
+```
+
+| 参数 | 说明 |
+| --- | --- |
+| `limit` | 默认 50，上限 1000。**`limit=0` 取最小可用页（1 条）**，不会被当作「未指定」而返回默认页 |
+| `x`, `y` | 只返回询问该像素的请求。**按值解析**，`320,240` 不会匹配 `1320,2401` |
+| `endpoint` | 精确匹配端点 |
+| `since`, `until` | unix 时间戳窗口 |
+| `failures` | 只返回失败 |
+| `payloads` | 返回完整响应体（默认关闭，记录时由 `RDEBUG_STORE_PAYLOADS` 决定是否落盘） |
+
+**[CODE]** `/api/history/summary` 返回聚合：请求数、失败数、平均/最大延迟、
+按端点分组、Top 错误、被丢弃计数。
+
+> **[CODE] 关键性质**：`/api/history` 只读 recorder 自己写的文件。它**不在**查询路径上，
+> 因此无法影响任何查询结果（DESIGN_SPEC §2.8：telemetry 必须 best-effort 且不得改变查询行为）。
+> 历史端点自身**不被记录**，否则「看历史」会让历史增长。
+
+**[CODE]** 查询参数以字符串存储（URL 本来就是字符串），过滤时按值转换比较。
+这一区别是有意的：存储的是实际发出的请求，不是转换后的样子。
+
 ## 3. MCP Transport
 
 `rdebug-mcp` **[CODE]** 暴露**恰好 4 个工具**（由 `TransportInvariants` 固定）。
@@ -207,7 +246,7 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 ## 4. CLI
 
-**[CODE]** 15 个子命令。每个子命令另有 `--rd-path`（`RDEBUG_RENDERDOC_PATH` 的 CLI 形式）。
+**[CODE]** 16 个子命令。每个子命令另有 `--rd-path`（`RDEBUG_RENDERDOC_PATH` 的 CLI 形式）。
 
 | 子命令 | `--eid` | 自身主要参数 |
 | --- | --- | --- |
@@ -226,6 +265,7 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | `diff-pixel` | **无** | `--a!` `--b!` `--include-shader-values` `--max-draws` `--no-expand-reads` |
 | `ci-record` | — | `--spec!` `-o!` |
 | `ci-check` | — | `--baseline!` `--tolerance` `--ignore-capture-hash` |
+| `history` | — | `--limit` `--endpoint` `--x` `--y` `--since` `--until` `--failures` `--payloads` `--summary` |
 
 （`!` = required）
 

@@ -32,7 +32,7 @@ never presented as verified behaviour:
 | --- | --- | --- | --- |
 | **Semantic API v1** | `rdebug.analysis.*` | everything above | **FROZEN** |
 | **MCP transport** | `rdebug-mcp` (4 tools) | external LLM / agent | **FROZEN** |
-| **IDE HTTP** | `rdebug-ide` (7 endpoints) | humans / scripts | see below |
+| **IDE HTTP** | `rdebug-ide` (9 endpoints) | humans / scripts | see below |
 
 **[CODE]** The layering is enforced by `scripts/audit_boundaries.py`:
 Rule 2.1 forbids Stable Core from depending on a transport, and **Rule 2.2
@@ -64,6 +64,8 @@ forbids `openai`, `anthropic`, `httpx` and `import requests` anywhere in
 | `/api/explain` | `a`, `b`, `deep` | `diff_pixel` | stable |
 | `/api/ci` | — | `ci_check` | stable |
 | `/api/stats` | — | — | **resource ownership, not request metrics** |
+| `/api/history` | `limit`, `endpoint`, `x`, `y`, `since`, `until`, `failures`, `payloads` | — | only when `RDEBUG_STORE` is set |
+| `/api/history/summary` | `endpoint`, `since`, `until` | — | same |
 
 ### 2.2 `/api/info`
 
@@ -214,6 +216,48 @@ by action-tree membership — **[P9a]** an illegal event returns **400** with
 
 ---
 
+---
+
+## 2.11 Query history (`/api/history`)
+
+**[CODE]** Requires `RDEBUG_STORE` to name a database file. When it is unset the
+response is `{"enabled": false}` with an empty `observations` list -- the store is
+never created silently and no data is implied.
+
+**[CODE]** Response body:
+
+```json
+{"enabled": true,
+ "store": {"recorded": 4, "dropped": 0, "rows": 4, "path": "...", "payloads": false},
+ "observations": [{"id": 4, "ts": 1791262090.14, "transport": "ide",
+                   "endpoint": "/api/trace", "ok": true, "status": 200,
+                   "latency_ms": 12.5, "query": {"x": "320", "y": "240"},
+                   "summary": {...}, "payload": null}]}
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `limit` | default 50, maximum 1000. **`limit=0` yields the smallest useful page (1 row)** rather than being treated as unspecified and returning the default page |
+| `x`, `y` | only requests asking about that pixel. **Matched by value**: `320,240` does not match `1320,2401` |
+| `endpoint` | exact endpoint match |
+| `since`, `until` | unix timestamp window |
+| `failures` | failures only |
+| `payloads` | include full response bodies (off by default; whether they were written is decided by `RDEBUG_STORE_PAYLOADS`) |
+
+**[CODE]** `/api/history/summary` returns aggregates: request count, failure count,
+mean and max latency, a per-endpoint breakdown, the most frequent errors, and how
+many records were dropped.
+
+> **[CODE] The load-bearing property**: `/api/history` reads a file the recorder
+> wrote and is **not on the query path**, so it cannot affect any query result
+> (DESIGN_SPEC 2.8: telemetry must be best-effort and must not change query
+> behaviour). The history endpoints are themselves **not recorded**, because
+> looking at the history must not grow it.
+>
+> **[CODE]** Query parameters are stored as strings, because that is what a URL
+> contains, and converted for comparison when filtering. The distinction is
+> deliberate: what gets stored is the request that was actually sent.
+
 ## 3. MCP Transport
 
 **[CODE]** `rdebug-mcp` exposes **exactly four tools**, fixed by
@@ -248,7 +292,7 @@ previously produced `unknown tool`.
 
 ## 4. CLI
 
-**[CODE]** 15 subcommands. Each also takes `--rd-path` (the CLI form of
+**[CODE]** 16 subcommands. Each also takes `--rd-path` (the CLI form of
 `RDEBUG_RENDERDOC_PATH`).
 
 | Subcommand | `--eid` | Its own main parameters |
@@ -268,6 +312,7 @@ previously produced `unknown tool`.
 | `diff-pixel` | **none** | `--a!` `--b!` `--include-shader-values` `--max-draws` `--no-expand-reads` |
 | `ci-record` | — | `--spec!` `-o!` |
 | `ci-check` | — | `--baseline!` `--tolerance` `--ignore-capture-hash` |
+| `history` | — | `--limit` `--endpoint` `--x` `--y` `--since` `--until` `--failures` `--payloads` `--summary` |
 
 (`!` means required)
 

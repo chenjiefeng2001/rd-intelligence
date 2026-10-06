@@ -2,7 +2,7 @@
 
 Every document in this directory, one row each, grouped by topic.
 
-**15 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
+**16 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
 and are constrained by it; **48 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
@@ -57,6 +57,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`LINT-EXECUTION-CONTRACT.md`](LINT-EXECUTION-CONTRACT.md) | `contract` / `living` |
 | [`PACKAGING-BUILD-CONTRACT.md`](PACKAGING-BUILD-CONTRACT.md) | `contract` / `living` |
 | [`MCP-CONTRACT-GOVERNANCE.md`](MCP-CONTRACT-GOVERNANCE.md) | not classified |
+| [`QUERY-STORAGE-CONTRACT.md`](QUERY-STORAGE-CONTRACT.md) | `contract` / `living` |
 | [`REPORT-SCHEMA-OWNERSHIP.md`](REPORT-SCHEMA-OWNERSHIP.md) | `contract` / `living` |
 | [`SCENARIO-LIFECYCLE-ADJUDICATION.md`](SCENARIO-LIFECYCLE-ADJUDICATION.md) | not classified |
 | [`SCOPE-DECISION-RENDERDOC-OWNERSHIP.md`](SCOPE-DECISION-RENDERDOC-OWNERSHIP.md) | not classified |
@@ -108,8 +109,8 @@ Machine-readable companions, listed for completeness:
 
 | | Count |
 | --- | --- |
-| Documents indexed | 63 |
-| Machine-classified | 15 |
+| Documents indexed | 64 |
+| Machine-classified | 16 |
 | Not classified | 48 |
 | Of which validation evidence | 10 markdown + 3 json |
 
