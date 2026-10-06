@@ -134,7 +134,7 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 > **本端点不提供调用次数、延迟或错误分类。** 请求指标仅存在于 **opt-in JSONL 遥测**
 > （`RDEBUG_TELEMETRY` 环境变量指向文件时才记录，append-only，**无查询/聚合 API**）。
-> IDE 前端**当前不调用本端点**。**未提供请求指标视图 —— NOT IMPLEMENTED。**
+> IDE 前端**不调用本端点**：`/api/stats` 表达资源归属，不是请求指标。**请求指标视图已由 `/api/history` 与 `/api/history/summary` 提供（见 §2.11）**，且只在 `RDEBUG_STORE` 已设置时存在。
 
 ### 2.9 错误与状态码语义
 
@@ -298,7 +298,7 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | Browser-level UI propagation | **NOT ESTABLISHED** |
 | 失败横幅的**视觉**可见性（`.banner`/`.banner-warn` **无 CSS 规则**） | **NOT ESTABLISHED**（DOM 写入已 VERIFIED） |
 | 干净关闭 / `dispose()` 执行 | **NOT ESTABLISHED**（探测手段限制） |
-| IDE 请求指标视图 | **NOT IMPLEMENTED**（A workstream 已 CLOSED，scope boundary） |
+| 历史面板对真实 capture 的成功渲染 | **NOT ESTABLISHED** — 浏览器控制跑在未配置服务器上，只覆盖错误路径 |
 | 工具侧模型调用 | **NOT AUTHORIZED**（违反 Rule 2.2 / DESIGN_SPEC MUST-NOT） |
 | 跨端点统一 response-shape Contract | **不存在** —— 故 §2.5 的差异未被定性为缺陷 |
 

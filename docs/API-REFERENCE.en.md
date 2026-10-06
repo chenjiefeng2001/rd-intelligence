@@ -159,7 +159,7 @@ fixes the "one owner, not one per request" semantics.
 > classification.** Request metrics exist only as **opt-in JSONL telemetry**
 > (written when `RDEBUG_TELEMETRY` names a file; append-only, with **no query or
 > aggregation API**). The IDE front end **does not call this endpoint**.
-> **No request-metrics view is provided — NOT IMPLEMENTED.**
+> The IDE front end **does not call this endpoint**: `/api/stats` expresses resource ownership, not request metrics. **A request-metrics view is now provided by `/api/history` and `/api/history/summary`** (see 2.11), and exists only when `RDEBUG_STORE` is set.
 
 ### 2.9 Error and status-code semantics
 
@@ -349,7 +349,7 @@ client implementation avoids them:
 | Browser-level UI propagation | **NOT ESTABLISHED** |
 | Visual visibility of the failure banner (`.banner` / `.banner-warn` have **no CSS rule**) | **NOT ESTABLISHED** (the DOM write is VERIFIED) |
 | Clean shutdown / execution of `dispose()` | **NOT ESTABLISHED** (a limit of the probe) |
-| IDE request-metrics view | **NOT IMPLEMENTED** (workstream A closed on scope grounds) |
+| History panel rendering a successful result from a real capture | **NOT ESTABLISHED** — the browser controls run against an unconfigured server and cover error paths |
 | Model invocation from the tool side | **NOT AUTHORIZED** (violates Rule 2.2 / DESIGN_SPEC MUST-NOT) |
 | A shared cross-endpoint response-shape contract | **does not exist** — which is why the difference in 2.5 is not a defect |
 

@@ -95,5 +95,57 @@ class TestTheHistoryEndpointsAreDescribedHonestly(unittest.TestCase):
                 self.assertIn("limit=0", text)
 
 
+class TestNoClaimContradictsTheImplementation(unittest.TestCase):
+    """A "not implemented" note that names something that now exists.
+
+    Found by drift rather than by intent: `/api/history` landed and the
+    reference kept saying the request-metrics view was NOT IMPLEMENTED, in four
+    places across two editions. Nothing caught it because every individual claim
+    was once true, and a document that is wrong only in its summary lines is
+    still a document a reader trusts.
+
+    The check is deliberately narrow. It fires only when a line both claims
+    NOT IMPLEMENTED *and* names an endpoint or a store that the code has. Every
+    other NOT IMPLEMENTED in these documents is still true, and widening the
+    rule would produce failures that say nothing about correctness.
+    """
+
+    IMPLEMENTED = ("/api/history", "RDEBUG_STORE", "/api/state", "/api/events")
+
+    def _offenders(self, text):
+        out = []
+        for number, line in enumerate(text.splitlines(), 1):
+            if "NOT IMPLEMENTED" not in line:
+                continue
+            for token in self.IMPLEMENTED:
+                if token in line:
+                    out.append((number, line.strip()[:90]))
+        return out
+
+    def test_neither_edition_claims_history_is_unimplemented(self):
+        for name, text in (("zh", zh()), ("en", en())):
+            offenders = self._offenders(text)
+            with self.subTest(lang=name):
+                self.assertEqual(
+                    offenders, [],
+                    "these lines call something NOT IMPLEMENTED while naming "
+                    "a feature that exists: %s" % (offenders,))
+
+    def test_the_retired_workstream_a_phrase_is_gone(self):
+        for name, text in (("zh", zh()), ("en", en())):
+            with self.subTest(lang=name):
+                self.assertNotIn(
+                    "A workstream", text,
+                    "workstream A was closed on grounds the store removed; "
+                    "leaving the phrase makes the reference describe a "
+                    "decision that no longer holds")
+
+    def test_the_summary_points_at_the_history_section(self):
+        for name, text in (("zh", zh()), ("en", en())):
+            with self.subTest(lang=name):
+                self.assertIn("/api/history/summary", text)
+                self.assertIn("2.11", text)
+
+
 if __name__ == "__main__":
     unittest.main()

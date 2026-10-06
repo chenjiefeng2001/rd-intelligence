@@ -123,6 +123,26 @@ React 页面与原页面的功能对等：五个按钮（对比 / 追踪 / 生�
 这些断言由 `tests/unit/test_ide_ui_browser.py` 在真实浏览器中执行，详见
 [`docs/IDE-INTERFACE-CONTRACT.md`](docs/IDE-INTERFACE-CONTRACT.md)。
 
+### 会话历史（可查询）
+
+默认**不开启**。设置 `RDEBUG_STORE` 指向一个数据库文件后重启，
+每次查询就会落库（仅标准库 `sqlite3`，无新依赖）：
+
+```bash
+# 写入
+RDEBUG_STORE=./history.db rdebug-ide capture.rdc --port 8080
+
+# 读回（不需要 capture）
+RDEBUG_STORE=./history.db rdebug history --limit 20
+RDEBUG_STORE=./history.db rdebug history --summary
+RDEBUG_STORE=./history.db rdebug history --x 320 --y 240 --failures
+```
+
+`/ui/` 的历史面板展示请求数、失败数、平均延迟、按端点分布与高频
+错误，并可按像素、端点、仅失败筛选。存储默认有界（50000 行 / 7 天）。
+
+详见 [`docs/QUERY-STORAGE-CONTRACT.md`](docs/QUERY-STORAGE-CONTRACT.md)。
+
 前端源码在 `src/rdebug_ide/static/ui/`，构建：
 
 ```bash
