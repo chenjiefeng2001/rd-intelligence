@@ -27,7 +27,7 @@
 | --- | --- | --- | --- |
 | **Semantic API v1** | `rdebug.analysis.*` | 全部上层 | **FROZEN** |
 | **MCP transport** | `rdebug-mcp`（4 tools） | 外部 LLM / Agent | **FROZEN** |
-| **IDE HTTP** | `rdebug-ide`（9 endpoints） | 人 / 脚本 | 见下 |
+| **IDE HTTP** | `rdebug-ide`（11 endpoints） | 人 / 脚本 | 见下 |
 
 **[CODE]** 三者的分层由 `scripts/audit_boundaries.py` 强制：
 Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `anthropic` / `httpx` / `import requests` 出现在 `rdebug`、`rdebug_mcp`、`rdebug_ide` 任何位置**。
@@ -55,6 +55,8 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 | `/api/stats` | — | — | **资源所有权视图，非请求指标** |
 | `/api/history` | `limit`, `endpoint`, `x`, `y`, `since`, `until`, `failures`, `payloads` | — | 仅当 `RDEBUG_STORE` 已设置 |
 | `/api/history/summary` | `endpoint`, `since`, `until` | — | 同上 |
+| `/api/state` | — | — | 稳定；`revision` 单调计数器 |
+| `/api/events` | `lastEventId` | — | `text/event-stream`，非 JSON，见 §2.12 |
 
 ### 2.2 `/api/info`
 
@@ -218,6 +220,40 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 **[CODE]** 查询参数以字符串存储（URL 本来就是字符串），过滤时按值转换比较。
 这一区别是有意的：存储的是实际发出的请求，不是转换后的样子。
+
+## 2.12 事件流（`/api/events`）
+
+`GET /api/events` 返回 `text/event-stream; charset=utf-8`，并**保持打开**——它是
+唯一一个不返回 JSON 的端点。`GET /api/state` 返回 `{ready, capture, ci, revision}`。
+
+帧格式为 `id:` / `event:` / `data:` 三行，`data:` 载荷是**单行紧凑 JSON**。
+
+> **[CODE]** 载荷必须是单行的。SSE 只在每一行都重复 `data:` 前缀时才跨行延续
+> 载荷，未加前缀的行会被丢弃；缩进过的 JSON 因此会以 `{` 到达客户端并使
+> `JSON.parse` 抛错。
+
+| 事件 | `detail` | 何时发出 |
+| --- | --- | --- |
+| `hello` | `null` | 连接时缓冲区为空，携带当前 `state` 与 `revision` |
+| `configured` | capture 路径 | `configure()` 成功 |
+| `disposed` | `null` | `dispose()` |
+| `query` | `endpoint`, `ok`, `status`, `latencyMs`, `recorded` | **每个已服务的查询一次** |
+| `resync` | `null` | 断点缺口早于缓冲区，或 revision 属于上一次服务器生命周期 |
+
+`query` 事件是后加的：流原本只广播 `configure`/`dispose` 两个生命周期迁移，而长会话
+产生的是查询，于是历史面板只剩一个手动刷新按钮。`/api/history*` **不广播自身**，
+否则一次被拒绝的历史读取会触发面板重读、再次失败、再次广播。
+
+客户端应当合并 `query` 事件：`diff` 会为 prompt 发起第二个请求，逐事件刷新会把观察者
+变成负载。
+
+**重连语义。** `retry: 2000` 在流开头给出。缓冲区保留最近 **256** 个事件；超出即从最旧
+处丢弃。客户端可用 `Last-Event-ID` 头或 `lastEventId` 查询参数传入上次 revision：为空
+则收到 `hello`；仍可覆盖则补发差异；**缺口早于缓冲区则收到 `resync`**，客户端必须回落到
+`/api/state` 全量快照，而不是把缺口当成"已是最新"。15 秒无事件时发送 `: heartbeat`
+注释行以保持连接，它不是事件，不应刷新任何 UI。
+
+`revision` 在每次**可观察变化**时递增，包括每次查询。
 
 ## 3. MCP Transport
 

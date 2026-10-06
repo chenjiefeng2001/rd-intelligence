@@ -26,7 +26,10 @@ def en() -> str:
 def routes():
     from rdebug_ide import app
 
-    return sorted(app._ROUTES)
+    # Including the endpoints that are not in _ROUTES. While /api/events and
+    # /api/state lived only as special cases in do_GET they were served, absent
+    # from both references, and this control reported every route documented.
+    return sorted(list(app._ROUTES) + list(app.AUX_GET_ROUTES))
 
 
 def subcommands():
@@ -38,6 +41,20 @@ def subcommands():
                                                         "_name_parser_map"):
             return sorted(action.choices)
     return []
+
+
+def event_kinds():
+    """The stream's event names, read out of the server source.
+
+    Derived rather than listed: a document that names four kinds when the server
+    can emit five is the same stale-number problem this file exists for, and a
+    hardcoded list here would agree with itself forever.
+    """
+    src = (REPO / "src" / "rdebug_ide" / "app.py").read_text(encoding="utf-8")
+    kinds = set(re.findall(r'publish\(\s*"([a-z]+)"', src))
+    kinds |= set(re.findall(r'"kind":\s*"([a-z]+)"', src))
+    kinds |= set(re.findall(r'"event:\s*([a-z]+)', src))
+    return sorted(kinds)
 
 
 class TestTheCountsAreDerived(unittest.TestCase):
@@ -64,6 +81,24 @@ class TestTheCountsAreDerived(unittest.TestCase):
     def test_the_two_editions_document_the_same_routes(self):
         routes_in = re.compile(r"\| `(/api/[^`]*)` \|")
         self.assertEqual(set(routes_in.findall(zh())), set(routes_in.findall(en())))
+
+    def test_every_event_kind_the_server_can_emit_is_documented(self):
+        # /api/events was undocumented in both editions while being served, and
+        # its kinds had no control at all. Deriving them from the source means a
+        # new event cannot be added without a reader being told.
+        for name, text in (("zh", zh()), ("en", en())):
+            for kind in event_kinds():
+                with self.subTest(lang=name, kind=kind):
+                    self.assertIn("`" + kind + "`", text)
+
+    def test_the_stream_section_states_that_a_payload_is_one_line(self):
+        # The frames were pretty-printed under a single data: header, so a
+        # reader received `{`. Both editions have to carry the rule that keeps
+        # that from being reintroduced.
+        for name, text in (("zh", zh()), ("en", en())):
+            with self.subTest(lang=name):
+                self.assertIn("/api/events", text)
+                self.assertIn("data:", text)
 
     def test_no_documented_endpoint_is_not_implemented(self):
         # The other direction: a route in the docs that does not exist would

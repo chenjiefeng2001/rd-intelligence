@@ -32,7 +32,7 @@ never presented as verified behaviour:
 | --- | --- | --- | --- |
 | **Semantic API v1** | `rdebug.analysis.*` | everything above | **FROZEN** |
 | **MCP transport** | `rdebug-mcp` (4 tools) | external LLM / agent | **FROZEN** |
-| **IDE HTTP** | `rdebug-ide` (9 endpoints) | humans / scripts | see below |
+| **IDE HTTP** | `rdebug-ide` (11 endpoints) | humans / scripts | see below |
 
 **[CODE]** The layering is enforced by `scripts/audit_boundaries.py`:
 Rule 2.1 forbids Stable Core from depending on a transport, and **Rule 2.2
@@ -66,6 +66,8 @@ forbids `openai`, `anthropic`, `httpx` and `import requests` anywhere in
 | `/api/stats` | — | — | **resource ownership, not request metrics** |
 | `/api/history` | `limit`, `endpoint`, `x`, `y`, `since`, `until`, `failures`, `payloads` | — | only when `RDEBUG_STORE` is set |
 | `/api/history/summary` | `endpoint`, `since`, `until` | — | same |
+| `/api/state` | — | — | stable; the `revision` counter |
+| `/api/events` | `lastEventId` | — | `text/event-stream`, not JSON; section 2.12 |
 
 ### 2.2 `/api/info`
 
@@ -257,6 +259,47 @@ many records were dropped.
 > **[CODE]** Query parameters are stored as strings, because that is what a URL
 > contains, and converted for comparison when filtering. The distinction is
 > deliberate: what gets stored is the request that was actually sent.
+
+## 2.12 Event stream (`/api/events`)
+
+`GET /api/events` returns `text/event-stream; charset=utf-8` and **stays open** --
+it is the one endpoint that does not return JSON. `GET /api/state` returns
+`{ready, capture, ci, revision}`.
+
+A frame is `id:` / `event:` / `data:`, with the `data:` payload as **compact
+single-line JSON**.
+
+> **[CODE]** The payload has to be one line. SSE continues a data payload across
+> lines only when every line repeats the `data:` prefix and unprefixed lines are
+> discarded, so indented JSON arrives as `{` and makes `JSON.parse` throw.
+
+| Event | `detail` | Sent when |
+| --- | --- | --- |
+| `hello` | `null` | on connect with an empty backlog, carrying `state` and `revision` |
+| `configured` | the capture path | `configure()` succeeded |
+| `disposed` | `null` | `dispose()` |
+| `query` | `endpoint`, `ok`, `status`, `latencyMs`, `recorded` | **once per served query** |
+| `resync` | `null` | the gap predates the buffer, or the revision belongs to an earlier server lifetime |
+
+The `query` event came later: the stream carried only the two lifecycle
+transitions, and a long session produces queries, which left the history panel
+with a manual refresh button. The `/api/history*` endpoints **do not announce
+themselves** -- otherwise a rejected history read would make the panel read the
+history again, fail, and announce once more.
+
+Clients should coalesce `query` events: a diff issues a second request for the
+prompt, so refreshing per event turns the observer into load.
+
+**Reconnect semantics.** `retry: 2000` is sent up front. The buffer keeps the
+most recent **256** events and drops the oldest past that. A client passes the
+revision it last saw as the `Last-Event-ID` header or a `lastEventId` parameter:
+absent gets `hello`, still covered replays the difference, and a **gap older than
+the buffer gets `resync`**, at which point the client must fall back to a full
+`/api/state` snapshot rather than treat the gap as "you are current". A
+`: heartbeat` comment line every 15 idle seconds keeps the connection alive; it
+is not an event and should refresh no UI.
+
+`revision` increases on every **observable** change, a query included.
 
 ## 3. MCP Transport
 

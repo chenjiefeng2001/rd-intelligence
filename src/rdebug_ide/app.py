@@ -383,6 +383,11 @@ _ROUTES = {
     "/api/history/summary": api_history_summary,
 }
 
+# GET endpoints that exist but do not belong to _ROUTES: /api/events never
+# returns, and /api/state takes no query parameters. They are listed so the
+# documentation control can require both editions to describe them.
+AUX_GET_ROUTES = ("/api/events", "/api/state")
+
 
 # --------------------------------------------------------------------------
 # Change notification.
@@ -598,18 +603,24 @@ class Handler(BaseHTTPRequestHandler):
             # where it is and reachable at exactly the same URL.
             self.serve_static(parsed.path)
             return
-        if parsed.path == "/api/state":
-            # The snapshot a reconnecting client asks for when its revision was
-            # evicted, and the first thing a client reads at all. A stream can
-            # only carry changes; this carries the state they add up to.
-            body = to_json(snapshot_state()).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        if parsed.path == "/api/events":
+        if parsed.path in AUX_GET_ROUTES:
+            # Not in _ROUTES because neither returns JSON from route(): the
+            # stream stays open and the snapshot has no query parameters. They
+            # are still endpoints, and naming them here is what lets the
+            # documentation control see them -- while they lived only as
+            # special cases in do_GET they were undocumented and unchecked.
+            if parsed.path == "/api/state":
+                # The snapshot a reconnecting client asks for when its revision
+                # was evicted, and the first thing a client reads at all. A
+                # stream can only carry changes; this carries the state they add
+                # up to.
+                body = to_json(snapshot_state()).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             self.serve_events(parsed)
             return
         if parsed.path.startswith("/api/"):
