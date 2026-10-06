@@ -224,7 +224,9 @@ revert-only → restore → real validation → freeze 流程进行。
 普通实现 commit、控制修复 commit、纯测试或文档内部修正，
 **若未改变当前状态事实，不触发状态刷新**。
 
-### 9.3 初始 calibration
+### 9.3 calibration（两次：先值，后范围）
+
+**第一次：初始数值。**
 
 ```
 MAX_DRIFT = 19 commits
@@ -241,6 +243,41 @@ median 2   max 19   17 个间隔
 
 **改阈值来消除报警：否。** 若 milestone 节奏改变，F4 重新进入 calibration，
 不得静默调整数值。
+
+**第二次：改的是适用范围，数值未变。** `MAX_DRIFT` 仍为 **19**。
+
+原控制把该上界无区分地施加于所有带 `baseline_commit` 的文档。但它是为
+「**按 milestone 刷新的状态文档**」校准的，而被施动的目标文档自报分类为：
+
+```
+document_role: evidence_record
+freshness_policy: point_in_time
+```
+
+并自述「任何时点声明都自动过期。按本合同 §3，`point_in_time` 记录描述
+**某一个时刻**，本就应随 HEAD 前进而老化。要求它跟随 milestone 节奏，是把
+证据记录当成状态文档的**类别错误**。
+
+触发场况：P9a 封存后的功能开发（React 前端、事件流、查询存储）
+本身**不产生任何 P9a 证据**，因而在该文档的语义下没有发生一次
+F4 意义上的 milestone；真正发生的状态变化（工作流 A 由 CLOSED/NOT IMPLEMENTED
+转为 IMPLEMENTED、IDE HTTP 表面 7 → 9 端点）已分别记录在各自的契约文档中。
+
+**上界改为按文档类别分流**：
+
+| 声明的 `freshness_policy` | 受约束的不变式 |
+| --- | --- |
+| `living` / `mixed` | 实际陈旧 ≤ **19 commits**（数值未变） |
+| `point_in_time` | 无 commit 上界；`as_of_commit` 必须是 HEAD 的**真实祖先** |
+
+`point_in_time` 的新不变式**同样会失败**：它拒绝一份指向本仓库不内容有的
+提交的时点记录——这正是「描述一个已不存在的仓库」的实际形态，
+且无法靠等待绕过。
+
+**漏洞已被主动合上**：以一份文档声明 `point_in_time` 来躲免上界，在理论上可行。
+缓解所靠的是：该声明同时出现在前缀 front matter 与 `docs/README.md` 索引表中，
+而索引一致性本身受 `test_docs_index.py` 控制——重分类是一个**可见的变更**，
+而不是一个只需要等待的状态。
 
 ### 9.4 与之相适应的漂移不变式
 

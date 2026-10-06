@@ -29,6 +29,25 @@ baseline_drift: 0
 （`[1,1,1,2,1,1,3,3,3,2,2,1,19,9,1,1,3]`，最大 19）校准出的初始窗口。
 节奏若改变则重新校准，**不得为消除报警而调阈值**。
 
+**适用范围的第二次校准（改的是范围，不是数值）**：
+19 未变。变的是它管谁。该上界是为「按 milestone
+刷新的**状态文档**」校准的，而本文档自报的分类是
+
+```
+document_role: evidence_record
+freshness_policy: point_in_time
+```
+
+并声明「任何时点声明都自动过期」。按
+`DOCUMENT-CLASSIFICATION-CONTRACT.md` §3，`point_in_time` 记录描述**某一个时刻**，
+本就应当随 HEAD 前进而老化；要求它跟随 milestone 节奏，
+是把证据记录当成状态文档的类别错误。
+
+因此本文档由另一条**同样会失败**的规则约束：`as_of_commit`
+必须是 HEAD 的真实祖先。这正是「描述一个已不存在的仓库」
+的实际形态，且无法靠等待绕过。任何声明为 `living` 或 `mixed`
+的状态文档仍受 19 commits 上界约束。
+
 「声明值 == 实际值」不可强制：写入本文档的那个提交本身推进 HEAD，任何等值规则
 在落地瞬间即失效。
 覆盖仓库：`rd-intelligence`（`rdebug-validation` 冻结物**本轮只读未复验**，见下）

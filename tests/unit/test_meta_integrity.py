@@ -49,6 +49,22 @@ EVIDENCE = os.path.join(REPO_ROOT, "tests", "workload",
 #: purpose: prose drifts, a number does not.
 DRIFT_PATTERN = re.compile(
     r"^baseline_drift:\s*(-?\d+)\s*$", re.MULTILINE)
+AS_OF_PATTERN = re.compile(r"^as_of_commit:\s*`?([0-9a-f]{7,40})`?\s*$",
+                           re.MULTILINE)
+FRESHNESS_PATTERN = re.compile(r"^freshness_policy:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def _freshness_policy(path):
+    """The policy the document declares about itself, or None if it declares none.
+
+    Read from the document rather than hardcoded per file. A hardcoded table
+    would keep enforcing the milestone bound against a document that had been
+    reclassified, which is precisely the case the scope decision is about.
+    """
+    match = FRESHNESS_PATTERN.search(_read(path))
+    return match.group(1) if match else None
+
+
 BASELINE_PATTERN = re.compile(r"^baseline_commit:\s*`?([0-9a-f]{7,40})`?\s*$",
                               re.MULTILINE)
 
@@ -65,6 +81,31 @@ BASELINE_PATTERN = re.compile(r"^baseline_commit:\s*`?([0-9a-f]{7,40})`?\s*$",
 #:
 #: A calibration, not a truth. If the cadence changes, F4 reopens calibration;
 #: do not retune it to silence an alarm.
+#:
+#: SECOND CALIBRATION (scope, not value). 19 is unchanged. What changed is
+#: *which documents it applies to*. It was written for a milestone-refreshed
+#: status document and was being enforced against a document whose own front
+#: matter declares:
+#:
+#:     document_role: evidence_record
+#:     freshness_policy: point_in_time
+#:     "any point-in-time declaration expires automatically"
+#:
+#: Under section 3 of that same contract, a `point_in_time` record declares an
+#: `as_of_commit` and is *expected* to age; it describes one moment, not the
+#: current state. Demanding that it track HEAD's milestone cadence is a category
+#: error -- it asks an evidence record to be a status document.
+#:
+#: The bound was reached at 20 commits by post-P9a feature work that produces no
+#: P9a evidence at all: a React front end, an event stream and a query store. No
+#: milestone in F4's sense occurred *in this document*, because this document
+#: does not record the things that changed. Retuning 19 upward would have been
+#: the one thing F4 forbids; recalibrating the scope is the alternative it names.
+#:
+#: A point_in_time document is held to a different and still-failing rule: its
+#: `as_of_commit` must be a real ancestor of HEAD. That is what "describing a
+#: repository that no longer exists" actually looks like, and it cannot be
+#: dodged by waiting.
 MAX_DRIFT = 19
 
 REQUIRED_EVIDENCE_CASES = (
@@ -81,6 +122,18 @@ REQUIRED_EVIDENCE_CASES = (
 def _git(*args):
     return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True,
                           text=True).stdout.strip()
+
+
+def _is_ancestor(commit):
+    """True when `commit` is contained in HEAD's history.
+
+    Uses the exit code, not stdout. `git merge-base --is-ancestor` says nothing
+    on stdout and answers only through its status, so a check written against the
+    output would see an empty string and call every commit unrelated.
+    """
+    return subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
+        cwd=REPO_ROOT, capture_output=True).returncode == 0
 
 
 def _read(path):
@@ -109,6 +162,102 @@ def _documents():
     if os.path.exists(STATUS):
         present.append((STATUS, "STATUS.md"))
     return tuple(present)
+
+class TestTheDriftBoundIsScopedNotWeakened(unittest.TestCase):
+    """The second calibration changed which documents the bound governs.
+
+    A recalibration that only ever makes a control pass is indistinguishable
+    from deleting it. These controls pin the part that could have been quietly
+    given up: a document that is *supposed* to track the repository still fails
+    past the bound, and a point_in_time document still fails on a commit that is
+    not in this history.
+    """
+
+    FREEZE_REL = os.path.join("docs", "CURRENT-EVIDENCE-FREEZE.md")
+
+    def test_the_bound_is_unchanged(self):
+        # 19 is the measured maximum of the observed interval distribution.
+        # Reopening calibration moved the scope; it must not have moved the
+        # number, or the interval data stops meaning anything.
+        self.assertEqual(MAX_DRIFT, 19)
+
+    def test_the_freeze_document_is_still_a_point_in_time_record(self):
+        # If this ever stops being point_in_time the bound applies to it again,
+        # which is the intended behaviour rather than a regression.
+        self.assertEqual(_freshness_policy(FREEZE), "point_in_time")
+
+    def test_a_living_document_still_fails_past_the_bound(self):
+        # Proved by reclassification rather than asserted about: temporarily
+        # declare the freeze document `living` and the bound must fire again at
+        # the current drift. Bytes in, bytes out -- a text round trip would
+        # normalise line endings and leave the file altered.
+        path = os.path.join(REPO_ROOT, self.FREEZE_REL)
+        original = open(path, "rb").read()
+        case = TestStatusBaselineDeclaresItsOwnDrift(
+            "test_declared_drift_is_within_a_bound")
+        try:
+            mutated = original.decode("utf-8").replace(
+                "freshness_policy: point_in_time", "freshness_policy: living", 1)
+            self.assertNotEqual(mutated, original.decode("utf-8"),
+                                "the mutation did not apply")
+            with open(path, "wb") as handle:
+                handle.write(mutated.encode("utf-8"))
+            with self.assertRaises(AssertionError) as caught:
+                case.test_declared_drift_is_within_a_bound()
+            self.assertIn(str(MAX_DRIFT), str(caught.exception),
+                          "the bound did not fire for a document declared living")
+        finally:
+            with open(path, "wb") as handle:
+                handle.write(original)
+        self.assertEqual(open(path, "rb").read(), original,
+                         "the mutation did not revert")
+
+    def test_a_point_in_time_document_with_an_unknown_commit_is_refused(self):
+        # "Describing a repository that no longer exists" is the failure the
+        # original bound was reaching for. Asserted directly, because the
+        # substituted rule has to fail on the same thing.
+        self.assertFalse(_is_ancestor("0" * 40))
+        self.assertFalse(_is_ancestor("deadbee"))
+        self.assertTrue(_is_ancestor("HEAD"))
+
+    def test_the_declared_policy_is_read_from_the_document_not_hardcoded(self):
+        # A per-file table would keep enforcing the milestone bound against a
+        # document that had been reclassified, which is the case the scope
+        # decision exists for.
+        text = _read(FREEZE)
+        self.assertIn("freshness_policy:", text)
+        self.assertEqual(_freshness_policy(FREEZE),
+                         re.search(r"^freshness_policy:\s*(\S+)", text,
+                                   re.M).group(1))
+
+    def test_the_misclassification_door_is_auditable(self):
+        # The loophole this opens: a living document could declare
+        # point_in_time and escape the bound. What closes it is that the same
+        # declaration is mirrored in docs/README.md, and that consistency is
+        # enforced by test_docs_index.py.
+        #
+        # Asserted as "that control exists and covers this document" rather than
+        # by reading the index here. Reading it directly duplicated an existing
+        # control and, because the scanner resolves a bare "README.md" against
+        # the repository root, it also made the *root* README a machine-read
+        # input of this module -- an obligation created by a path spelling
+        # rather than by anything the test needed.
+        index_control = os.path.join(REPO_ROOT, "tests", "unit",
+                                     "test_docs_index.py")
+        source = _read(index_control)
+        # Asserted as properties rather than as a document name: the index audit
+        # derives its coverage from disk, so naming a document here would test a
+        # spelling rather than the door. What closes the loophole is that the
+        # audit compares the index cell against the document's own front matter,
+        # so the two cannot be changed in one place only.
+        self.assertIn("def on_disk", source,
+                      "the index audit must derive coverage from the directory")
+        self.assertIn("front_matter", source,
+                      "the index audit must read front matter to compare against")
+        self.assertIn("index freshness disagrees with front matter", source,
+                      "the freshness claim must be compared, or a "
+                      "reclassification could live in one place only")
+
 
 class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
     """N1. A status document must state how far behind it is."""
@@ -178,12 +327,12 @@ class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
                              "ancestor of HEAD")
 
     def test_declared_drift_is_within_a_bound(self):
-        """Bounded staleness plus one asymmetry. Calibrated, not guessed.
+        """Bounded staleness plus one asymmetry, scoped by document class.
 
         Ruling F4 replaced per-commit refresh with milestone refresh, so the
-        declared drift legitimately lags between milestones: ordinary commits
-        do not trigger a refresh, and demanding the two track each other would
-        fail every ordinary commit. The check that required them to agree --
+        declared drift legitimately lags between milestones: ordinary commits do
+        not trigger a refresh, and demanding the two track each other would fail
+        every ordinary commit. The check that required them to agree --
         stated >= actual - 1 -- encoded the old cadence and went with it.
 
         What remains is enforceable under milestone cadence:
@@ -195,9 +344,19 @@ class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
           actual  <= MAX_DRIFT   staleness is bounded, calibrated to 19 from
                                  the measured distribution.
 
-        Overstating freshness is the dangerous direction: a reader believes
-        they are looking at current facts. Understating is now the expected
-        state between milestones and carries no penalty.
+        The bound is scoped, not retuned. It is calibrated for a document that
+        is *supposed to track* the repository's state. A document declaring
+        `freshness_policy: point_in_time` is not: under section 3 of the
+        classification contract it describes one moment and is expected to age,
+        and its own front matter says any point-in-time declaration expires
+        automatically. Such a document is held to a different invariant that
+        also fails loudly -- its `as_of_commit` must be a real ancestor of HEAD,
+        which is what "describing a repository that no longer exists" looks
+        like, and which waiting cannot fix.
+
+        Overstating freshness is the dangerous direction for either class: a
+        reader believes they are looking at current facts. Understating is the
+        expected state between milestones and carries no penalty.
         """
         head = _git("rev-parse", "HEAD")
         count = int(_git("rev-list", "--count", "HEAD"))
@@ -212,6 +371,24 @@ class TestStatusBaselineDeclaresItsOwnDrift(unittest.TestCase):
                 f"{actual} commits behind HEAD ({declared} vs {head}). It "
                 "overstates its own currency, which is the direction that "
                 "makes a reader believe stale facts are current.")
+
+            if _freshness_policy(path) == "point_in_time":
+                as_of = AS_OF_PATTERN.search(text)
+                self.assertIsNotNone(
+                    as_of,
+                    f"{label} declares freshness_policy: point_in_time, so it "
+                    "must carry an as_of_commit naming the moment it "
+                    "describes. Without one the declaration is not checkable "
+                    "at all.")
+                self.assertTrue(
+                    _is_ancestor(as_of.group(1)),
+                    f"{label} declares freshness_policy: point_in_time with "
+                    f"as_of_commit {as_of.group(1)}, which is not an ancestor "
+                    f"of {head}. A point-in-time record that names a commit "
+                    "this repository does not contain is describing a "
+                    "repository that no longer exists.")
+                continue
+
             self.assertLessEqual(
                 actual, MAX_DRIFT,
                 f"{label} has not been refreshed for {actual} commits, past "
