@@ -73,10 +73,39 @@ idle minute look like a state change.
 
 ## 3. Additive by construction
 
-`publish()` is called from exactly two places, `configure()` and `dispose()`, and
-is published outside `_config_lock` so a slow subscriber cannot delay an ownership
-transfer. A failed `configure()` raises without publishing: a capture that never
-became the owner is not a state anyone should be told about.
+`publish()` is called from three places: `configure()`, `dispose()`, and once
+per served query. Lifecycle transitions are published outside `_config_lock` so a
+slow subscriber cannot delay an ownership transfer. A failed `configure()` raises
+without publishing: a capture that never became the owner is not a state anyone
+should be told about.
+
+**Queries are announced, and that was a gap rather than a design choice.** The
+stream originally carried only the two lifecycle transitions, which left the
+history panel with nothing to react to and a manual Refresh button -- the wrong
+shape for a page whose purpose is watching a session. A long session produces
+queries, not transitions.
+
+The history endpoints are skipped inside `_remember`, in one place, rather than
+at the call sites. Checking at the call sites missed the classified-error path, so
+one *rejected* history read published an event that made the panel read the
+history again, and a read that kept failing kept the loop running. A guard next
+to the work it governs cannot be bypassed by the next call site someone adds.
+
+**Frames are compact, and that is a correction rather than a preference.** The
+frames were written with `json.dumps(indent=2)` under a single `data:` header. SSE
+continues a data payload across lines only when every line repeats the prefix;
+anything else is discarded, so a reader received `{` and `JSON.parse` threw. The
+React client caught that error and refreshed anyway, which is why a browser
+control asserting the refresh passed while the payload never arrived. Every frame
+is now one line, and the control asserts the data line parses as the event that
+was sent. The `resync` frame is built by hand rather than through `_frame`, so it
+is covered separately -- it is the frame the clients that most need help would
+receive.
+
+A tolerant reader is still the right client: it should not tear down the page
+because one frame was unreadable. But tolerance on its own is what let a broken
+wire format look like a working feature, so the reader stays tolerant and the
+server-side control is strict.
 
 A full subscriber queue raises on `put_nowait`, and that is swallowed. A
 notification channel must never be able to stall a query.

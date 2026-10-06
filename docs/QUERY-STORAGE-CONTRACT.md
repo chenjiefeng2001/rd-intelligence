@@ -125,6 +125,7 @@ pointing a browser at the running server, which is why
 | store size bounded | n/a | **VERIFIED**, both bounds tested |
 | retention enforced without a query | n/a | **VERIFIED** |
 | browser-level view of the history | n/a | **VERIFIED** — `/ui/` renders it; see section 8 |
+| the panel learns of a query without being asked | n/a | **IMPLEMENTED** -- queries are announced on the stream |
 
 ## 8. The history panel
 
@@ -167,5 +168,7 @@ still reading with a message about the panel they did not ask for.
 | Not-configured shows no figures | **VERIFIED** |
 | Filters reduce the row set | **VERIFIED** |
 | The panel translates | **VERIFIED** |
+| The panel learns of a query without being asked | **VERIFIED** -- queries are announced on the stream, so a session is observed rather than polled |
+| A burst of queries does not cause one read per event | **VERIFIED** -- coalesced to about one refresh; a diff issues a second request for the prompt, so a per-event refresh would turn the observer into load |
 | Long-session behaviour over hours | **NOT ESTABLISHED** |
 | Store contention with many concurrent queries | **NOT ESTABLISHED** — the recorder is unit-tested for concurrency, the panel is not |

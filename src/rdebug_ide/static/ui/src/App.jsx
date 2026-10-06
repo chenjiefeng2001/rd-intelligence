@@ -66,9 +66,14 @@ export function App() {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   }, [lang]);
 
+  const loadHistoryRef = useRef(null);
   const { connected, lastRevision } = useEventStream({
     onState: setServerState,
     onResync: () => setResyncs((n) => n + 1),
+    // A query happened -- possibly in another tab, or on the frozen page. The
+    // panel observes the session rather than logging this tab's own clicks, so it
+    // refreshes from the stream and not only after a local action.
+    onQuery: () => loadHistoryRef.current?.(),
   });
 
   // One claim per user action, shared by every render target. A response that is
@@ -155,6 +160,7 @@ export function App() {
       store: totals.ok ? totals.data.store : null,
     });
   }, [a, b, failuresOnly, scopePixel, endpointFilter]);
+  loadHistoryRef.current = loadHistory;
 
   async function run(kind) {
     const seq = ++seqRef.current;

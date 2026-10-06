@@ -483,19 +483,36 @@ def unsubscribe(q):
 
 
 def _remember(path, query, payload, status, latency_ms):
-    """Record one served query in the durable store, best-effort.
+    """Record one served query, then announce it.
 
     Every failure is swallowed inside the recorder. A store that cannot be opened
     must not turn a query into an error, which is Rule 2.8 and the reason this is
     a separate function: it is the one place in the request path that knows about
     persistence, so there is exactly one place to audit.
+
+    The event is published whether or not the row was stored. A subscriber that
+    only heard about queries the store managed to keep would be told less than
+    the truth, and "the log is unwritable" is exactly when someone watching a
+    session most needs to know something is wrong.
+
+    The history endpoints are skipped here, in one place, rather than at the call
+    sites. Checking at the call sites missed the classified-error path, which made
+    a rejected history read publish an event that made the panel read the history
+    again: a failing read was enough to keep the loop running. One guard, next to
+    the work it governs, cannot be bypassed by a new call site.
     """
     from rdebug import recorder
+
+    if path.startswith("/api/history"):
+        return
 
     error = payload.get("error") if isinstance(payload, dict) else None
     recorder.record("ide", path, ok=not error, status=status, error=error,
                     latency_ms=latency_ms, query=query,
                     summary=_shape(payload))
+    publish("query", {"endpoint": path, "ok": not error, "status": status,
+                      "latencyMs": latency_ms,
+                      "recorded": recorder.dropped() == 0})
 
 
 def _shape(payload):
@@ -527,10 +544,9 @@ def route(path, query):
                 _remember(path, query, payload, 400, elapsed)
                 return 400, dict(payload)
             record_result("ide", path, payload)
-            if not path.startswith("/api/history"):
-                # The history endpoints read the recorder; recording them would
-                # make a history page grow the history it is showing.
-                _remember(path, query, payload, 200, elapsed)
+            # The history endpoints read the recorder; _remember skips them so
+            # that looking at the history cannot grow it or announce itself.
+            _remember(path, query, payload, 200, elapsed)
         return 200, payload
     except RDebugError as e:
         # A QueryError may already be classified by the query layer (an
@@ -649,7 +665,7 @@ class Handler(BaseHTTPRequestHandler):
                 # rather than resuming from a point that leaves a hole.
                 state = snapshot_state()
                 self.wfile.write(
-                    ("event: resync\ndata: " + to_json(state) + "\n\n")
+                    ("event: resync\ndata: " + to_json(state, indent=None) + "\n\n")
                     .encode("utf-8"))
                 self.wfile.flush()
             else:
@@ -685,9 +701,14 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _frame(event):
+        # Compact, on one line. SSE only continues a data payload across lines
+        # when every line repeats the `data:` prefix, and an unprefixed line is
+        # discarded rather than appended -- so a pretty-printed payload arrives
+        # as `{` and JSON.parse throws in the client. Compact sidesteps the rule
+        # instead of relying on the reader to notice.
         return ("id: {revision}\nevent: {kind}\ndata: {data}\n\n".format(
             revision=event["revision"], kind=event["kind"],
-            data=to_json(event))).encode("utf-8")
+            data=to_json(event, indent=None))).encode("utf-8")
 
     _UI_ROOT = os.path.join(_STATIC, "ui", "dist")
     _TYPES = {".html": "text/html; charset=utf-8",

@@ -7,11 +7,14 @@ expensive failure. The frozen-page boundary is checked to prove this work did
 not touch the fixture the other controls depend on.
 """
 import http.client
+import inspect
 import json
+import os
 import pathlib
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -19,6 +22,7 @@ import unittest
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO / "src"))
 
+import rdebug.recorder as rec  # noqa: E402 -- needs the path added above
 import rdebug_ide.app as app  # noqa: E402 -- the repo src layout needs the path before the import, and E402 is that cost
 
 
@@ -333,6 +337,149 @@ class TestTheFrozenPageIsUntouched(unittest.TestCase):
             self.assertEqual(status, 404)
         finally:
             server.stop()
+
+
+class TestQueriesAreAnnounced(unittest.TestCase):
+    """A long session produces queries, not configure/dispose events.
+
+    The stream originally announced only the two lifecycle transitions, so the
+    history panel had nothing to react to and needed a manual refresh -- which is
+    the wrong shape for a page whose whole purpose is watching a session.
+
+    The loop guard is the part worth being careful about: history reads must not
+    announce themselves, or a rejected history read publishes an event that makes
+    the panel read the history again, and a read that keeps failing keeps the
+    loop running.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        os.environ[rec.ENV_PATH] = os.path.join(self.dir, "h.db")
+        rec.close()
+        self.addCleanup(rec.close)
+        self.addCleanup(os.environ.pop, rec.ENV_PATH, None)
+        app._REVISION = 0
+        app._HISTORY.clear()
+        del app._SUBSCRIBERS[:]
+        app._STATE.update({"capture": None, "baseline": None, "ready": False})
+
+    def _revision(self):
+        return app.revision()
+
+    def test_a_query_advances_the_revision(self):
+        before = self._revision()
+        app.route("/api/stats", {})
+        self.assertGreater(self._revision(), before)
+
+    def test_a_failing_query_is_announced_too(self):
+        # A subscriber that only heard about successes would be told less than
+        # the truth, and a failing query is the case worth noticing.
+        before = self._revision()
+        app.route("/api/trace", {"x": ["not-a-number"]})
+        self.assertGreater(self._revision(), before)
+
+    def test_an_accepted_history_read_announces_nothing(self):
+        before = self._revision()
+        app.route("/api/history", {"limit": ["5"]})
+        app.route("/api/history/summary", {})
+        self.assertEqual(self._revision(), before)
+
+    def test_a_rejected_history_read_announces_nothing(self):
+        # The loop. Found while writing this: the guard sat at the call sites and
+        # the classified-error path did not have it, so one rejected read was
+        # enough to keep the loop alive.
+        before = self._revision()
+        app.route("/api/history", {"limit": ["not-a-number"]})
+        self.assertEqual(self._revision(), before)
+
+    def test_the_guard_is_in_one_place_not_at_the_call_sites(self):
+        # A call-site guard is bypassed by the next call site someone adds. The
+        # guard belongs next to the work it governs.
+        body = inspect.getsource(app._remember)
+        self.assertIn('path.startswith("/api/history")', body)
+
+    def test_the_event_carries_what_a_panel_needs_to_decide(self):
+        queue = app.subscribe()
+        try:
+            app.route("/api/info", {})
+            event = queue.get_nowait()
+            self.assertEqual(event["kind"], "query")
+            self.assertEqual(event["detail"]["endpoint"], "/api/info")
+            self.assertIn("ok", event["detail"])
+            self.assertIn("status", event["detail"])
+        finally:
+            app.unsubscribe(queue)
+
+    def test_the_event_is_sent_even_when_the_store_refuses_it(self):
+        # "recorded" tells a watcher the log is unwritable, which is exactly when
+        # someone watching a session most needs to know.
+        queue = app.subscribe()
+        os.environ[rec.ENV_PATH] = os.path.join(self.dir, "no", "dir", "h.db")
+        rec.close()
+        try:
+            app.route("/api/info", {})
+            event = queue.get_nowait()
+            self.assertEqual(event["kind"], "query")
+            self.assertFalse(event["detail"]["recorded"])
+        finally:
+            app.unsubscribe(queue)
+
+
+class TestFramesReachTheReaderIntact(unittest.TestCase):
+    """A frame the server wrote but the reader cannot parse is a silent failure.
+
+    SSE continues a data payload across lines only when every line repeats the
+    `data:` prefix; anything else is discarded. The frames were pretty-printed
+    under one header, so a reader got `{` and JSON.parse threw. Nothing failed:
+    the client tolerated the error and carried on, which is the worst shape a
+    bug can take.
+    """
+
+    def _frames(self):
+        return [app.Handler._frame({
+            "revision": 3, "kind": "query",
+            "detail": {"endpoint": "/api/trace", "ok": True, "status": 200},
+            "state": None})]
+
+    def test_a_frame_is_exactly_four_lines(self):
+        for frame in self._frames():
+            self.assertEqual(frame.decode().count("\n"), 4)
+            self.assertTrue(frame.endswith(b"\n\n"))
+
+    def test_the_data_line_is_the_whole_payload(self):
+        for frame in self._frames():
+            data = [ln for ln in frame.decode().split("\n")
+                    if ln.startswith("data:")]
+            self.assertEqual(len(data), 1)
+            parsed = json.loads(data[0][len("data:"):].strip())
+            self.assertEqual(parsed["detail"]["endpoint"], "/api/trace")
+
+    def test_no_line_is_left_unprefixed(self):
+        # Every non-empty line is id:, event:, data: or blank. A payload spread
+        # over more lines than headers is the original defect.
+        for frame in self._frames():
+            for line in frame.decode().split("\n"):
+                if line.strip():
+                    self.assertRegex(line, r"^(id|event|data): ")
+
+    def test_the_resync_frame_is_compact_too(self):
+        # The resync path builds its frame by hand rather than through _frame,
+        # so it needed the same fix; it was left pretty-printed and would have
+        # kept the bug alive for exactly the clients that most need it.
+        body = inspect.getsource(app.Handler.serve_events)
+        self.assertIn("to_json(state, indent=None)", body)
+        self.assertNotIn('to_json(state) +', body)
+
+    def test_a_reader_that_parses_the_stream_sees_the_detail(self):
+        # The client used to swallow a parse error and refresh anyway, which is
+        # why a broken frame passed a browser control that asserted the refresh
+        # but not the payload. Assert the payload now.
+        event = {"revision": 4, "kind": "query",
+                 "detail": {"endpoint": "/api/diff", "ok": False}}
+        frame = app.Handler._frame(event).decode()
+        lines = frame.strip().split("\n")
+        seen = [ln for ln in lines if ln.startswith("data:")]
+        self.assertEqual(json.loads(seen[0][5:].strip()), event)
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ class TestNoClaimContradictsTheImplementation(unittest.TestCase):
                 self.assertEqual(
                     offenders, [],
                     "these lines call something NOT IMPLEMENTED while naming "
-                    "a feature that exists: %s" % (offenders,))
+                    "a feature that exists: " + repr(offenders))
 
     def test_the_retired_workstream_a_phrase_is_gone(self):
         for name, text in (("zh", zh()), ("en", en())):

@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 const RESYNC_BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 
-export function useEventStream({ onState, onResync }) {
+export function useEventStream({ onState, onResync, onQuery }) {
   const [connected, setConnected] = useState(false);
   const [lastRevision, setLastRevision] = useState(null);
   const retryRef = useRef(0);
@@ -28,8 +28,10 @@ export function useEventStream({ onState, onResync }) {
   // identity changed would drop and re-establish the connection on every render.
   const onStateRef = useRef(onState);
   const onResyncRef = useRef(onResync);
+  const onQueryRef = useRef(onQuery);
   onStateRef.current = onState;
   onResyncRef.current = onResync;
+  onQueryRef.current = onQuery;
 
   const connect = useCallback(async () => {
     const snapshot = await fetch("/api/state", { cache: "no-store" });
@@ -74,6 +76,26 @@ export function useEventStream({ onState, onResync }) {
     source.addEventListener("configured", (e) => apply(e.data));
     source.addEventListener("disposed", (e) => apply(e.data));
     source.addEventListener("hello", (e) => apply(e.data));
+
+    // Queries are coalesced rather than acted on one by one. A diff issues a
+    // second request for the prompt, and a script can issue dozens; refreshing
+    // once per event would turn the observer into load. The window is short
+    // enough that a single manual query still feels immediate.
+    let pending = null;
+    source.addEventListener("query", (e) => {
+      if (pending) clearTimeout(pending);
+      pending = setTimeout(() => {
+        pending = null;
+        let detail = null;
+        try {
+          detail = JSON.parse(e.data).detail;
+        } catch {
+          detail = null; // a frame that is not JSON is ignored, not guessed at
+        }
+        onQueryRef.current?.(detail);
+      }, 250);
+    });
+
     source.addEventListener("resync", (e) => {
       apply(e.data);
       onResyncRef.current?.();

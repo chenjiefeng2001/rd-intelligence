@@ -730,6 +730,41 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
         self.assertEqual(
             page.inner_text(".panel--history .panel__title").strip(), "会话历史")
 
+    def test_it_updates_without_a_manual_refresh(self):
+        # The point of announcing queries: a session is observed, not polled.
+        # A query issued outside this tab -- here, by the server itself -- must
+        # reach the panel without anyone pressing Refresh.
+        page = self.page()
+        before = len(page.query_selector_all('[data-testid="history-row"]'))
+        recorder.record("ide", "/api/trace", ok=True, latency_ms=3.0,
+                        query={"x": "7", "y": "7"})
+        # Publish what the route would publish for a served query.
+        app.publish("query", {"endpoint": "/api/trace", "ok": True,
+                              "status": 200, "latencyMs": 3.0, "recorded": True})
+        page.wait_for_function(
+            "(n) => document.querySelectorAll("
+            "'[data-testid=\"history-row\"]').length > n", arg=before,
+            timeout=15000)
+        after = len(page.query_selector_all('[data-testid="history-row"]'))
+        self.assertGreater(after, before)
+
+    def test_a_burst_of_queries_does_not_issue_one_read_each(self):
+        # Coalesced, not acted on per event: a diff issues a second request for
+        # the prompt, so a per-event refresh would turn the observer into load.
+        page = self.page()
+        reads = []
+        page.on("request", lambda r: reads.append(r.url)
+                if "/api/history?" in r.url else None)
+        page.wait_for_timeout(600)
+        baseline = len(reads)
+        for _ in range(8):
+            app.publish("query", {"endpoint": "/api/trace", "ok": True,
+                                  "status": 200, "latencyMs": 1.0,
+                                  "recorded": True})
+        page.wait_for_timeout(2000)
+        self.assertLessEqual(len(reads) - baseline, 2,
+                             "a burst should coalesce into about one refresh")
+
     def test_the_panel_spans_the_full_width(self):
         # A two-column layout for a comparable-records table halves the row width
         # for nothing.
