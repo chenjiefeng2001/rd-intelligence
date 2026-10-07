@@ -17,6 +17,8 @@ governance that nothing checks is a comment.
 
 import json
 import os
+import pathlib
+import shutil
 import sys
 import unittest
 
@@ -38,6 +40,22 @@ FORBIDDEN_CLAIMS = ("fixed", "passing", "passed", "resolved", "obsolete",
                     "no longer needed", "not a bug")
 
 VALID_STATES = ("RETIRED",)
+
+
+class UnimportableModule(Exception):
+    """A module that is present but will not load.
+
+    Separate from "the module does not exist" because a governance control that
+    cannot tell them apart will report a deleted test as the reason a
+    retirement is unjustified, which is a false claim about the repository
+    manufactured by an environment fault.
+    """
+
+    def __init__(self, dotted, cause):
+        self.dotted = dotted
+        self.cause = cause
+        super().__init__(
+            dotted + " exists but failed to import: " + str(cause))
 
 
 def _load():
@@ -188,6 +206,20 @@ class TestReplacementCoverageStillExists(unittest.TestCase):
         gate runs them. And splitting the id on the first dot yields ``tests``,
         not ``tests.integration.test_m15_acceptance``, so the walk then looked
         for a submodule that had never been imported onto the package.
+
+        A module that is genuinely absent and a module that is present but whose
+        own import fails are told apart, because conflating them makes this
+        control lie. Swallowing every ImportError meant a stale bytecode file, a
+        half-written source file, or a dependency missing for a moment all
+        produced the same answer as a deleted test -- and the failure message
+        then claimed a retirement was no longer justified on the grounds that
+        the covering test "no longer exists". That is a governance claim
+        manufactured out of an environment fault, which is worse than no
+        control: it invites someone to re-open a retirement that is fine.
+
+        Only an ImportError naming the module being imported means absence. Any
+        other ImportError means the module is right there and failed to load,
+        and that is raised rather than reported as absence.
         """
         import importlib
 
@@ -199,9 +231,14 @@ class TestReplacementCoverageStillExists(unittest.TestCase):
         module = None
         consumed = 0
         for i in range(len(parts), 0, -1):
+            dotted = ".".join(parts[:i])
             try:
-                module = importlib.import_module(".".join(parts[:i]))
-            except ImportError:
+                module = importlib.import_module(dotted)
+            except ImportError as exc:
+                missing = getattr(exc, "name", None)
+                if missing is None or not (
+                        missing == dotted or dotted.startswith(missing + ".")):
+                    raise UnimportableModule(dotted, exc) from exc
                 continue
             consumed = i
             break
@@ -217,8 +254,20 @@ class TestReplacementCoverageStillExists(unittest.TestCase):
     def test_every_named_replacement_test_still_exists(self):
         for entry in _entries():
             for item in entry["replacement_coverage"]:
+                try:
+                    resolved = self._resolve(item["test_id"])
+                except UnimportableModule as exc:
+                    # Fails, and says what is actually wrong. The assertion is
+                    # not loosened: an unjudgeable claim is still a failure, but
+                    # it is an environment fault to fix, not a retirement to
+                    # re-open.
+                    self.fail(
+                        item["test_id"] + " exists but could not be imported ("
+                        + str(exc) + "), so whether it still covers the "
+                        "retirement cannot be judged. This is an environment "
+                        "fault, not a deleted test.")
                 self.assertTrue(
-                    self._resolve(item["test_id"]),
+                    resolved,
                     f"{item['test_id']} no longer exists, so the retirement of "
                     f"{entry['scenario']!r} is no longer justified")
 
@@ -239,6 +288,65 @@ class TestReplacementCoverageStillExists(unittest.TestCase):
                     "tests.workload", item["test_id"],
                     f"{item['test_id']} is inside tests/workload; a retired "
                     "scenario cannot be its own replacement")
+
+
+class TestTheResolverTellsAbsentFromBroken(unittest.TestCase):
+    """The distinction the coverage control depends on to avoid lying.
+
+    A retirement is justified by "covered elsewhere". If the control cannot
+    import the covering test it reports that the test "no longer exists", and
+    that is a claim about the repository. It has to be true. These exercise the
+    three cases the resolver can be in, so the difference between them is a
+    tested property rather than an intention.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        self.resolver = TestReplacementCoverageStillExists()
+        self._tmp = tempfile.mkdtemp(prefix="rdebug-resolve-")
+        self.addCleanup(self._added_cleanup)
+        sys.path.insert(0, self._tmp)
+
+    def _added_cleanup(self):
+        if self._tmp in sys.path:
+            sys.path.remove(self._tmp)
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def _package(self, name, body):
+        pkg = pathlib.Path(self._tmp) / name
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(body, encoding="utf-8")
+        self.addCleanup(sys.modules.pop, name, None)
+        return name
+
+    def test_a_module_that_is_genuinely_absent_resolves_to_false(self):
+        # Absent is a legitimate answer: the covering test really was deleted,
+        # and that is exactly what the control exists to catch.
+        self.assertFalse(
+            self.resolver._resolve("definitely_absent_pkg_xyz.SomeClass.m"))
+
+    def test_a_module_that_imports_cleanly_resolves_to_true(self):
+        name = self._package("presentpkg_ok", "class C:\n    def m(self):\n        pass\n")
+        self.assertTrue(self.resolver._resolve(name + ".C.m"))
+
+    def test_a_module_that_exists_but_will_not_import_raises(self):
+        # The defect. Swallowing this ImportError made a broken environment
+        # indistinguishable from a deleted test, and the failure message then
+        # claimed a retirement was unjustified because a covering test "no
+        # longer exists" -- a governance claim invented by an environment fault.
+        name = self._package("presentpkg_broken",
+                             "import definitely_not_a_real_module_xyz\n")
+        with self.assertRaises(UnimportableModule) as caught:
+            self.resolver._resolve(name + ".C.m")
+        self.assertIn("exists but failed to import", str(caught.exception))
+
+    def test_an_absent_submodule_of_a_present_package_is_not_a_broken_module(self):
+        # Absence has to stay absence at every depth, or the distinction above
+        # would just move the false claim one level down.
+        name = self._package("presentpkg_partial", "class C:\n    pass\n")
+        self.assertFalse(self.resolver._resolve(name + ".NoSuchClass.m"))
+        self.assertFalse(self.resolver._resolve(name + ".nosuchmodule.m"))
 
 
 class TestRetirementDidNotRegressTheCodeUnderTest(unittest.TestCase):
