@@ -40,16 +40,63 @@ CHROME_CANDIDATES = (
 )
 
 
-def browser_path():
-    # Availability is probed with find_spec rather than by importing: an import
-    # here would pull in the driver at collection time, and a suppression would
-    # then be needed to keep the reason attached to it.
-    if importlib.util.find_spec("playwright") is None:
+def _probe_can_launch(_executable):
+    """Can Playwright actually start a browser right now?
+
+    Answered by launching one and closing it, because "Playwright is installed"
+    and "Playwright has a browser" are different facts. A machine with the
+    package but no downloaded Chromium raises on launch, and a launch failure
+    inside setUpClass reads as a test error rather than as the skip it is.
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=_executable)
+        browser.close()
+    return None
+
+
+def browser_path(candidates=CHROME_CANDIDATES, has_playwright=None, probe=None):
+    """The executable to drive, and why the controls cannot run if there is none.
+
+    Three outcomes, because "no browser" and "no *system* browser" are different
+    problems. Playwright brings and downloads its own Chromium, so a machine
+    with no Chrome at any of these Windows paths can still run every control.
+    Treating that case as "no browser" is what made the suite skip on a Linux
+    runner no matter what CI installed -- and it hid the fact that installing
+    Playwright was never the whole job.
+
+    A hardcoded system browser still wins when one is present: it is a
+    known-good browser, and quietly switching to a downloaded one would change
+    what the controls have already been verified against.
+
+    The parameters exist so the decision can be tested without launching
+    anything. This function decides whether 62 controls are skipped, and a skip
+    that cannot be exercised is a skip nobody notices is wrong.
+    """
+    if has_playwright is None:
+        # Probed with find_spec rather than by importing: an import here would
+        # pull in the driver at collection time, and a suppression would then
+        # be needed to keep the reason attached to it.
+        has_playwright = importlib.util.find_spec("playwright") is not None
+    if not has_playwright:
         return None, "playwright is not installed"
-    for candidate in CHROME_CANDIDATES:
+
+    for candidate in candidates:
         if pathlib.Path(candidate).is_file():
             return candidate, None
-    return None, "no installed Chrome or Edge was found"
+
+    if probe is None:
+        probe = _probe_can_launch
+    try:
+        probe(None)
+    except Exception as exc:  # noqa: BLE001 -- the reason is the useful part
+        first = str(exc).strip().splitlines()
+        return None, ("no usable browser: playwright is installed but could"
+                      " not launch one (" + (first[0][:140] if first else "?")
+                      + ")")
+    # None means "let Playwright choose", which is the documented default.
+    return None, None
 
 
 def free_port():
@@ -123,12 +170,117 @@ class Live:
         self.stop()
 
 
+def _browser_unavailable(executable, reason):
+    """Whether the controls cannot run at all.
+
+    Named and separate from `browser_path()` because this predicate is what
+    actually decides the skip, and it is the one piece of the arrangement with
+    no control over it: key it on the executable instead of the reason and every
+    control silently disables itself on any machine without a system Chrome --
+    which is what happened before, and what made the suite green while testing
+    nothing.
+    """
+    return reason is not None
+
+
 BROWSER, BROWSER_REASON = browser_path()
 needs_browser = unittest.skipIf(
-    BROWSER is None, "no usable browser: " + (BROWSER_REASON or ""))
+    _browser_unavailable(BROWSER, BROWSER_REASON),
+    "no usable browser: " + (BROWSER_REASON or ""))
 needs_bundle = unittest.skipUnless(
     DIST.is_dir() and any(DIST.glob("assets/*.js")),
     "the React bundle is not built; run npm run build in static/ui")
+
+
+class TestHowTheBrowserIsChosen(unittest.TestCase):
+    """The decision that decides whether 62 controls are skipped.
+
+    Exercised with injected candidates and probes, so none of it launches a
+    browser. This is harness logic, and harness logic that can only be observed
+    by running the whole suite against a real browser is exactly the logic that
+    rots unnoticed -- the failure mode is a green suite that quietly stopped
+    testing anything.
+    """
+
+    def test_a_missing_playwright_is_the_only_hard_stop(self):
+        path, reason = browser_path(has_playwright=False)
+        self.assertIsNone(path)
+        self.assertIn("playwright is not installed", reason)
+
+    def test_an_installed_system_browser_is_preferred(self):
+        # A known-good browser wins over a downloaded one, because switching
+        # silently would change what the controls were verified against.
+        with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as fh:
+            fake = fh.name
+        self.addCleanup(os.unlink, fake)
+        path, reason = browser_path(candidates=(fake,), has_playwright=True,
+                                    probe=lambda _p: self.fail(
+                                        "must not probe when a browser exists"))
+        self.assertEqual(path, fake)
+        self.assertIsNone(reason)
+
+    def test_no_system_browser_falls_back_instead_of_skipping(self):
+        # The behaviour this change exists for. Before it, a machine with no
+        # Chrome at the hardcoded Windows paths reported "no installed Chrome or
+        # Edge" and every control skipped -- so installing Playwright in CI was
+        # never sufficient to make them run.
+        probes = []
+
+        def probe(executable):
+            probes.append(executable)
+
+        path, reason = browser_path(candidates=(), has_playwright=True,
+                                    probe=probe)
+        self.assertIsNone(path, "None means: let Playwright choose")
+        self.assertIsNone(reason, "no reason means nothing is wrong")
+        self.assertEqual(probes, [None], "the fallback must be probed once")
+
+    def test_a_probe_failure_skips_and_says_why(self):
+        # Playwright being installed is not the same as Playwright having a
+        # browser. Without this, a runner with the package but no downloaded
+        # Chromium raises inside setUpClass and reads as a test error rather
+        # than as the skip it is.
+        def probe(_executable):
+            raise RuntimeError("Executable doesn't exist at C:\\missing\\chrome")
+
+        path, reason = browser_path(candidates=(), has_playwright=True,
+                                    probe=probe)
+        self.assertIsNone(path)
+        self.assertIsNotNone(reason)
+        self.assertIn("could not launch", reason)
+        self.assertIn("Executable doesn't exist", reason)
+
+    def test_the_skip_keys_on_the_reason_not_on_the_executable(self):
+        # The one predicate that decides whether these controls run at all.
+        # Three cases, and the middle one is the entire point of the change.
+        self.assertFalse(_browser_unavailable("C:/chrome.exe", None),
+                         "a system browser must run")
+        self.assertFalse(_browser_unavailable(None, None),
+                         "no executable with no reason means Playwright's own"
+                         " browser will be used, so this must NOT skip")
+        self.assertTrue(_browser_unavailable(None, "no usable browser: x"))
+
+    def test_this_machine_takes_the_system_browser_path(self):
+        # Not a portability claim: a statement that the change did not alter
+        # behaviour where a system browser exists. A silent switch to a
+        # downloaded browser would change what the controls were verified
+        # against without anything saying so.
+        if not any(pathlib.Path(c).is_file() for c in CHROME_CANDIDATES):
+            self.skipTest("no system browser here; the fallback is exercised")
+        self.assertIsNotNone(BROWSER)
+        self.assertIsNone(BROWSER_REASON)
+        self.assertFalse(_browser_unavailable(BROWSER, BROWSER_REASON))
+
+    def test_the_windows_paths_are_all_unreachable_on_this_platform(self):
+        # Not a portability claim -- a statement of what the fallback exists for.
+        # If these ever did resolve on a non-Windows runner, the fallback would
+        # stop being exercised and the controls would silently change browser.
+        import sys
+
+        if sys.platform.startswith("win"):
+            self.skipTest("this assertion describes a non-Windows runner")
+        for candidate in CHROME_CANDIDATES:
+            self.assertFalse(pathlib.Path(candidate).is_file(), candidate)
 
 
 class TestTheBundleIsServed(unittest.TestCase):
