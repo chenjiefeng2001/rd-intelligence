@@ -137,8 +137,8 @@ than assumed.
 | --- | --- |
 | The **old** page at `/` rendered in a browser | **NOT ESTABLISHED** — unchanged and no longer the surface under test |
 | React page renders, SSE goes live, banner is painted | **VERIFIED** by the browser controls, on an unconfigured server |
-| SSE against a **configured** capture, carrying real query results | **NOT ESTABLISHED** — the browser controls run with no capture, so they exercise error paths |
-| The four-outcome envelope in the browser | **PARTIAL** — error paths verified; a successful trace render is not |
+| SSE against a **configured** capture, carrying real query results | **PARTIAL** — the real-capture class renders real results and the stream badge reads live against a configured server, but no control yet asserts a *streamed* query event arriving with real payload |
+| The four-outcome envelope in the browser | **VERIFIED** — loading, failure, successful trace and successful diff are each rendered against a real capture; the claim previously rested on error paths only |
 | CI runs the browser controls | **NOT ESTABLISHED** — the CI job has no browser installed, so they skip there |
 
 ## 5. The React page owes the old page parity

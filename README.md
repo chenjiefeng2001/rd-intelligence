@@ -358,7 +358,7 @@ tests_transport/                  # 58 tests；MCP/IDE 传输层不变量，与�
 - [x] **P2-F** D9 Explain 产物态诚实化
 - [x] **P3-EID v1** 事件上下文可达性（Trace / Resource）
 - [x] **P9a** HTTP / Semantic 边界取证（6 PASS / 3 非 PASS）
-- [ ] **P9b** Browser Rendering（需引入 Playwright；当前 `browser-level UI propagation = NOT_ESTABLISHED`）
+- [x] **P9b** Browser Rendering（Playwright + 系统 Chrome，73 项浏览器控制；React 页面对真实 capture 的成功 trace/diff 渲染已 **VERIFIED**。仍 NOT_ESTABLISHED：旧 `/` 页面浏览器渲染、CI 内运行浏览器控制）
 - [ ] **P10** Human Acceptance
 
 ### Runtime Isolation 实现状态（2026-09-29 核对并修复）
@@ -397,7 +397,7 @@ tests_transport/                  # 58 tests；MCP/IDE 传输层不变量，与�
 | 状态 | 项 |
 | --- | --- |
 | Note: 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST。**迁移设计见 `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`（M0，未实施）** |
-| Note: 无 CI | 仓库无 `.github/workflows`。上述测试与边界审计需手工执行 |
+| Note: CI 已接线 | `.github/workflows/ci.yml` 存在并运行 `ci_pipeline.py`；hosted runner 上 unit / transport / boundary_audit 通过，integration / cold_warm / fork_integrity 因缺 RenderDoc 与 corpus 报 INFRASTRUCTURE_FAILURE |
 
 ### 语义层「失败不得冒充观测」（2026-09-29 第二轮修复）
 
