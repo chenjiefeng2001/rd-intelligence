@@ -191,6 +191,18 @@ needs_bundle = unittest.skipUnless(
     DIST.is_dir() and any(DIST.glob("assets/*.js")),
     "the React bundle is not built; run npm run build in static/ui")
 
+# The page logs its own startup calls -- /api/info and /api/ci -- so "any log
+# row exists" is true before the query under test has been served. These
+# predicates name the row for THIS trace, which is the only row the tests below
+# are about.
+LOG_ROW_TRACE_PREDICATE = """() =>
+  [...document.querySelectorAll('[data-testid="log-row"] .log__detail')]
+    .some(el => el.textContent.indexOf('/api/trace') !== -1)"""
+
+LOG_ROWS = """els => els.map(e => ({
+  kind: (e.querySelector('.log__kind') || {}).textContent || '',
+  detail: (e.querySelector('.log__detail') || {}).textContent || ''}))"""
+
 
 class TestHowTheBrowserIsChosen(unittest.TestCase):
     """The decision that decides whether 62 controls are skipped.
@@ -965,25 +977,108 @@ class TestTheEvidenceChainAndServerLog(unittest.TestCase):
         page = self.page()
         self.assertEqual(len(page.query_selector_all('[data-testid="log"]')), 1)
 
+    def _log_rows(self, page):
+        return page.eval_on_selector_all('[data-testid="log-row"]', LOG_ROWS)
+
+    def _await_trace_row(self, page, timeout=30000):
+        """Wait for the log row recording THIS trace query.
+
+        Not "any row". The page logs /api/info and /api/ci as it loads, so a
+        generic wait returns before the trace has been served and every
+        assertion after it races the server. That race is what made the unit
+        gate fail intermittently, and it also let an assertion pass without the
+        trace ever happening -- both observed, neither theoretical.
+        """
+        page.wait_for_function(LOG_ROW_TRACE_PREDICATE, timeout=timeout)
+
+    def _trace_row(self, page):
+        rows = [r for r in self._log_rows(page) if "/api/trace" in r["detail"]]
+        self.assertEqual(len(rows), 1,
+                         "expected exactly one row for this trace, got "
+                         + repr([r["detail"] for r in rows]))
+        return rows[0]
+
+    def test_the_wait_cannot_be_satisfied_by_a_startup_row(self):
+        # The mutation control for this whole block. Reverting the wait to "any
+        # log row" makes this fail, because the helper would then resolve at
+        # once on a page that has logged nothing but its own startup calls.
+        from playwright.sync_api import TimeoutError as PWTimeout
+
+        page = self.page()
+        page.wait_for_selector('[data-testid="log-row"]', timeout=30000)
+        self.assertFalse(
+            page.evaluate(LOG_ROW_TRACE_PREDICATE),
+            "a startup row must not read as a trace row")
+        with self.assertRaises(PWTimeout):
+            self._await_trace_row(page, timeout=1500)
+
+    def test_no_test_in_this_block_asserts_on_an_unpinned_log_row(self):
+        # The structural half of the mutation control.
+        #
+        # Behavioural controls can pin the shared helper, but they cannot catch
+        # somebody rewriting a test body to assert on a bare kind list again --
+        # and doing so passes, because the page's own startup calls are already
+        # `query` rows. Verified: restoring that form leaves the suite green,
+        # so a behavioural control alone would have left it in place. The
+        # pattern itself is therefore forbidden in this class, and every test in
+        # the block must go through the pinned wait.
+        import inspect
+
+        source = inspect.getsource(type(self))
+        # This control quotes both needles, so it would match its own text and
+        # fail forever. Its own body is removed before searching -- which is
+        # also why it must be the only place those literals appear.
+        source = source.replace(
+            inspect.getsource(
+                type(self).test_no_test_in_this_block_asserts_on_an_unpinned_log_row),
+            "")
+        self.assertNotIn(
+            'assertIn("query", kinds)', source,
+            "asserting that some row has kind 'query' is satisfied by the"
+            " page's own /api/info and /api/ci calls")
+
+        # The generic wait is forbidden per test rather than class-wide: the
+        # mutation control above waits for a startup row on purpose, so a
+        # class-wide ban would forbid the very test that pins the helper.
+        block = ("test_a_query_is_recorded_in_the_log_when_it_fails",
+                 "test_the_log_says_when_a_query_failed",
+                 "test_the_filter_narrows_the_rows",
+                 "test_clearing_empties_the_log",
+                 "test_the_log_states_how_many_entries_it_holds")
+        for name in block:
+            with self.subTest(test=name):
+                body = inspect.getsource(getattr(type(self), name))
+                self.assertIn(
+                    "_await_trace_row", body,
+                    name + " must wait for this trace's row, not any row")
+                self.assertNotIn(
+                    "wait_for_selector", body,
+                    name + " must not wait for an arbitrary log row")
+
     def test_a_query_is_recorded_in_the_log_when_it_fails(self):
         # Failures included on purpose. A log that only records successes is
         # exactly backwards for a tool whose job is finding out what went wrong.
+        #
+        # This asserts on the row for this trace specifically. Asserting only
+        # that some row has kind "query" was satisfied by the page's own
+        # startup calls, so the test passed whether or not the trace was ever
+        # recorded -- proven from a captured gate log in which the only two rows
+        # present were /api/ci and /api/info.
         page = self.page()
         page.fill("#a", "320,240")
         page.click("#btnTrace")
-        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
-        kinds = page.eval_on_selector_all(
-            '[data-testid="log-row"] .log__kind', "els => els.map(e => e.textContent)")
-        self.assertIn("query", kinds)
+        self._await_trace_row(page)
+        row = self._trace_row(page)
+        self.assertEqual(row["kind"], "query")
 
     def test_the_log_says_when_a_query_failed(self):
         page = self.page()
         page.fill("#a", "320,240")
         page.click("#btnTrace")
-        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
-        text = page.inner_text('[data-testid="log"]')
-        self.assertIn("/api/trace", text)
-        self.assertIn("400", text)
+        self._await_trace_row(page)
+        row = self._trace_row(page)
+        self.assertIn("/api/trace", row["detail"])
+        self.assertIn("400", row["detail"])
 
     def test_newest_entries_come_first(self):
         # Newest-first rather than auto-scrolling: a log that scrolls itself
@@ -1003,19 +1098,22 @@ class TestTheEvidenceChainAndServerLog(unittest.TestCase):
         page = self.page()
         page.fill("#a", "320,240")
         page.click("#btnTrace")
-        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        self._await_trace_row(page)
+        # The precondition is what makes this non-vacuous: without it, "no query
+        # rows remain" is also what an empty or still-loading log looks like.
+        before = [r["kind"] for r in self._log_rows(page)]
+        self.assertIn("query", before)
         page.select_option("#logFilter", "lifecycle")
         page.wait_for_timeout(300)
-        kinds = page.eval_on_selector_all(
-            '[data-testid="log-row"] .log__kind',
-            "els => els.map(e => e.textContent)")
-        self.assertNotIn("query", kinds)
+        after = [r["kind"] for r in self._log_rows(page)]
+        self.assertNotIn("query", after)
 
     def test_clearing_empties_the_log(self):
         page = self.page()
         page.fill("#a", "320,240")
         page.click("#btnTrace")
-        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        self._await_trace_row(page)
+        self.assertGreaterEqual(len(self._log_rows(page)), 1)
         page.click("#btnLogClear")
         page.wait_for_timeout(300)
         self.assertEqual(
@@ -1027,7 +1125,7 @@ class TestTheEvidenceChainAndServerLog(unittest.TestCase):
         page = self.page()
         page.fill("#a", "320,240")
         page.click("#btnTrace")
-        page.wait_for_selector('[data-testid="log-row"]', timeout=15000)
+        self._await_trace_row(page)
         self.assertRegex(page.inner_text('[data-testid="log-foot"]'),
                          r"\d+")
 
