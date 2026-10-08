@@ -56,6 +56,16 @@ export const I18N = {
       bad: "bad",
       layers: "Layers",
     },
+    sem: {
+      perLayer: "Semantic comparison, layer by layer",
+      layer: "Layer",
+      verdict: "Verdict",
+      firstDiff: "first difference",
+      noLayers: "The server returned no layer comparisons for this diff.",
+      contradiction: "The verdict contradicts the layers below it",
+      contradictionDetail:
+        "The summary says \u201c{verdict}\u201d while {differing} layer(s) report a difference ({layers}). Do not trust the verdict; the comparison underneath disagrees with it.",
+    },
     trace: {
       target: "target",
       modifications: "modifications",
@@ -191,6 +201,16 @@ export const I18N = {
       good: "A 值",
       bad: "B 值",
       layers: "分层",
+    },
+    sem: {
+      perLayer: "逐层语义对比",
+      layer: "层",
+      verdict: "结论",
+      firstDiff: "首个差异",
+      noLayers: "服务端没有为这次对比返回任何分层比较。",
+      contradiction: "总结论与下方各层相互矛盾",
+      contradictionDetail:
+        "总结论为\u201c{verdict}\u201d，但有 {differing} 层报告存在差异（{layers}）。该结论不可信：下方的逐层比较与它不一致。",
     },
     trace: {
       target: "目标",

@@ -1,5 +1,6 @@
 import React from "react";
 import { Panel, EmptyState, Section } from "../components/primitives.jsx";
+import { ArrowIcon } from "../components/display.jsx";
 
 /**
  * The evidence chain: how this answer was reached.
@@ -188,7 +189,7 @@ function TraceChain({ data, t, onOpen }) {
                 <span className="chain__node mono">{e.from}</span>
                 <span className="chain__arrow" aria-hidden="true">
                   <span className="chain__label">{e.label}</span>
-                  →
+                  <ArrowIcon className="chain__arrowIcon" />
                 </span>
                 <span className="chain__node mono">{e.to}</span>
               </div>

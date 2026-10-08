@@ -2,6 +2,59 @@ import React from "react";
 import { EmptyState, Skeleton } from "./primitives.jsx";
 
 /**
+ * Status icons, drawn here rather than typed.
+ *
+ * These marks were Unicode glyphs, and a glyph renders differently on every
+ * platform and with whatever font the machine happens to have substituted. That
+ * makes the single signal separating success from failure the one most likely to
+ * change meaning with nobody noticing -- and it fails silently, because a wrong
+ * glyph still renders as *something*. Two paths cost nothing, inherit
+ * currentColor so they follow the palette, and cannot change under a font
+ * update.
+ *
+ * Both are decorative. The accessible name is the sr-only word beside them, so
+ * each is aria-hidden and the text carries the meaning. Shape differs as well as
+ * hue -- a tick and a cross are not distinguishable by colour alone -- and the
+ * status number sits next to them, so the row never depends on the icon to be
+ * read.
+ */
+function CheckIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+         stroke="currentColor" strokeWidth="3" strokeLinecap="round"
+         strokeLinejoin="round" aria-hidden="true" focusable="false"
+         data-icon="check" {...props}>
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  );
+}
+
+function CrossIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" fill="none"
+         stroke="currentColor" strokeWidth="3" strokeLinecap="round"
+         strokeLinejoin="round" aria-hidden="true" focusable="false"
+         data-icon="cross" {...props}>
+      <path d="M18 6L6 18" />
+      <path d="M6 6l12 12" />
+    </svg>
+  );
+}
+
+/** Direction, used where one value follows another (endpoint then status). */
+export function ArrowIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" width="11" height="11" fill="none"
+         stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+         strokeLinejoin="round" aria-hidden="true" focusable="false"
+         data-icon="arrow" {...props}>
+      <path d="M5 12h14" />
+      <path d="M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+/**
  * Display primitives for the history panel.
  *
  * Kept apart from the interactive primitives because these render data someone
@@ -131,11 +184,10 @@ function StatusChip({ ok, status }) {
   // Both facts are shown. A row that failed with HTTP 200 is the documented
   // trap, so a chip reading only "200" would let the most interesting failure
   // in this table look like a success.
+  const Mark = ok ? CheckIcon : CrossIcon;
   return (
     <span className={"chip-status " + (ok ? "ok" : "bad")}>
-      <span className="chip-status__mark" aria-hidden="true">
-        {ok ? "✓" : "✕"}
-      </span>
+      <Mark className="chip-status__mark" />
       <span className="mono">{status ?? "—"}</span>
       <span className="sr-only">{ok ? "ok" : "error"}</span>
     </span>

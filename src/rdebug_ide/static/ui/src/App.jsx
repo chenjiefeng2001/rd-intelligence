@@ -39,8 +39,14 @@ function collectEvidenceIds(node) {
 
 export function App() {
   const [lang, setLang] = useState("en");
-  const [a, setA] = useState("320,240");
-  const [b, setB] = useState("10,10");
+  // Empty, not prefilled. The fields used to carry 320,240 and 10,10, which
+  // meant clicking Diff on a freshly opened page ran a real query nobody asked
+  // for and rendered a confident conclusion for it. The result was never
+  // canned -- the values are genuinely computed -- but a conclusion the user did
+  // not ask for reads exactly like a fabricated one. Nothing runs until both
+  // coordinates are entered.
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
   const [deep, setDeep] = useState(false);
   const [eid, setEid] = useState("");
   const [result, setResult] = useState(null);
@@ -205,8 +211,23 @@ export function App() {
 
     try {
       if (kind === "diff") {
+        // Both sides are validated before anything is sent. Trace has always
+        // refused a malformed coordinate client-side (D7); diff went straight
+        // to the server, so the same empty input produced a different failure
+        // depending on which button you pressed. A diff needs two coordinates,
+        // and a half-filled one is not a question the server can answer.
+        const ca = parseCoord(a);
+        if (!ca.ok) {
+          fail(ca.kind, ca.message);
+          return;
+        }
+        const cb = parseCoord(b);
+        if (!cb.ok) {
+          fail(cb.kind, cb.message);
+          return;
+        }
         const d = await api(
-          `/api/diff?a=${a}&b=${b}&deep=${deep ? 1 : 0}`,
+          `/api/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&deep=${deep ? 1 : 0}`,
           { signal: controller.signal },
         );
         if (isStale(seq)) return;
@@ -227,9 +248,23 @@ export function App() {
         // This asks only for the prompt. It deliberately does not re-run the
         // diff, because making this button a second diff button lost the user
         // the result they were looking at.
-        const p = await api(`/api/explain?a=${a}&b=${b}&deep=${deep ? 1 : 0}`, {
-          signal: controller.signal,
-        });
+        // Same guard as diff: a prompt built from an unparseable coordinate
+        // would be a question the server answers with an error body, presented
+        // to the user as if it were an explanation of something.
+        const ca = parseCoord(a);
+        if (!ca.ok) {
+          fail(ca.kind, ca.message);
+          return;
+        }
+        const cb = parseCoord(b);
+        if (!cb.ok) {
+          fail(cb.kind, cb.message);
+          return;
+        }
+        const p = await api(
+          `/api/explain?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}&deep=${deep ? 1 : 0}`,
+          { signal: controller.signal },
+        );
         if (isStale(seq)) return;
         applyPrompt(p);
         return;

@@ -441,12 +441,60 @@ class TestInARealBrowser(unittest.TestCase):
         # The capture is not configured, so this is a genuine server error, and
         # the frozen page's own record says its banner visibility was never
         # established. Here it is checked in a browser.
+        #
+        # A coordinate is entered first. The fields used to be prefilled, so
+        # clicking Trace sent whatever the default was and the banner reported
+        # the server's "not configured" refusal; now an empty field is refused by
+        # the client before any request, which is a different message for a
+        # different problem.
         page = self.page()
+        page.fill("#a", "320,240")
         page.click("#btnTrace")
         page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
         banner = page.query_selector('[data-testid="failure-banner"]')
         self.assertTrue(banner.is_visible())
         self.assertIn("not configured", banner.inner_text().lower())
+
+    def test_an_empty_coordinate_never_reaches_the_server(self):
+        # The reason the fields are no longer prefilled. A conclusion for a query
+        # the user did not ask for reads exactly like a fabricated one, even
+        # though the result was genuinely computed. Nothing runs until a
+        # coordinate is entered, and nothing is spent finding that out.
+        page = self.page()
+        requests = []
+        page.on("request", lambda r: requests.append(r.url)
+                if "/api/trace" in r.url else None)
+        page.click("#btnTrace")
+        page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
+        self.assertEqual(requests, [],
+                         "an unparseable coordinate must be refused locally")
+        self.assertEqual(
+            len(page.query_selector_all('[data-testid="result"] [class*="kv"]')),
+            0, "no result may be rendered for a query that was never sent")
+
+    def test_diff_also_refuses_an_unparseable_coordinate(self):
+        # Trace has always validated client-side; diff went straight to the
+        # server, so the same empty input behaved differently depending on which
+        # button you pressed. Both sides are needed for a diff.
+        page = self.page()
+        requests = []
+        page.on("request", lambda r: requests.append(r.url)
+                if "/api/diff" in r.url else None)
+        page.fill("#a", "320,240")
+        page.click("#btnDiff")
+        page.wait_for_selector('[data-testid="failure-banner"]', timeout=20000)
+        self.assertEqual(requests, [], "diff must not be sent without B")
+        page.fill("#b", "not-a-coordinate")
+        page.click("#btnDiff")
+        page.wait_for_timeout(600)
+        self.assertEqual(requests, [], "diff must not be sent with a bad B")
+
+    def test_the_coordinate_fields_start_empty(self):
+        # A prefilled field is what made clicking Diff on a fresh page run a
+        # query nobody asked for.
+        page = self.page()
+        self.assertEqual(page.input_value("#a"), "")
+        self.assertEqual(page.input_value("#b"), "")
 
     def test_the_failure_banner_is_actually_painted(self):
         # is_visible() can be satisfied by layout alone. A computed colour is
@@ -848,16 +896,75 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
             with self.subTest(chip=name):
                 self.assertIn("bad", name)
 
+    def test_the_status_mark_is_an_icon_and_not_a_typed_glyph(self):
+        # The mutation control for the icon work. Putting a Unicode tick or cross
+        # back would render something on every machine, so this asserts the
+        # element itself: an inline SVG, and no glyph character in the chip's
+        # text. A glyph fails this silently -- it always renders as *something*,
+        # which is exactly why it went unnoticed.
+        page = self.page()
+        page.wait_for_selector(".chip-status", timeout=30000)
+        chips = page.eval_on_selector_all(
+            ".chip-status",
+            "els => els.map(e => ({svg: !!e.querySelector('svg'),"
+            " icon: e.querySelector('svg') &&"
+            " e.querySelector('svg').getAttribute('data-icon'),"
+            " text: e.textContent}))")
+        self.assertTrue(chips, "the seeded history should render status chips")
+        for chip in chips:
+            self.assertTrue(chip["svg"],
+                            "the status mark must be an inline SVG")
+            self.assertIn(chip["icon"], ("check", "cross"))
+            # The accessible name is a word beside the number, not the number
+            # and not a character a screen reader has to guess at.
+            self.assertTrue("ok" in chip["text"] or "error" in chip["text"],
+                            "chip text was " + repr(chip["text"]))
+            for glyph in ("✓", "✕", "✔", "❌"):
+                self.assertNotIn(glyph, chip["text"])
+
+    def test_the_icon_is_not_the_only_carrier_of_meaning(self):
+        # Colour is never the only channel: the two marks differ in shape, the
+        # status number sits beside them, and a screen reader gets a word.
+        page = self.page()
+        page.wait_for_selector(".chip-status", timeout=30000)
+        info = page.eval_on_selector_all(
+            ".chip-status",
+            """els => els.map(e => ({
+                 stroke: e.querySelector('svg') &&
+                   getComputedStyle(e.querySelector('svg')).stroke,
+                 color: getComputedStyle(e).color,
+                 hidden: e.querySelector('svg').getAttribute('aria-hidden'),
+                 hasNumber: !!e.querySelector('.mono'),
+               }))""")
+        for chip in info:
+            self.assertEqual(chip["hidden"], "true")
+            self.assertTrue(chip["stroke"], "the icon must use currentColor")
+            self.assertTrue(chip["hasNumber"], "the status number stays beside it")
+
     def test_the_pixel_scope_follows_whether_a_pixel_is_entered(self):
         # Both coordinates count: the scope uses whichever one is well formed, so
         # it is only unavailable when neither is. Clearing one field and finding
         # the toggle still available is correct, not a bug -- and the label has
         # to name the pixel actually being used, or the scope is a mystery.
+        #
+        # A pixel is entered first: the fields are no longer prefilled, so on a
+        # fresh page neither is well formed and the toggle is correctly
+        # unavailable.
         page = self.page()
+        self.assertTrue(page.is_disabled("#histScope"),
+                        "with both fields empty there is no pixel to scope to")
+        page.fill("#a", "320,240")
+        page.wait_for_function(
+            "() => !document.querySelector('#histScope').disabled", timeout=10000)
         self.assertFalse(page.is_disabled("#histScope"))
         # inner_text on a checkbox returns its value, which is empty; the text
         # that names the pixel lives on the wrapping label.
         self.assertIn("320,240", page.inner_text("label:has(#histScope)"))
+        # B is filled before A is cleared, because the fall-back being tested is
+        # from A to B. While B was prefilled this was implicit; with both fields
+        # empty, clearing A leaves no pixel at all and the label correctly reads
+        # unavailable rather than naming a coordinate nobody entered.
+        page.fill("#b", "10,10")
         page.fill("#a", "")
         page.wait_for_function(
             "() => document.querySelector('#histScope').closest('label')"

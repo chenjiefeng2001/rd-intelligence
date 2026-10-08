@@ -6,6 +6,7 @@ import {
   EmptyState,
   Skeleton,
 } from "../components/primitives.jsx";
+import { SemanticComparison } from "./SemanticComparison.jsx";
 
 /**
  * The two result shapes.
@@ -26,6 +27,7 @@ export function DiffView({ data, t }) {
           [t("diff", "bad"), JSON.stringify(first.bad ? first.bad.value : null)],
         ]}
       />
+      <SemanticComparison data={data} t={t} />
       <p className="panel__subtitle">{t("diff", "layers")}</p>
       <ul className="list" data-testid="layers">
         {data.layers.map((l) => (

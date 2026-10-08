@@ -1,5 +1,6 @@
 import React from "react";
 import { Panel, EmptyState, Button } from "../components/primitives.jsx";
+import { ArrowIcon } from "../components/display.jsx";
 
 /**
  * What the server announced, in arrival order.
@@ -63,7 +64,7 @@ export function EventLog({ events, dropped, filter, onFilter, onClear, t }) {
                   <span className={"log__kind log__kind--" + group(e.kind)}>
                     {e.kind}
                   </span>
-                  <span className="log__detail mono">{describe(e, t)}</span>
+                  <span className="log__detail mono">{render(e, t)}</span>
                   <span className="log__time mono muted">{clock(e.at)}</span>
                 </li>
               ))}
@@ -91,20 +92,32 @@ function group(kind) {
   return "lifecycle";
 }
 
-function describe(e, t) {
+/**
+ * The detail cell, as spans rather than one joined string.
+ *
+ * The arrow between endpoint and status used to be a typed glyph, which is the
+ * same platform-dependent problem as a typed tick: it means something different
+ * depending on the font the machine substituted, and it fails quietly. It is now
+ * an icon beside real text, so the row reads the same everywhere and the
+ * relationship is drawn rather than typed.
+ */
+function render(e, t) {
   const d = e.detail;
   if (!d) return "";
   if (typeof d === "string") return d;
+  const parts = [];
   if (e.kind === "query") {
-    const bits = [d.endpoint];
-    if (d.status != null) bits.push("→" + d.status);
-    if (d.ok === false) bits.push(t("log", "failed"));
-    if (d.recorded === false) bits.push(t("log", "notRecorded"));
-    if (d.latencyMs != null) bits.push(d.latencyMs + "ms");
-    return bits.filter(Boolean).join("  ");
+    parts.push(d.endpoint);
+    if (d.status != null) parts.push("arrow", String(d.status));
+    if (d.ok === false) parts.push(t("log", "failed"));
+    if (d.recorded === false) parts.push(t("log", "notRecorded"));
+    if (d.latencyMs != null) parts.push(d.latencyMs + "ms");
+    return parts.map((p, i) =>
+      p === "arrow"
+        ? <ArrowIcon key={"a" + i} className="log__arrowIcon" />
+        : <span key={i}>{p}</span>);
   }
-  if (e.kind === "configured") return String(d);
-  return "";
+  return e.kind === "configured" ? String(d) : "";
 }
 
 function clock(ms) {

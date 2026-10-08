@@ -345,6 +345,26 @@ body {
   color: var(--bad);
 }
 
+/* The icon is a fixed square so the two marks do not shift the status number
+   horizontally between rows; flex-shrink stops a long status from squashing
+   it. */
+.chip-status__mark {
+  flex: 0 0 auto;
+  display: block;
+}
+
+/* The inline icons sit on the text baseline and keep a fixed box, so the status
+   number does not shift horizontally between rows and the two marks look like
+   part of the type rather than pictures dropped into it. */
+.log__arrowIcon,
+.chain__arrowIcon {
+  flex: 0 0 auto;
+  display: inline-block;
+  vertical-align: -1px;
+  color: var(--faint);
+  margin: 0 var(--s-1);
+}
+
 /* ------------------------------------------------------------ breakdown -- */
 
 .breakdown {
@@ -1138,6 +1158,49 @@ textarea.prompt:focus-visible {
   margin: 0 0 var(--s-2);
   overflow-wrap: anywhere;
   min-width: 0;
+}
+
+/* ------------------------------------------------- semantic comparison -- */
+
+/* Four columns that each shrink. A long pixel value wraps inside its own cell
+   instead of widening the table, because the table is inside .table-wrap and
+   overflow is contained there. */
+.sem-row__layer {
+  min-width: 0;
+  font-weight: 500;
+}
+
+.sem-row__layer .mono {
+  overflow-wrap: anywhere;
+}
+
+.sem-row__path {
+  display: block;
+  font-size: 10px;
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
+
+/* The first difference is the row the reader is looking for, so it is marked by
+   a weight and a label rather than by colour alone. */
+.sem-row--first {
+  background: var(--panel-3);
+}
+
+.sem-row__flag {
+  display: inline-block;
+  margin-left: var(--s-2);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+.sem-row__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  max-width: 34ch;
 }
 
 /* ------------------------------------------------------------------- log -- */
