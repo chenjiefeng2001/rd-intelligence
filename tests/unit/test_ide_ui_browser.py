@@ -56,6 +56,35 @@ def _probe_can_launch(_executable):
     return None
 
 
+def _release_browser_class(cls):
+    """Release whatever a browser class actually managed to create.
+
+    Order and tolerance are both deliberate. unittest does not call
+    tearDownClass when setUpClass raises, so a class that started Playwright and
+    then failed to launch a browser used to keep its driver -- and the event
+    loop that driver owns -- alive for the rest of the session, and every later
+    class in this file inherited it. The original teardown could not rescue
+    that case either: its first statement was cls.browser.close(), so on a
+    partially initialised class that raised AttributeError and the _pw.stop()
+    on the next line never ran.
+
+    Each resource is therefore released independently and the attribute is
+    dropped afterwards, so one close failing cannot strand the others and a
+    second call is a no-op. Swallowing teardown errors is correct here: they
+    would otherwise replace the exception that actually explains the failure.
+    """
+    for name, method in (("browser", "close"), ("_pw", "stop"), ("live", "stop")):
+        obj = getattr(cls, name, None)
+        if obj is None:
+            continue
+        try:
+            getattr(obj, method)()
+        except Exception:  # noqa: BLE001 -- teardown must not mask the real error
+            pass
+        if hasattr(cls, name):
+            delattr(cls, name)
+
+
 def browser_path(candidates=CHROME_CANDIDATES, has_playwright=None, probe=None):
     """The executable to drive, and why the controls cannot run if there is none.
 
@@ -368,15 +397,20 @@ class TestInARealBrowser(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live()
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live()
+        except BaseException:
+            # unittest skips tearDownClass when setUpClass raises, so a launch
+            # failure here would otherwise leak the driver and its event loop
+            # into every class that runs after this one.
+            _release_browser_class(cls)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def page(self, color_scheme="dark"):
         ctx = self.browser.new_context(color_scheme=color_scheme)
@@ -546,15 +580,20 @@ class TestRestoredFeatures(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live()
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live()
+        except BaseException:
+            # unittest skips tearDownClass when setUpClass raises, so a launch
+            # failure here would otherwise leak the driver and its event loop
+            # into every class that runs after this one.
+            _release_browser_class(cls)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def page(self):
         ctx = self.browser.new_context(
@@ -622,15 +661,20 @@ class TestAccessibilityAndLayout(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live()
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live()
+        except BaseException:
+            # unittest skips tearDownClass when setUpClass raises, so a launch
+            # failure here would otherwise leak the driver and its event loop
+            # into every class that runs after this one.
+            _release_browser_class(cls)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def page(self, width=1280, height=900):
         ctx = self.browser.new_context(viewport={"width": width, "height": height})
@@ -749,15 +793,17 @@ class TestTheHistoryPanelWhenNoStoreIsConfigured(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live(store=False)
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live(store=False)
+        except BaseException:
+            _release_browser_class(cls)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def page(self):
         ctx = self.browser.new_context()
@@ -808,16 +854,18 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live(store=True)
-        cls.live.seed(6)
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live(store=True)
+            cls.live.seed(6)
+        except BaseException:
+            _release_browser_class(cls)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def page(self):
         ctx = self.browser.new_context()
@@ -1078,15 +1126,17 @@ class TestTheEvidenceChainAndServerLog(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live(store=True)
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live(store=True)
+        except BaseException:
+            _release_browser_class(cls)
+            raise
 
     @classmethod
     def tearDownClass(cls):
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def page(self, width=1280, height=900):
         ctx = self.browser.new_context(viewport={"width": width, "height": height})
@@ -1460,25 +1510,28 @@ class RealCaptureBrowser:
     @classmethod
     def setUpClass(cls):
         from playwright.sync_api import sync_playwright
-        cls._pw = sync_playwright().start()
-        cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
-        cls.live = Live(store=False)
-        cls.capture = os.environ["RDEBUG_INTEGRATION_CAPTURE"]
+        try:
+            cls._pw = sync_playwright().start()
+            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.live = Live(store=False)
+            cls.capture = os.environ["RDEBUG_INTEGRATION_CAPTURE"]
+        except BaseException:
+            # Only a configure() failure is a skip. A launch or a missing
+            # capture variable stays an error, so the distinction the original
+            # code drew is unchanged -- it just no longer leaks the driver.
+            _release_browser_class(cls)
+            raise
         try:
             app.configure(cls.capture)
         except Exception as exc:  # noqa: BLE001 -- reported, not swallowed
-            cls.browser.close()
-            cls._pw.stop()
-            cls.live.stop()
+            _release_browser_class(cls)
             raise unittest.SkipTest(
                 "configure(" + str(cls.capture) + ") failed: " + str(exc)) from exc
 
     @classmethod
     def tearDownClass(cls):
         app.dispose()
-        cls.browser.close()
-        cls._pw.stop()
-        cls.live.stop()
+        _release_browser_class(cls)
 
     def configured_page(self):
         ctx = self.browser.new_context(viewport={"width": 1400, "height": 1000})
