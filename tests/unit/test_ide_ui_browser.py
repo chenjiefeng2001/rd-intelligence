@@ -886,9 +886,27 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
         self.assertLess(len(after), len(before))
 
     def test_the_failures_filter_keeps_only_failures(self):
+        # The wait has to be on the filtered fetch, not on a ".chip-status.bad"
+        # that is already on the page. The unfiltered list contains the seeded
+        # failures, so waiting for one of those returns instantly and
+        # synchronises on nothing; the sample then lands wherever the refetch
+        # happens to be -- the loading skeleton (no chips at all) or the stale
+        # unfiltered rows (nearly all "ok"). Both were observed failing this
+        # way, at 3 of 7 runs.
         page = self.page()
-        page.check("#histFailures")
-        page.wait_for_selector(".chip-status.bad", timeout=10000)
+        # Toggling the filter re-runs loadHistory, which sets loading=true and
+        # renders a Skeleton before the filtered rows arrive. Waiting for the
+        # response that the filter actually asks for waits for the refetch;
+        # waiting for the skeleton to detach waits for React to leave the
+        # transitional state. Neither of those is the thing being asserted, so
+        # the assertions below still have to prove the rows are the failures
+        # and not merely that a request happened.
+        with page.expect_response(
+                lambda r: "/api/history?" in r.url and "failures=1" in r.url,
+                timeout=15000):
+            page.check("#histFailures")
+        page.wait_for_selector('[data-testid="history-loading"]',
+                               state="detached", timeout=15000)
         marks = page.eval_on_selector_all(
             ".chip-status", "els => els.map(e => e.className)")
         self.assertTrue(marks)
