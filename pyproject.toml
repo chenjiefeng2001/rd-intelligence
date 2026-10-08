@@ -36,7 +36,12 @@ rdebug-mcp = "rdebug_mcp.server:main"
 rdebug-ide = "rdebug_ide.app:main"
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.0"]
+# The upper bound is load-bearing, not caution. mcp 2.x renamed FastMCP to
+# MCPServer, so `rd-intelligence[mcp]` on an unbounded range resolves to a
+# server that cannot import its own transport -- installed cleanly, then exits 1
+# on first launch, which is exactly the failure the extra exists to prevent.
+# Verified against mcp 2.3.0: `No module named 'mcp.server.fastmcp'`.
+mcp = ["mcp>=1.0,<2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
