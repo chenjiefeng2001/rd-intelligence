@@ -180,7 +180,12 @@ soak intensity had been tuned when it had not.
   processes, real replay and a GPU, subject to the recycle policy
   (q250 / 128 MB / 1800 s).
 - **Dependencies**: `mcp` (FastMCP) and `pydantic_settings`; importing the server
-  emits `IncompleteFieldDefinitionWarning`.
+  emits `IncompleteFieldDefinitionWarning`. The `mcp` extra is pinned
+  `mcp>=1.0,<2` in `pyproject.toml`: SDK 2.x renamed FastMCP to MCPServer, so an
+  unbounded range resolves a transport the server cannot import -- the install
+  succeeds and the first launch exits 1. Verified against 2.3.0 (fails) and
+  1.30.0 (initialises, lists four tools). The bound keeps the protocol dependency
+  off base installs: a plain install pulls `psutil` alone and has no `mcp` at all.
 - **Accounting**: it would need its own `requires` (env / module / capture /
   capabilities) and a `min_executed` floor, and a decision about the 200× scale.
 - **§5 test**: a 200-call soak is machine-dependent by nature — timing, memory,

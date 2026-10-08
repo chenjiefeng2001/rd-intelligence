@@ -464,6 +464,12 @@ pip install -e .[mcp]
 rdebug-mcp          # stdio MCP server，四个 tool：trace_pixel / trace_resource / debug_pixel / diff_pixel
 ```
 
+**MCP SDK 版本约束**：MCP transport 需要 `mcp<2`。当前 transport 使用的是
+`FastMCP` 接口，而 MCP SDK 2.x 已将其重命名为 `MCPServer`，因此无界安装会解析到一个
+无法导入自身 transport 的版本——安装过程完全成功，首次启动却直接以
+`No module named 'mcp.server.fastmcp'` 退出。`pyproject.toml` 已将 extra 固定为
+`mcp>=1.0,<2`；实测 2.3.0 失败、1.30.0 可正常 `initialize` 并列出四个 tool。
+
 边界（由 `tests_transport/` 不变量锁定）：
 
 - 不出现任何 RenderDoc API 标识（`ReplayController/PixelHistory/GetUsage/DebugPixel/...`）；
