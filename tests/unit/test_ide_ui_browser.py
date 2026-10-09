@@ -12,8 +12,10 @@ If no browser can be launched the whole class skips, and the skip says so.
 That is deliberately not a pass: an unverified browser claim must not be
 recorded as a verified one.
 """
+import contextlib
 import http.client
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -54,6 +56,42 @@ def _probe_can_launch(_executable):
         browser = pw.chromium.launch(executable_path=_executable)
         browser.close()
     return None
+
+
+def _launch_browser(pw, executable):
+    """Launch a browser, and surface the driver log if the launch fails.
+
+    Playwright already captures the browser process log and attaches it to
+    launch failures under a "Browser logs:" heading. That is the only record of
+    what the browser did before it went away, and it arrives buried in the
+    exception text -- so recovering it means reading a traceback, which is how
+    the single launch failure observed so far was diagnosed.
+
+    This prints that block to stderr when, and only when, the launch raises.
+    Nothing is printed on the success path, and the original exception is
+    re-raised unchanged: this adds evidence to a failure, it does not convert
+    one into something else. Timeouts, retries and the browser-selection policy
+    are untouched.
+
+    The catch is Exception, not BaseException. This wrapper only adds a
+    diagnostic, so it has no business intercepting KeyboardInterrupt or
+    SystemExit on its way past -- those are control flow, not a browser that
+    failed to start. The setUpClass guards below do use BaseException, because
+    those release resources and a Ctrl-C during setup must not be the thing
+    that leaks a driver.
+    """
+    try:
+        return pw.chromium.launch(executable_path=executable)
+    except Exception as exc:  # noqa: BLE001 -- re-raised immediately below
+        marker = "Browser logs:"
+        note = ("\n[rdebug] playwright launch failed: " + type(exc).__name__ + "\n")
+        if marker in str(exc):
+            note += "[rdebug] driver log follows\n" + str(exc)[str(exc).index(marker):] + "\n"
+        else:
+            note += "[rdebug] no driver log was attached to this failure\n"
+        sys.stderr.write(note)
+        sys.stderr.flush()
+        raise
 
 
 def _release_browser_class(cls):
@@ -243,6 +281,69 @@ class TestHowTheBrowserIsChosen(unittest.TestCase):
     testing anything.
     """
 
+    def test_a_successful_launch_prints_nothing(self):
+        # The diagnostic exists for failures only. If it also spoke on the
+        # success path it would be noise in every run, and noise is how a
+        # signal stops being read.
+        sentinel = object()
+
+        class _Chromium:
+            def launch(self, executable_path=None):
+                return sentinel
+
+        class _PW:
+            chromium = _Chromium()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            got = _launch_browser(_PW(), r"C:\some\chrome.exe")
+        self.assertIs(got, sentinel)
+        self.assertEqual(buf.getvalue(), "")
+
+    def test_a_failed_launch_prints_the_driver_log_and_still_raises(self):
+        # The launch failure that has been observed carried its evidence inside
+        # the exception text under "Browser logs:", reachable only by reading a
+        # traceback. It has to reach stderr on its own, and the original
+        # exception has to keep propagating -- this adds evidence, it does not
+        # turn a failure into a skip or a different failure.
+        class _Chromium:
+            def launch(self, executable_path=None):
+                raise RuntimeError(
+                    "Target page, context or browser has been closed\n"
+                    "Browser logs:\n"
+                    "<launching> chrome.exe --headless\n"
+                    "<launched> pid=40756\n"
+                    "  - [pid=40756] <will force kill>")
+
+        class _PW:
+            chromium = _Chromium()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with self.assertRaises(RuntimeError) as caught:
+                _launch_browser(_PW(), r"C:\some\chrome.exe")
+        out = buf.getvalue()
+        self.assertIn("playwright launch failed: RuntimeError", out)
+        self.assertIn("<will force kill>", out)
+        self.assertIn("Target page, context or browser has been closed",
+                      str(caught.exception))
+
+    def test_a_failed_launch_with_no_driver_log_says_so(self):
+        # Not every launch failure carries one. Reporting nothing at all would
+        # read as "there was nothing to report", which is a different claim.
+        class _Chromium:
+            def launch(self, executable_path=None):
+                raise ValueError("executable does not exist")
+
+        class _PW:
+            chromium = _Chromium()
+
+        buf = io.StringIO()
+        with contextlib.redirect_stderr(buf):
+            with self.assertRaises(ValueError):
+                _launch_browser(_PW(), r"C:\nope\chrome.exe")
+        self.assertIn("no driver log was attached", buf.getvalue())
+
     def test_a_missing_playwright_is_the_only_hard_stop(self):
         path, reason = browser_path(has_playwright=False)
         self.assertIsNone(path)
@@ -399,7 +500,7 @@ class TestInARealBrowser(unittest.TestCase):
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live()
         except BaseException:
             # unittest skips tearDownClass when setUpClass raises, so a launch
@@ -582,7 +683,7 @@ class TestRestoredFeatures(unittest.TestCase):
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live()
         except BaseException:
             # unittest skips tearDownClass when setUpClass raises, so a launch
@@ -663,7 +764,7 @@ class TestAccessibilityAndLayout(unittest.TestCase):
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live()
         except BaseException:
             # unittest skips tearDownClass when setUpClass raises, so a launch
@@ -795,7 +896,7 @@ class TestTheHistoryPanelWhenNoStoreIsConfigured(unittest.TestCase):
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live(store=False)
         except BaseException:
             _release_browser_class(cls)
@@ -856,7 +957,7 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live(store=True)
             cls.live.seed(6)
         except BaseException:
@@ -1128,7 +1229,7 @@ class TestTheEvidenceChainAndServerLog(unittest.TestCase):
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live(store=True)
         except BaseException:
             _release_browser_class(cls)
@@ -1512,7 +1613,7 @@ class RealCaptureBrowser:
         from playwright.sync_api import sync_playwright
         try:
             cls._pw = sync_playwright().start()
-            cls.browser = cls._pw.chromium.launch(executable_path=BROWSER)
+            cls.browser = _launch_browser(cls._pw, BROWSER)
             cls.live = Live(store=False)
             cls.capture = os.environ["RDEBUG_INTEGRATION_CAPTURE"]
         except BaseException:
