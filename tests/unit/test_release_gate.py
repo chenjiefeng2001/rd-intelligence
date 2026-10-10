@@ -613,5 +613,212 @@ class TestG1FourStateAggregate(unittest.TestCase):
             self.assertIn(key, spec["classification"])
 
 
+class TestGateEvidenceIsRetained(unittest.TestCase):
+    """The raw output a verdict was decided from must survive the verdict.
+
+    Two separate losses were fixed here, and they are not the same loss. The
+    failure identities were being read correctly by _parse_unittest and then
+    dropped by ci_pipeline's whitelist, so a report could say "29 failures" and
+    name none of them. The raw stream went missing earlier still, at the point
+    run_gate stopped reading it, which is why no traceback was retrievable at
+    all. Counting is not a substitute for either: 13 failures whose tests cannot
+    be named is not a diagnosable report, only a shorter one.
+
+    The evidence block is explicitly not part of a verdict. Every assertion
+    below that says captured is False also checks that the gate still returned
+    the outcome, exit code and counts it would have returned with no log
+    directory at all, because losing evidence must not become a test failure or
+    an infrastructure fault.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="evidence_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _runner_gate(self, gid, body, **kw):
+        gate = _gate(self.tmp, gid, body, **kw)
+        gate["runner"] = "unittest"
+        return gate
+
+    def _log(self, record):
+        return os.path.join(self.tmp, record["evidence"]["artifact"])
+
+    def test_multiple_failures_and_errors_are_each_identifiable(self):
+        body = ("Ran 5 tests in 0.1s\n\n"
+                "FAILED (failures=2, errors=1, skipped=0)\n\n"
+                "FAIL: test_alpha (pkg.mod.Case)\n"
+                "Traceback (most recent call last):\n"
+                "  File \"/very/long/path/to/tests/unit/test_mod.py\", line 41\n"
+                "    self.assertEqual(1, 2)\n"
+                "AssertionError: 1 != 2\n\n"
+                "FAIL: test_beta (pkg.mod.Case)\n"
+                "ERROR: test_gamma (pkg.mod.Other)\n")
+        r = RG.run_gate(self._runner_gate("unit", body, min_executed=1),
+                        self.tmp, env={})
+        self.assertEqual(r["outcome"], RG.REGRESSION)
+        self.assertEqual(r["tests_failed"], 2)
+        self.assertEqual(r["tests_errors"], 1)
+        self.assertEqual(sorted(r["result_identities"]),
+                         ["test_alpha (pkg.mod.Case)", "test_beta (pkg.mod.Case)",
+                          "test_gamma (pkg.mod.Other)"])
+        # The traceback reaches the artifact whole. This is the whole point of
+        # the change: the count was always known, the traceback never was.
+        log = self._log(r)
+        self.assertTrue(os.path.isfile(log))
+        with open(log, encoding="utf-8") as fh:
+            text = fh.read()
+        self.assertIn("AssertionError: 1 != 2", text)
+        self.assertIn("/very/long/path/to/tests/unit/test_mod.py", text)
+
+    def test_subfailed_identities_are_read_without_moving_classification(self):
+        # pytest reports each failing subtest on its own line. Before this the
+        # extractor only understood FAIL:/ERROR:, so a suite whose failures all
+        # arrive that way reported a count and no names.
+        body = ("Ran 3 tests in 0.1s\n\nFAILED (failures=1, errors=0, skipped=0)\n\n"
+                "SUBFAILED(chip='chip-status ok') tests/unit/test_ui.py::C::test_chip\n")
+        r = RG.run_gate(self._runner_gate("unit", body, min_executed=1),
+                        self.tmp, env={})
+        self.assertIn("tests/unit/test_ui.py::C::test_chip", r["result_identities"])
+        # A subtest failure is not a discovery failure. G2 must not fire.
+        self.assertEqual(r["discovery_anomalies"], [])
+        self.assertEqual(r["outcome"], RG.REGRESSION)
+
+    def test_a_failed_manifest_does_not_retract_the_log(self):
+        # The log and the index are two operations that fail for different
+        # reasons. If an index failure withdraws `captured`, a reader concludes
+        # no output was ever captured -- while the traceback is sitting on disk.
+        body = ("Ran 6 tests in 0.1s\n\n"
+                "FAILED (failures=1, errors=0, skipped=0)\n\n"
+                "FAIL: test_q (m.C)\n")
+        ok = RG.run_gate(self._runner_gate("unit", body, min_executed=1),
+                         self.tmp, env={})
+        # A directory where the index file belongs: the log still writes, the
+        # manifest cannot.
+        os.remove(self._log(ok))
+        os.remove(os.path.join(self.tmp, RG.GATE_LOG_DIR, "MANIFEST.json"))
+        os.mkdir(os.path.join(self.tmp, RG.GATE_LOG_DIR, "MANIFEST.json"))
+        r = RG.run_gate(self._runner_gate("unit", body, min_executed=1),
+                        self.tmp, env={})
+        ev = r["evidence"]
+        # The file is there, and the record says so.
+        self.assertTrue(ev["captured"], "the log was written and closed")
+        self.assertFalse(ev["indexed"], "the index could not be written")
+        self.assertTrue(ev["error"].startswith("manifest_write_failed"),
+                        f"error must name which step failed, got {ev['error']!r}")
+        self.assertIn("log_write_failed", str(ok["evidence"]["error"]) if
+                      ok["evidence"].get("error") else "log_write_failed")
+        # And the bytes really are readable, so captured is not a claim.
+        with open(self._log(r), encoding="utf-8") as fh:
+            self.assertIn("FAIL: test_q (m.C)", fh.read())
+        # The verdict is untouched by either failure.
+        for field in ("outcome", "executed", "process_exit_code", "test_result"):
+            self.assertEqual(r[field], ok[field],
+                             f"{field} moved because the index could not be written")
+
+    def test_a_gate_that_never_ran_fabricates_nothing(self):
+        # The missing-prerequisite path returns before any process exists. It
+        # must not claim a log, an exit code, or a test count.
+        gate = _gate(self.tmp, "integration", UNITTEST_OK, min_executed=1,
+                     requires={"env": ["SOME_UNSET_VAR"]})
+        r = RG.run_gate(gate, self.tmp, env={})
+        self.assertEqual(r["outcome"], RG.INFRA)
+        self.assertFalse(r["evidence"]["captured"])
+        self.assertEqual(r["evidence"]["reason"], "gate command did not execute")
+        self.assertNotIn("artifact", r["evidence"])
+        self.assertIsNone(r["process_exit_code"])
+        self.assertEqual(r["executed"], 0)
+        self.assertFalse(os.path.isdir(os.path.join(self.tmp, RG.GATE_LOG_DIR)))
+
+    def test_failing_to_write_the_log_does_not_change_the_verdict(self):
+        # The regression this most easily introduces: making evidence
+        # retention able to fail a gate. A file where the directory should be
+        # makes every write attempt fail.
+        body = "Ran 7 tests in 0.1s\n\nOK\n"
+        good = RG.run_gate(self._runner_gate("a", body, min_executed=1),
+                           self.tmp, env={})
+        os.remove(self._log(good))
+        shutil.rmtree(os.path.join(self.tmp, RG.GATE_LOG_DIR), ignore_errors=True)
+        with open(os.path.join(self.tmp, RG.GATE_LOG_DIR), "w", encoding="utf-8") as fh:
+            fh.write("not a directory")
+        broken = RG.run_gate(self._runner_gate("b", body, min_executed=1),
+                             self.tmp, env={})
+        self.assertFalse(broken["evidence"]["captured"])
+        self.assertIn("error", broken["evidence"])
+        # Same verdict, same counts, same exit code. Nothing about the gate moved.
+        for field in ("outcome", "executed", "process_exit_code", "test_result"):
+            self.assertEqual(broken[field], good[field],
+                             f"{field} moved because the log could not be written")
+
+    def test_a_large_stream_does_not_bloat_the_record(self):
+        # The report is JSON that auditors and tools read. The bulk belongs in
+        # the artifact; the record carries a pointer and a size, not the text.
+        small = "Ran 4 tests in 0.1s\n\nOK\n"
+        big = small + ("x" * 1_000_000)
+        a = RG.run_gate(self._runner_gate("small", small, min_executed=1),
+                        self.tmp, env={})
+        b = RG.run_gate(self._runner_gate("big", big, min_executed=1),
+                        self.tmp, env={})
+        self.assertEqual(b["outcome"], a["outcome"])
+        self.assertEqual(b["executed"], a["executed"])
+        self.assertGreaterEqual(b["evidence"]["bytes"], 1_000_000)
+        # The whole stream is on disk...
+        self.assertGreaterEqual(os.path.getsize(self._log(b)), 1_000_000)
+        # ...and the record itself stays small.
+        self.assertLess(len(json.dumps(b["evidence"])), 200)
+
+    def test_a_repeat_run_does_not_overwrite_retained_evidence(self):
+        body = "Ran 4 tests in 0.1s\n\nOK\n"
+        first = RG.run_gate(self._runner_gate("unit", body, min_executed=1),
+                            self.tmp, env={})
+        second = RG.run_gate(self._runner_gate("unit", body, min_executed=1),
+                             self.tmp, env={})
+        self.assertNotEqual(first["evidence"]["artifact"],
+                            second["evidence"]["artifact"])
+        # The first file is still there. An overwrite would destroy the only
+        # record of the earlier attempt.
+        self.assertTrue(os.path.isfile(self._log(first)))
+        self.assertTrue(os.path.isfile(self._log(second)))
+
+    def test_a_gate_id_cannot_choose_where_the_file_lands(self):
+        body = "Ran 4 tests in 0.1s\n\nOK\n"
+        r = RG.run_gate(self._runner_gate("../../escape", body, min_executed=1),
+                        self.tmp, env={})
+        self.assertTrue(r["evidence"]["captured"])
+        written = os.path.realpath(self._log(r))
+        self.assertTrue(written.startswith(os.path.realpath(
+            os.path.join(self.tmp, RG.GATE_LOG_DIR))))
+        # The manifest maps the original id to the safe file it actually used.
+        man = json.loads(open(os.path.join(self.tmp, RG.GATE_LOG_DIR,
+                                           "MANIFEST.json"), encoding="utf-8").read())
+        self.assertEqual(man["gates"]["../../escape"]["artifact"],
+                         r["evidence"]["artifact"])
+
+    def test_the_pipeline_report_gains_no_new_field_from_this(self):
+        # The identity whitelist entry and the evidence field are deliberately
+        # NOT in the pipeline report: ci-pipeline's /3 contract binds every
+        # field it emits, so adding one needs a CI-ORCHESTRATION-CONTRACT 6.1
+        # entry. This control fails the moment someone adds it without that.
+        import importlib.util as _iu
+        spec = _iu.spec_from_file_location(
+            "cip", os.path.join(REPO_ROOT, "scripts", "ci_pipeline.py"))
+        cip = _iu.module_from_spec(spec)
+        spec.loader.exec_module(cip)
+        body = ("Ran 5 tests in 0.1s\n\n"
+                "FAILED (failures=1, errors=0, skipped=0)\n\n"
+                "FAIL: test_a (m.C)\n")
+        spec = {"gates": [self._runner_gate("unit", body, min_executed=1)]}
+        records = RG.run_all(spec, self.tmp, env={})
+        # build_report reads its rows from the gate report, not the gate spec.
+        report = cip.build_report(
+            spec, 2, {"status": "FAIL_REGRESSION", "gates": records},
+            [], "tail", None)
+        row = report["gates"][0]
+        self.assertNotIn("result_identities", row)
+        self.assertNotIn("evidence", row)
+        # And the gate record does carry them, which is where they are reachable.
+        self.assertIn("result_identities", records[0])
+        self.assertIn("evidence", records[0])
+
+
 if __name__ == "__main__":
     unittest.main()

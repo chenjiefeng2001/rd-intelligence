@@ -315,7 +315,11 @@ class TestLintIsFailClosedWhenItCannotRun(unittest.TestCase):
             "rg", os.path.join(REPO_ROOT, "scripts", "release_gate.py"))
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.run_gate(gate, REPO_ROOT, timeout=120)
+        # The verdict is decided against the real repo. The raw output it
+        # now keeps is not allowed to land inside it.
+        with tempfile.TemporaryDirectory() as evidence_dir:
+            return module.run_gate(gate, REPO_ROOT, timeout=120,
+                                   evidence_root=evidence_dir)
 
     def test_lint_that_cannot_run_stops_the_gate(self):
         with tempfile.TemporaryDirectory() as workdir:

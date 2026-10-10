@@ -51,6 +51,11 @@ jobs:
           path: |
             ci_pipeline_report.json
             gate_report.json
+            # Raw per-gate output. gate_report.json names the file for each
+            # gate under "evidence", and .gate-logs/MANIFEST.json indexes the
+            # same paths, so a reference in the report resolves to a real file
+            # in this artifact.
+            .gate-logs/
 
       - name: Release blocking is not enabled
         if: always()

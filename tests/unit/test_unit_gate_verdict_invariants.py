@@ -102,7 +102,10 @@ class TestUnitVerdictInvariants(unittest.TestCase):
             }
             if min_executed is not None:
                 gate["min_executed"] = min_executed
-            return self.rg.run_gate(gate, REPO_ROOT, env=dict(os.environ))
+            # The gate still decides against the real repo; only the
+            # evidence it leaves behind goes to the scratch dir.
+            return self.rg.run_gate(gate, REPO_ROOT, env=dict(os.environ),
+                                    evidence_root=tmp)
 
     def test_nothing_executed_can_never_be_a_pass(self):
         """FLOW: all tests skipped -> executed 0 -> INFRASTRUCTURE_FAILURE.

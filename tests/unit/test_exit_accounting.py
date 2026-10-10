@@ -100,13 +100,22 @@ class SyntheticRunner:
         return gate
 
     def run(self, **gate_extra):
-        return G.run_gate(self.gate(**gate_extra), REPO_ROOT, env={})
+        return G.run_gate(self.gate(**gate_extra), REPO_ROOT, env={},
+                         evidence_root=self.tmp)
 
     def cleanup(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
 class ExitAccountingBase(unittest.TestCase):
+
+    def setUp(self):
+        # These controls decide gates against the real repository, so the
+        # evidence the runner now keeps has to go somewhere that is not the
+        # repository. Nothing here may change the verdict; it moves only
+        # where the output is written.
+        self.ev = tempfile.mkdtemp(prefix="exitacct-evidence-")
+        self.addCleanup(shutil.rmtree, self.ev, ignore_errors=True)
     def runner(self, summary, exit_code):
         r = SyntheticRunner(summary, exit_code)
         self.addCleanup(r.cleanup)
@@ -205,7 +214,8 @@ class TestAgainstRealUnittestRuns(ExitAccountingBase):
         gate.update(gate_extra)
         # The real environment, not {}. An empty one breaks the child and turns
         # a content question into a discovery question.
-        return G.run_gate(gate, REPO_ROOT, env=dict(os.environ))
+        return G.run_gate(gate, REPO_ROOT, env=dict(os.environ),
+                         evidence_root=self.ev)
 
     FAILING = ("import unittest\n\n"
                "class T(unittest.TestCase):\n"
@@ -356,7 +366,7 @@ class TestUnchangedVerdicts(ExitAccountingBase):
         self.addCleanup(r.cleanup)
         gate = r.gate()
         gate["runner"] = "exit_code"
-        rec = G.run_gate(gate, REPO_ROOT, env={})
+        rec = G.run_gate(gate, REPO_ROOT, env={}, evidence_root=self.ev)
         self.assertEqual(rec["outcome"], G.REGRESSION)
 
     def test_every_unittest_row_carries_both_facts(self):

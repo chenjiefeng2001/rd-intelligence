@@ -60,6 +60,13 @@ ERRORS = re.compile(r"errors=(\d+)")
 # failure cannot be swallowed, and a traceback that merely mentions the loader
 # is not what is being matched.
 RESULT_HEADER = re.compile(r"^(ERROR|FAIL): (.+)$", re.M)
+# pytest's subtest plugin reports a failing subtest on its own line, with the
+# parameters in parentheses and the test id after them:
+#   SUBFAILED(chip='chip-status ok') tests/unit/test_x.py::Class::test_name
+# Before this, only the FAIL:/ERROR: forms above were read, so a suite whose
+# failures all arrive through subtests reported a count with no identity -- the
+# report could say "29 failures" and name none of them.
+SUBFAILED = re.compile(r"^SUBFAILED(?:\([^)]*\))?\s+(\S+)", re.M)
 DISCOVERY_MARKER = "unittest.loader._FailedTest"
 
 
@@ -68,8 +75,16 @@ class GateError(Exception):
 
 
 def _result_identities(stream):
-    """Test ids of every reported ERROR and FAIL, as unittest printed them."""
-    return [m.group(2).strip() for m in RESULT_HEADER.finditer(stream)]
+    """Test ids of every reported ERROR and FAIL, as unittest printed them.
+
+    Both header forms are read, and neither replaces the other. An unrecognised
+    format is simply not listed: the caller still has the counts from
+    _parse_unittest, and a name that was never printed must not be invented from
+    a count.
+    """
+    ids = [m.group(2).strip() for m in RESULT_HEADER.finditer(stream)]
+    ids += [m.group(1).strip() for m in SUBFAILED.finditer(stream)]
+    return ids
 
 
 def _discovery_anomalies(stream):
@@ -222,8 +237,118 @@ def _verdict_detail(verdict):
     return "{}: {}{}".format(outcome, ", ".join(bits), suffix)
 
 
+#: Where raw gate output is kept. Relative to the repo root, so the same
+#: relative path appears in the report, in MANIFEST.json and in the CI upload
+#: glob -- one string, three places, so it cannot resolve to a file that is not
+#: in the artifact.
+GATE_LOG_DIR = ".gate-logs"
+
+#: A gate id becomes a filename, so it is not trusted. Anything outside this set
+#: is replaced rather than sanitised into something that could still escape: a
+#: dot-segment or a separator must not be able to choose where the file lands.
+_SAFE_ID = re.compile(r"[^A-Za-z0-9._-]")
+
+#: Manifest schema for the evidence index. Separate from the report schema on
+#: purpose: this file is an index of artifacts, and it is not consumed as part
+#: of the gate report.
+EVIDENCE_MANIFEST = "rdebug-gate-evidence/1"
+
+
+def _safe_gate_name(gate_id):
+    """A filename-safe stem for a gate id, or None if it cannot be made safe."""
+    stem = _SAFE_ID.sub("_", str(gate_id or "")).strip("._-")
+    if not stem or stem in (".", ".."):
+        return None
+    return stem
+
+
+def _persist_evidence(gate_id, stream, repo_root):
+    """Write a gate's raw output and return the evidence block for its record.
+
+    Three properties this has to have, and the third was wrong in the first
+    version of this function:
+
+    *captured is only true when the bytes are on disk and the file is closed.*
+    A file that was created and then failed to be written is not evidence, and
+    claiming otherwise would make a partial traceback look like a whole one.
+
+    *captured and indexed are separate facts.* Writing the log and registering
+    it in MANIFEST.json are two operations, and they fail for different
+    reasons. Collapsing them meant that a manifest problem reported "no
+    evidence" when the traceback was sitting on disk -- a downstream reader
+    would conclude the output had never been captured. So captured speaks only
+    about the file, indexed only about the index, and error names which failed.
+
+    *A failure here changes nothing about the verdict.* The caller returns the
+    gate's own outcome, exit code and counts regardless of what this function
+    managed to write. Losing evidence is not a test failure and is not an
+    infrastructure fault; it is a hole in the record, and saying so is the whole
+    of the response.
+    """
+    name = _safe_gate_name(gate_id)
+    if name is None:
+        return {"captured": False, "indexed": False,
+                "error": "log_write_failed: gate id is not usable as a "
+                         f"filename: {gate_id!r}"}
+    directory = os.path.join(repo_root, GATE_LOG_DIR)
+    try:
+        os.makedirs(directory, exist_ok=True)
+        # Never overwrite. A rerun must not be able to silently destroy the
+        # evidence of an earlier attempt.
+        path = os.path.join(directory, name + ".log")
+        suffix = 0
+        while os.path.exists(path):
+            suffix += 1
+            path = os.path.join(directory, f"{name}.{suffix}.log")
+        data = (stream or "").encode("utf-8", "replace")
+        with open(path, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+    except Exception as exc:  # noqa: BLE001 - never replaces the gate's result
+        return {"captured": False, "indexed": False,
+                "error": f"log_write_failed: {type(exc).__name__}: {exc}"}
+    # The log is on disk and closed from here on. Whatever happens next, the
+    # captured fact is settled and must not be withdrawn.
+    relative = f"{GATE_LOG_DIR}/{os.path.basename(path)}"
+    captured = {"captured": True, "artifact": relative, "bytes": len(data)}
+    try:
+        _write_manifest(directory, gate_id, relative, len(data))
+    except Exception as exc:  # noqa: BLE001 - the log survives an index failure
+        return dict(captured, indexed=False,
+                    error=f"manifest_write_failed: {type(exc).__name__}: {exc}")
+    return dict(captured, indexed=True)
+
+
+def _write_manifest(directory, gate_id, relative, size):
+    """Index the artifact so the report's reference resolves after download.
+
+    CONCURRENCY, as a stated limit rather than an assumed safety: updates are
+    read-modify-write and are only safe because gates run sequentially in one
+    process today. If they are ever run in parallel this must be reworked --
+    with a temp file and an atomic rename, and with the lost-update window
+    between read and write still addressed. An atomic rename alone would not
+    make it safe, and neither this comment nor a passing test claims it is.
+    """
+    path = os.path.join(directory, "MANIFEST.json")
+    existing = {}
+    try:
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                existing = json.load(fh).get("gates") or {}
+    except Exception:  # noqa: BLE001 - a damaged index is rebuilt, not trusted
+        existing = {}
+    existing[str(gate_id)] = {"artifact": relative, "bytes": size}
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"schema": EVIDENCE_MANIFEST, "gates": existing}, fh, indent=1)
+
+
+def _no_evidence(reason):
+    return {"captured": False, "indexed": False, "reason": reason}
+
+
 def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
-             spec_captures=None):
+             spec_captures=None, evidence_root=None):
     """Run one gate and classify it. Never raises for a gate-level failure."""
     env = dict(os.environ if env is None else env)
     kind = runner or gate.get("runner") or "exit_code"
@@ -233,6 +358,11 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
                                        gate["id"])
         if resolved:
             gate["command"] = resolved
+
+    # Every row states its evidence position explicitly. A gate that never ran
+    # says so rather than carrying no field, so "there is no log" cannot be
+    # confused with "the log was not looked for".
+    evidence = _no_evidence("gate command did not execute")
 
     def record(outcome, detail, executed=None, exit_code=None, **extra):
         """Every gate record carries the same accounting fields.
@@ -270,6 +400,7 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
             "process_exit_code": exit_code,
             "execution_clean": exit_code == 0,
             "detail": detail,
+            "evidence": evidence,
         }
         if "failures" in extra or "errors" in extra:
             out.update({
@@ -322,6 +453,19 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
         timeout=timeout,
     )
     stream = (proc.stdout or "") + (proc.stderr or "")
+
+    # Written before any classification branch, so every outcome below -- pass,
+    # regression, the I1 floors, G2 discovery, the verdict_json reader and the
+    # bare exit-code path -- retains the output it was decided from. This is the
+    # capture point that previously threw the stream away: the report could say
+    # "29 failures" and nothing could say which tests.
+    # Where the raw output is written. Defaults beside the repo it describes,
+    # and is redirectable only so that a caller exercising the real repository
+    # does not leave its evidence inside it -- the gate still decides against
+    # repo_root, so this moves where the record lands and nothing about the
+    # verdict.
+    evidence = _persist_evidence(gate["id"], stream,
+                                 evidence_root or repo_root)
 
     if kind == "verdict_json":
         # A gate that produces its own four-state verdict. exit_code would
