@@ -234,6 +234,83 @@ class TestBlockingSemantics(unittest.TestCase):
         self.assertEqual(outcomes["bad"], RG.INFRA)
 
 
+class TestTwoGatesFailForDifferentReasons(unittest.TestCase):
+    """One report, two INFRASTRUCTURE_FAILURE rows, and why that is ambiguous.
+
+    Run 37914566151 produced exactly this shape. `unit` executed no test at all
+    because its lint precondition could not run, so it carries a lint
+    sub-record, executed=0, and no process exit code -- the gate's process
+    genuinely never started. `transport` did execute, ran 19 tests, and tripped
+    its declared floor of 40, so it carries a real exit code and an error count.
+
+    Both rows read INFRASTRUCTURE_FAILURE. Nothing in the outcome column tells
+    them apart, so the entire diagnosis rests on per-gate state surviving
+    unmixed. If a future build_report change merged the rows, dropped the lint
+    sub-record, or copied an error count onto a gate whose suite never ran, the
+    report would attribute a lint failure to a suite that executed -- a claim
+    about the code manufactured by a reporting change, which is the class of
+    defect these controls exist to catch.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="gate_")
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _rows(self):
+        # unit: the probe fails, so run_lint returns before the gate command is
+        # ever spawned. probe_command has to differ from command, or
+        # release_gate skips the probe and the lint would actually run.
+        unit = _gate(self.tmp, "unit", UNITTEST_OK, min_executed=1)
+        unit["lint"] = {
+            "command": ["python", "-c", "print('lint ran')"],
+            "probe_command": ["python", "-c", "raise SystemExit(3)"],
+        }
+        # transport: the suite genuinely runs and comes up short of its floor.
+        transport = _gate(
+            self.tmp, "transport",
+            "Ran 19 tests in 3.0s\n\nFAILED (failures=0, errors=15, skipped=0)\n",
+            min_executed=40)
+        results = RG.run_all({"gates": [unit, transport]}, self.tmp, env={})
+        return {r["gate"]: r for r in results}
+
+    def test_both_are_infrastructure_and_that_is_all_they_share(self):
+        rows = self._rows()
+        self.assertEqual(rows["unit"]["outcome"], RG.INFRA)
+        self.assertEqual(rows["transport"]["outcome"], RG.INFRA)
+
+    def test_the_gate_that_never_ran_keeps_the_lint_diagnosis(self):
+        unit = self._rows()["unit"]
+        self.assertEqual(unit["executed"], 0)
+        # No exit code is invented for a process that was never started.
+        self.assertIsNone(unit["process_exit_code"])
+        self.assertIsNotNone(unit["lint"])
+        self.assertIn("could not run", unit["lint"]["detail"])
+        # The suite never ran, so it has no result to report. A count on this
+        # row would be fabricated evidence about tests that did not execute.
+        self.assertNotIn("tests_errors", unit)
+        self.assertNotIn("tests_failed", unit)
+
+    def test_the_gate_that_ran_keeps_its_own_failure_evidence(self):
+        transport = self._rows()["transport"]
+        self.assertEqual(transport["executed"], 19)
+        self.assertIn("I1", transport["detail"])
+        self.assertIsInstance(transport["process_exit_code"], int)
+        self.assertEqual(transport["tests_errors"], 15)
+        # No lint was a precondition of this gate, so it must not carry one.
+        self.assertNotIn("lint", transport)
+
+    def test_neither_row_can_be_read_as_the_other(self):
+        rows = self._rows()
+        unit, transport = rows["unit"], rows["transport"]
+        self.assertNotEqual(unit["executed"], transport["executed"])
+        self.assertNotEqual(unit["detail"], transport["detail"])
+        self.assertNotEqual(unit["process_exit_code"],
+                            transport["process_exit_code"])
+        # The lint diagnosis belongs to exactly one row, not to the report.
+        self.assertIn("lint", unit)
+        self.assertNotIn("lint", transport)
+
+
 class TestG2DiscoveryAnomaly(unittest.TestCase):
     """G2: a module that cannot be imported is not a content regression."""
 
