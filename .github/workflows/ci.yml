@@ -31,8 +31,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install the package so rdebug is importable
-        run: python -m pip install -e .
+      # ruff is installed here rather than left to chance. The unit gate probes
+      # `ruff --version` as a precondition and classify_lint maps an unrunnable
+      # lint to INFRASTRUCTURE_FAILURE, so without this extra the gate reports
+      # executed=0 and never reaches a test. Installing it fixes that
+      # precondition only -- it does not make lint or unit pass.
+      - name: Install the package and its lint dependencies
+        run: python -m pip install -e ".[lint]"
 
       - name: Run the section 4 gates
         id: gates

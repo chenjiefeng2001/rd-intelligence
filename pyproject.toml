@@ -42,6 +42,14 @@ rdebug-ide = "rdebug_ide.app:main"
 # on first launch, which is exactly the failure the extra exists to prevent.
 # Verified against mcp 2.3.0: `No module named 'mcp.server.fastmcp'`.
 mcp = ["mcp>=1.0,<2"]
+# ruff is a hard precondition of the `unit` gate, not a convenience. The gate
+# probes `ruff --version` first and release_gate.classify_lint maps an
+# unrunnable lint to INFRASTRUCTURE_FAILURE, so a runner without ruff reports
+# the gate as executed=0 without running a single test. Declaring it here is
+# what stops the configured-but-never-installed tool from being invisible.
+# Left unpinned: nothing in the project establishes a floor its [tool.ruff]
+# config needs, and a pin without a reason is a guess that ages badly.
+lint = ["ruff"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
