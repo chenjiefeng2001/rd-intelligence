@@ -56,6 +56,14 @@ jobs:
             # same paths, so a reference in the report resolves to a real file
             # in this artifact.
             .gate-logs/
+          # Without this the artifact is built without .gate-logs: the action
+          # excludes dotfiles by default, and a directory named with a leading
+          # dot is exactly what it excludes. Run 38081667018 captured and
+          # indexed every gate log and shipped none of them, so captured:true
+          # pointed at a path no download contained. The path list above names
+          # two plain files and one explicit directory, so widening this cannot
+          # reach .git, .github or any other hidden path in the checkout.
+          include-hidden-files: true
 
       - name: Release blocking is not enabled
         if: always()
