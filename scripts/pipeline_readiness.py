@@ -182,11 +182,24 @@ def _probe_runtime(repo_root, env):
         except Exception:  # noqa: BLE001 - capability detection is the question -- 'can this import' is answered by any failure, not by one exception type
             dependencies_ok = False
             missing.append(mod)
+    # The MCP SDK is an optional extra, so its absence does not make the base
+    # dependencies unsatisfied and is reported on its own fact. The import
+    # checked is the one rdebug_mcp/server.py performs rather than `import mcp`:
+    # mcp 2.x moved FastMCP, so a bare `import mcp` succeeds on a runner whose
+    # transport suite cannot load. 4.2.1 puts dependencies under runtime, so the
+    # fact lands there rather than becoming a fifth capability class.
+    try:
+        __import__("mcp.server.fastmcp")
+    except Exception:  # noqa: BLE001 - a probe that raises cannot answer, and 'cannot answer' must never read as satisfied
+        mcp_sdk_importable = False
+    else:
+        mcp_sdk_importable = True
     version = sys.version_info[:3]
     return {"python_version": f"{version[0]}.{version[1]}.{version[2]}",
             "python_ok": bool(python_ok),
             "dependencies_ok": bool(dependencies_ok),
-            "missing_dependencies": missing}
+            "missing_dependencies": missing,
+            "mcp_sdk_importable": bool(mcp_sdk_importable)}
 
 
 def probe_environment(repo_root, env=None):

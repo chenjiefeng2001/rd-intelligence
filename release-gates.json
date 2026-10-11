@@ -73,7 +73,9 @@
       "runner": "unittest",
       "min_executed": 40,
       "requires": {
-        "capabilities": []
+        "capabilities": [
+          "runtime.mcp_sdk_importable"
+        ]
       },
       "rationale": "Transport purity. Floor only."
     },

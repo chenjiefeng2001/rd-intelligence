@@ -15,12 +15,14 @@ reader whether the checks ran on a capable machine, and a report whose exit
 code disagrees with its own state cannot be trusted at all.
 """
 
+import builtins
 import importlib
 import importlib.util
 import json
 import os
 import sys
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -138,6 +140,100 @@ class TestCapabilityDeclaration(unittest.TestCase):
                       encoding="utf-8").read()
         self.assertNotIn('"captures_present": False', source)
         self.assertNotIn('"present": False', source)
+
+
+class TestTheMcpSdkFact(unittest.TestCase):
+    """A1a: the optional MCP SDK is an observed fact, not an assumption.
+
+    The transport suite imports the SDK, so a runner without it cannot answer
+    the question that gate exists to answer. Whether it is there is a fact about
+    the machine, reported beside the other dependency facts, and it is decided by
+    running the import rather than by assuming either answer.
+    """
+
+    SDK = "mcp.server.fastmcp"
+
+    def _runtime_with_sdk(self, outcome):
+        """Probe runtime with this import resolving to `outcome`.
+
+        The import is patched rather than faked in sys.modules, because the real
+        parent packages execute on the way down and would import the very thing
+        the test is pretending about. An exception stands for 'cannot import';
+        anything else stands for 'imports cleanly'.
+        """
+        real = builtins.__import__
+
+        def fake(name, *args, **kwargs):
+            if name == self.SDK:
+                if isinstance(outcome, BaseException):
+                    raise outcome
+                return outcome
+            return real(name, *args, **kwargs)
+
+        with mock.patch.object(builtins, "__import__", fake):
+            return R.probe_environment(REPO_ROOT, {})["runtime"]
+
+    def _capability_gate(self):
+        return {"requires": {"capabilities": ["runtime.mcp_sdk_importable"]}}
+
+    def test_the_fact_is_reported_and_is_a_bool(self):
+        runtime = R.probe_environment(REPO_ROOT, {})["runtime"]
+        self.assertIsInstance(runtime["mcp_sdk_importable"], bool)
+
+    def test_a_present_sdk_is_observed_as_present(self):
+        self.assertIs(self._runtime_with_sdk(object())["mcp_sdk_importable"],
+                      True)
+
+    def test_an_absent_sdk_is_observed_as_absent(self):
+        absent = self._runtime_with_sdk(
+            ImportError("No module named 'mcp.server.fastmcp'"))
+        self.assertIs(absent["mcp_sdk_importable"], False)
+
+    def test_an_sdk_that_raises_on_import_is_not_read_as_present(self):
+        """An SDK that is installed but explodes on import is not a working SDK.
+
+        Reading this as satisfied would repeat the bug the extra's upper bound
+        exists to prevent: mcp 2.x installs cleanly, then cannot import the
+        FastMCP the server needs.
+        """
+        broken = self._runtime_with_sdk(RuntimeError("FastMCP is not here"))
+        self.assertIs(broken["mcp_sdk_importable"], False)
+
+    def test_the_probe_asks_for_the_import_the_server_actually_performs(self):
+        """`import mcp` would be the wrong question on mcp 2.x."""
+        source = open(os.path.join(REPO_ROOT, "scripts",
+                                   "pipeline_readiness.py"),
+                      encoding="utf-8").read()
+        self.assertIn('__import__("mcp.server.fastmcp")', source)
+        server = open(os.path.join(REPO_ROOT, "src", "rdebug_mcp",
+                                   "server.py"),
+                      encoding="utf-8").read()
+        self.assertIn("from mcp.server.fastmcp import FastMCP", server)
+
+    def test_an_absent_sdk_does_not_make_the_base_dependencies_unsatisfied(self):
+        """It is an optional extra, so its absence is not a broken install."""
+        absent = self._runtime_with_sdk(ImportError("No module named 'mcp'"))
+        for name in absent["missing_dependencies"]:
+            self.assertFalse(name.startswith("mcp"), name)
+
+    def test_the_fact_resolves_as_a_capability(self):
+        present = self._runtime_with_sdk(object())
+        env = dict(R.probe_environment(REPO_ROOT, {}))
+        env["runtime"] = present
+        self.assertEqual(R.missing_requirements(self._capability_gate(), env), [])
+
+    def test_an_absent_sdk_leaves_the_capability_unsatisfied(self):
+        env = dict(R.probe_environment(REPO_ROOT, {}))
+        env["runtime"] = self._runtime_with_sdk(ImportError("absent"))
+        self.assertEqual(R.missing_requirements(self._capability_gate(), env),
+                         ["runtime.mcp_sdk_importable"])
+
+    def test_an_unknown_capability_is_still_refused(self):
+        """Adding one known fact must not weaken the rule for every other."""
+        env = R.probe_environment(REPO_ROOT, {})
+        gate = {"requires": {"capabilities": ["runtime.no_such_fact"]}}
+        self.assertEqual(R.missing_requirements(gate, env),
+                         ["runtime.no_such_fact"])
 
 
 class TestFourStateClassification(unittest.TestCase):

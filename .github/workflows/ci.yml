@@ -36,8 +36,8 @@ jobs:
       # lint to INFRASTRUCTURE_FAILURE, so without this extra the gate reports
       # executed=0 and never reaches a test. Installing it fixes that
       # precondition only -- it does not make lint or unit pass.
-      - name: Install the package and its lint dependencies
-        run: python -m pip install -e ".[lint]"
+      - name: Install the package, its lint dependencies, and the optional MCP SDK
+        run: python -m pip install -e ".[lint,mcp]"
 
       - name: Run the section 4 gates
         id: gates
