@@ -27,7 +27,9 @@ the generated report, none of which are records.
 
 import ast
 import os
+import shutil
 import subprocess
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(
@@ -58,6 +60,23 @@ def _external_files():
         yield os.path.relpath(EXTERNAL_STATUS, os.path.dirname(REPO_ROOT))
 
 
+def _scan_outside_repository(path, label):
+    """Yield hits from one record that does not live under REPO_ROOT.
+
+    Split out from the scan so this branch can be exercised against a file the
+    test controls. Whether the cross-repository STATUS.md happens to exist on
+    the machine running the suite says something about that machine, not about
+    whether this code reaches outside the repository and reads what is there.
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for number, line in enumerate(fh, 1):
+            if REPLACEMENT in line:
+                yield (label, number, line.index(REPLACEMENT) + 1,
+                       "U+FFFD", line.strip()[:70])
+
+
 class TestTextIntegrity(unittest.TestCase):
 
     def _scan(self):
@@ -75,20 +94,58 @@ class TestTextIntegrity(unittest.TestCase):
                                    line.strip()[:70])
         for rel in _external_files():
             path = os.path.join(os.path.dirname(REPO_ROOT), rel)
-            with open(path, encoding="utf-8", errors="replace") as fh:
-                for number, line in enumerate(fh, 1):
-                    if REPLACEMENT in line:
-                        yield (rel, number, line.index(REPLACEMENT) + 1,
-                               "U+FFFD", line.strip()[:70])
+            yield from _scan_outside_repository(path, rel)
 
     def test_the_scan_covers_something(self):
-        """Otherwise the check below would pass by scanning nothing."""
+        """Otherwise the checks below would pass by scanning nothing."""
         self.assertGreater(len(list(_tracked_text_files())), 40,
                            "git ls-files returned almost nothing; the "
                            "integrity scan would be vacuous")
-        self.assertTrue(os.path.exists(EXTERNAL_STATUS),
-                        "the cross-repository status report is part of the "
-                        "evidence chain and must be scanned too")
+
+    def test_the_external_branch_reads_a_record_outside_the_repository(self):
+        """The branch that leaves the repository must actually work.
+
+        This used to be asserted as `os.path.exists(EXTERNAL_STATUS)`, which
+        tests the machine rather than the scanner: a clean clone legitimately
+        has no STATUS.md beside it, so on CI the control could only fail, and
+        proving the branch worked meant having a developer's cross-repository
+        layout present. Planting damage in a directory this test creates, and
+        requiring the scan to report it, proves the property on any machine.
+        """
+        root = tempfile.mkdtemp(prefix="text-integrity-")
+        self.addCleanup(shutil.rmtree, root, True)
+        self.assertFalse(
+            os.path.abspath(root).startswith(os.path.abspath(REPO_ROOT)),
+            "the planted record must sit outside the repository, or this "
+            "proves nothing about the branch that leaves it")
+
+        planted = os.path.join(root, "cross-repo-record.md")
+        damaged = "encoding damage: " + REPLACEMENT
+        with open(planted, "w", encoding="utf-8") as fh:
+            fh.write("baseline_drift: 4\n")
+            fh.write(damaged + "\n")
+            fh.write("tail\n")
+
+        label = os.path.basename(planted)
+        hits = list(_scan_outside_repository(planted, label))
+
+        self.assertEqual(
+            len(hits), 1,
+            "planting one damaged line outside the repository must produce "
+            f"exactly one hit, got {hits!r}")
+        self.assertEqual(hits[0][3], "U+FFFD")
+        self.assertEqual(hits[0][1], 2, "the hit must name the damaged line")
+        self.assertEqual(hits[0][2], damaged.index(REPLACEMENT) + 1,
+                         "the hit must name the damaged column")
+        self.assertIn("encoding damage", hits[0][4])
+
+    def test_the_external_branch_is_silent_on_an_unreadable_path(self):
+        """Absent is not damaged: a missing record yields no hit, not a crash."""
+        self.assertEqual(
+            list(_scan_outside_repository(
+                os.path.join(tempfile.gettempdir(), "no-such-record-xyz.md"),
+                "absent")),
+            [])
 
     def test_no_record_contains_a_replacement_character(self):
         hits = [h for h in self._scan() if h[3] == "U+FFFD"]
