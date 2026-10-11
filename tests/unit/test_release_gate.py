@@ -41,6 +41,21 @@ def _load():
 RG = _load()
 
 
+def _corpus_captures_present():
+    """Whether this machine has the external corpus, as the gate sees it.
+
+    Read from the readiness probe rather than from os.path.exists, because the
+    gate's own answer to "can this runner be asked the question" is the probe's,
+    and a control that used a different rule could disagree with it.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "pipeline_readiness",
+        os.path.join(REPO_ROOT, "scripts", "pipeline_readiness.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.probe_environment(REPO_ROOT, {})["corpus"]["captures_present"]
+
+
 def _fake_gate(tmp, name, body):
     """A gate whose command is a python -c that prints body and exits 0."""
     path = os.path.join(tmp, f"{name}.py")
@@ -562,14 +577,48 @@ class TestG1FourStateAggregate(unittest.TestCase):
 
     def test_gate_three_capture_is_keyed_by_gate_id(self):
         """The capture table must use the gate id, or substitution silently
-        leaves the placeholder in the command and the gate cannot open it."""
+        leaves the placeholder in the command and the gate cannot open it.
+
+        This half is about configuration and is checked everywhere: the entry is
+        keyed by the gate's own id, and it names a path rather than an empty
+        value. Whether that path exists on this machine is a separate question,
+        answered by the control below -- the corpus lives outside the repository
+        by design (.gitignore:20), so asserting it is present would fail a clean
+        checkout for a reason that has nothing to do with the gate spec.
+        """
         with open(GATE_SPEC, encoding="utf-8") as fh:
             spec = json.load(fh)
         caps = spec.get("captures") or {}
         self.assertIn("cold_warm_equivalence", caps)
-        self.assertTrue(os.path.isfile(
-            os.path.join(REPO_ROOT, caps["cold_warm_equivalence"])
-        ))
+        declared = caps["cold_warm_equivalence"]
+        self.assertTrue(declared.strip(),
+                        "the capture entry must name a path, not an empty "
+                        "value")
+        self.assertEqual(spec["gates"][
+            [g["id"] for g in spec["gates"]].index("cold_warm_equivalence")
+        ]["id"], "cold_warm_equivalence",
+            "the capture must be keyed by the id of the gate that consumes it")
+
+    @unittest.skipUnless(
+        _corpus_captures_present(),
+        "the external corpus is not on this machine; the corpus contract "
+        "makes the captures an outside input, and their absence is reported "
+        "by the gate as INFRASTRUCTURE_FAILURE rather than as a pass")
+    def test_the_declared_capture_is_present_when_the_corpus_is(self):
+        """Conditional, but not a blanket skip.
+
+        When the readiness probe says the corpus is here, the specific capture
+        this gate names must actually be on disk. A present corpus with a
+        missing capture is a real failure and is reported as one; only an absent
+        corpus excuses this check.
+        """
+        with open(GATE_SPEC, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        declared = (spec.get("captures") or {})["cold_warm_equivalence"]
+        self.assertTrue(
+            os.path.isfile(os.path.join(REPO_ROOT, declared)),
+            f"the corpus is present, so the capture this gate names -- "
+            f"{declared} -- must be too")
 
     def test_every_exit_code_is_distinct(self):
         with open(GATE_SPEC, encoding="utf-8") as fh:
