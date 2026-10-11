@@ -3,10 +3,10 @@ import os
 import unittest
 
 try:  # unittest discover puts tests_transport/ on sys.path; pytest does not
-    from test_transport import FakeSession
+    from fake_session import FakeSession
     from worker_stub import RecordingWorkers
 except ImportError:  # pragma: no cover - runner-dependent
-    from tests_transport.test_transport import FakeSession
+    from tests_transport.fake_session import FakeSession
     from tests_transport.worker_stub import RecordingWorkers
 
 import capture_support

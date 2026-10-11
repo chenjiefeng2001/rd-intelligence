@@ -5,7 +5,7 @@ import unittest
 
 import capture_support
 from capture_support import CAPTURE
-from test_transport import FakeSession
+from fake_session import FakeSession
 
 from rdebug import errors, observability
 from rdebug.session_cache import SessionManager
@@ -156,7 +156,7 @@ class TestResultShape(unittest.TestCase):
                 from worker_stub import RecordingWorkers
             except ImportError:  # pragma: no cover - runner-dependent
                 from tests_transport.worker_stub import RecordingWorkers
-            from test_transport import FakeSession
+            from fake_session import FakeSession
 
             prev_workers = server._WORKERS
             server._WORKERS = RecordingWorkers(FakeSession())

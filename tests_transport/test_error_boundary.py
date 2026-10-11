@@ -144,10 +144,10 @@ def _configure_ide(app):
     # configure() takes a worker registry (M1.4). Built on the real dispatch
     # so the session is a real analysis input, not None.
     try:
-        from test_transport import FakeSession
+        from fake_session import FakeSession
         from worker_stub import RecordingWorkers
     except ImportError:  # pragma: no cover - runner-dependent
-        from tests_transport.test_transport import FakeSession
+        from tests_transport.fake_session import FakeSession
         from tests_transport.worker_stub import RecordingWorkers
     app.configure(os.path.join(tempfile.gettempdir(), "nonexistent.rdc"),
                   workers=RecordingWorkers(FakeSession()))

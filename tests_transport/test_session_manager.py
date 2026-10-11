@@ -3,7 +3,7 @@ import unittest
 
 import capture_support
 from capture_support import CAPTURE
-from test_transport import FakeSession
+from fake_session import FakeSession
 
 from rdebug import errors
 
