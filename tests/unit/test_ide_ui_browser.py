@@ -1215,6 +1215,8 @@ class TestTheHistoryPanelWithAStore(unittest.TestCase):
         self.assertGreater(width, column)
 
 
+@needs_browser
+@needs_bundle
 class TestTheEvidenceChainAndServerLog(unittest.TestCase):
     """The two observing panels, on a server with no capture configured.
 
