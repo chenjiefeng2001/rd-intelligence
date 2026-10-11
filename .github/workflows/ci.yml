@@ -25,7 +25,18 @@ jobs:
   section4-gates:
     runs-on: ubuntu-latest
     steps:
+      # Full history, not the default single commit. The unit gate's drift
+      # controls resolve the commit CURRENT-EVIDENCE-FREEZE.md declares and run
+      # `git rev-list --count` against it. On a shallow clone that commit is
+      # simply absent, rev-list prints nothing, and the test raises ValueError
+      # instead of reporting a number -- the gate then cannot tell "within
+      # bound" from "cannot compute", and reports the latter as a failure.
+      # Run 38153215147 recorded three failures that were this and nothing else.
+      # This restores the ability to compute the drift. It does not decide
+      # whether the answer turns out to be in bounds.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -79,7 +90,13 @@ jobs:
   package-build:
     runs-on: ubuntu-latest
     steps:
+      # Same reason as the gates job: anything here that resolves a declared
+      # baseline needs the history, and a shallow clone reports "unknown" for a
+      # commit that exists. Kept in step with that job so the two do not drift
+      # apart on the same setting.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
