@@ -1,0 +1,16 @@
+# The build-probe artifacts are evidence, and their bytes are the claim.
+#
+# MANIFEST.sha256 records a SHA-256 per file, and the control that checks it
+# compares those digests against the bytes a checkout actually produced. That
+# only means anything if the bytes are the same everywhere. With no rule here,
+# core.autocrlf decides per file whether it is text: the .out, .props and .xml
+# files were normalised to LF on commit while the recorded digests were taken
+# over their CRLF working-tree form, so six of the fifteen failed their digest
+# on every non-Windows checkout -- run 38180531789 reported G1.out.txt and
+# stopped there, because the control fails on the first mismatch.
+#
+# -text stops git from translating line endings under this directory at all.
+# The manifest keeps the digests it already has, and a checkout on any platform
+# now produces exactly the bytes they were taken from. This preserves the
+# recorded evidence; it does not redefine what the evidence is.
+build-probe/** -text
