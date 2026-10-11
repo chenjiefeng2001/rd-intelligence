@@ -75,6 +75,23 @@ SKIPPED_SUMMARY = (
 
 NO_SUMMARY = "the runner printed nothing a parser could read\n"
 
+#: A Windows access violation, as a process exit status.
+NTSTATUS_ACCESS_VIOLATION = 3221225477
+
+#: An exit that means "the process did not end cleanly" identically everywhere.
+#:
+#: The controls below push an exit code through a real child process, because
+#: what they check is the recorded code. They originally used 3221225477, which
+#: is only a real exit status where the process-exit API carries 32 bits: POSIX
+#: hands back a wait status whose meaningful part is the low 8 bits, so
+#: sys.exit(3221225477) is observed as 3221225477 & 0xFF == 5. Any control that
+#: compares the recorded code to the number it asked for therefore passed on
+#: Windows and failed on Linux -- a difference in the platform's exit
+#: convention, not in the accounting being tested. These rows are about exit
+#: accounting; TestTheExitStatusWidthIsPlatformSpecific keeps the original
+#: subject, where it is actually true.
+UNCLEAN_EXIT = 3
+
 
 class SyntheticRunner:
     """A gate command with a scripted result text and a scripted exit code."""
@@ -128,7 +145,7 @@ class TestTheDefectItself(ExitAccountingBase):
     def test_clean_results_with_nonzero_exit_is_not_a_pass(self):
         # The observed integration gate: every test passed, and the interpreter
         # died on the way out. It is recorded as PASS today.
-        rec = self.runner(OK_SUMMARY, 3221225477).run()
+        rec = self.runner(OK_SUMMARY, UNCLEAN_EXIT).run()
         self.assertNotEqual(
             rec["outcome"], G.PASS,
             "a run that did not exit cleanly cannot be a pass; the process "
@@ -137,28 +154,64 @@ class TestTheDefectItself(ExitAccountingBase):
 
     def test_the_two_facts_are_both_retained(self):
         # INFRASTRUCTURE_FAILURE must not be readable as "the tests failed".
-        rec = self.runner(OK_SUMMARY, 3221225477).run()
+        rec = self.runner(OK_SUMMARY, UNCLEAN_EXIT).run()
         self.assertEqual(rec["outcome"], G.INFRA)
         self.assertEqual(rec.get("tests_executed"), 3)
         self.assertEqual(rec.get("tests_failed"), 0)
         self.assertEqual(rec.get("tests_errors"), 0)
         self.assertEqual(rec.get("test_result"), "OK")
-        self.assertEqual(rec.get("process_exit_code"), 3221225477)
+        self.assertEqual(rec.get("process_exit_code"), UNCLEAN_EXIT)
         self.assertIs(rec.get("execution_clean"), False)
 
     def test_the_reason_names_both_facts(self):
-        rec = self.runner(OK_SUMMARY, 3221225477).run()
+        rec = self.runner(OK_SUMMARY, UNCLEAN_EXIT).run()
         reason = rec["detail"].lower()
         self.assertIn("test", reason, "the reason must report the test result")
         self.assertIn("exit", reason, "the reason must report the process exit")
 
     def test_execution_clean_is_derived_from_the_exit_code(self):
         # Two names for one number drift unless one is derived from the other.
-        for code, expected in ((0, True), (1, False), (3221225477, False)):
+        for code, expected in ((0, True), (1, False), (UNCLEAN_EXIT, False)):
             rec = self.runner(OK_SUMMARY, code).run()
             self.assertEqual(rec["execution_clean"], expected,
                              f"exit {code} must derive execution_clean")
             self.assertEqual(rec["process_exit_code"], code)
+
+
+class TestTheExitStatusWidthIsPlatformSpecific(ExitAccountingBase):
+    """Where the original NTSTATUS subject belongs: one platform at a time.
+
+    3221225477 is a real exit status only where the process-exit API carries 32
+    bits. Windows does, so a child that calls sys.exit with it comes back
+    saying exactly that. POSIX reports a wait status whose meaningful part is
+    the low 8 bits, so the same child is observed as 5.
+
+    Both halves are asserted, on the platform that has them, rather than left
+    implicit in whichever machine happened to run the suite.
+    """
+
+    def test_the_ntstatus_survives_a_real_process_on_windows(self):
+        if sys.platform != "win32":
+            self.skipTest("a 32-bit exit status is not expressible here")
+        rec = self.runner(OK_SUMMARY, NTSTATUS_ACCESS_VIOLATION).run()
+        self.assertEqual(rec["process_exit_code"], NTSTATUS_ACCESS_VIOLATION)
+        self.assertIs(rec["execution_clean"], False)
+        self.assertEqual(rec["outcome"], G.INFRA)
+
+    def test_posix_reports_the_low_byte_of_the_same_status(self):
+        if sys.platform == "win32":
+            self.skipTest("this is the POSIX half; Windows keeps all 32 bits")
+        rec = self.runner(OK_SUMMARY, NTSTATUS_ACCESS_VIOLATION).run()
+        self.assertEqual(rec["process_exit_code"],
+                         NTSTATUS_ACCESS_VIOLATION & 0xFF)
+        self.assertIs(rec["execution_clean"], False)
+        self.assertEqual(rec["outcome"], G.INFRA,
+                         "a truncated status is still not a clean exit, and "
+                         "must not be read as a pass")
+
+    def test_the_portable_code_round_trips_on_either_platform(self):
+        rec = self.runner(OK_SUMMARY, UNCLEAN_EXIT).run()
+        self.assertEqual(rec["process_exit_code"], UNCLEAN_EXIT)
 
 
 class TestTestResultIsNotTranslated(ExitAccountingBase):
@@ -281,11 +334,11 @@ class TestContentOutranksProcessExit(ExitAccountingBase):
         self.assertNotEqual(rec["outcome"], G.PASS)
 
     def test_the_unclean_exit_is_recorded_next_to_a_regression(self):
-        rec = self.runner(FAILED_SUMMARY, 3221225477).run()
+        rec = self.runner(FAILED_SUMMARY, UNCLEAN_EXIT).run()
         self.assertEqual(rec["outcome"], G.REGRESSION,
                          "content conclusion stands; the crash does not "
                          "outrank a real failure")
-        self.assertEqual(rec["process_exit_code"], 3221225477)
+        self.assertEqual(rec["process_exit_code"], UNCLEAN_EXIT)
         self.assertIs(rec["execution_clean"], False)
 
     def test_an_error_with_nonzero_exit_is_a_regression(self):
@@ -295,7 +348,7 @@ class TestContentOutranksProcessExit(ExitAccountingBase):
 
     def test_no_nonzero_exit_can_ever_be_a_pass(self):
         for summary in (OK_SUMMARY, SKIPPED_SUMMARY):
-            for code in (1, 2, 3, 4, 3221225477, 255):
+            for code in (1, 2, 3, 4, 42, 255):
                 rec = self.runner(summary, code).run()
                 self.assertNotEqual(
                     rec["outcome"], G.PASS,
@@ -315,7 +368,7 @@ class TestUnchangedVerdicts(ExitAccountingBase):
         self.assertEqual(rec["outcome"], G.INFRA)
 
     def test_unparseable_output_with_nonzero_exit_is_still_infrastructure(self):
-        rec = self.runner(NO_SUMMARY, 3221225477).run()
+        rec = self.runner(NO_SUMMARY, UNCLEAN_EXIT).run()
         self.assertEqual(rec["outcome"], G.INFRA)
         self.assertIs(rec["execution_clean"], False)
 
@@ -370,7 +423,7 @@ class TestUnchangedVerdicts(ExitAccountingBase):
         self.assertEqual(rec["outcome"], G.REGRESSION)
 
     def test_every_unittest_row_carries_both_facts(self):
-        for summary, code in ((OK_SUMMARY, 0), (OK_SUMMARY, 3221225477),
+        for summary, code in ((OK_SUMMARY, 0), (OK_SUMMARY, UNCLEAN_EXIT),
                               (FAILED_SUMMARY, 1), (SKIPPED_SUMMARY, 0),
                               (NO_SUMMARY, 0)):
             rec = self.runner(summary, code).run()
