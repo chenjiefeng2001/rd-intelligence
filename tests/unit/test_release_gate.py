@@ -17,6 +17,7 @@ control asserts anything about a pipeline, because wiring is not authorised.
 """
 
 import importlib.util
+import itertools
 import json
 import os
 import shutil
@@ -56,9 +57,25 @@ def _corpus_captures_present():
     return mod.probe_environment(REPO_ROOT, {})["corpus"]["captures_present"]
 
 
+_GATE_SCRIPTS = itertools.count()
+
+
 def _fake_gate(tmp, name, body):
-    """A gate whose command is a python -c that prints body and exits 0."""
-    path = os.path.join(tmp, f"{name}.py")
+    """A gate whose command is a python -c that prints body and exits 0.
+
+    The script is named from a counter and never from the gate id. The id is
+    the input several controls are trying to attack: one hands run_gate an id
+    of "../../escape" to prove that a gate cannot choose where its evidence file
+    lands, and production refuses it in _safe_gate_name. Interpolating that same
+    id into this helper's own scratch path defeated the point -- the write
+    escaped the temporary directory before run_gate was ever reached, so the
+    control failed on its own scaffolding. It happened to be survivable on
+    Windows and raised PermissionError on Linux, where the path resolved to a
+    root directory, which is how run 38182030391 recorded it.
+
+    The id does not need to appear in the filename; the gate dict carries it.
+    """
+    path = os.path.join(tmp, f"gate_{next(_GATE_SCRIPTS)}.py")
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(
             "import sys\nsys.stderr.write(" + repr(body) + ")\nsys.exit(0)\n"
@@ -827,6 +844,30 @@ class TestGateEvidenceIsRetained(unittest.TestCase):
         # record of the earlier attempt.
         self.assertTrue(os.path.isfile(self._log(first)))
         self.assertTrue(os.path.isfile(self._log(second)))
+
+    def test_the_fake_gate_script_stays_inside_its_temporary_directory(self):
+        """The scaffolding must not depend on the gate id being filename-safe.
+
+        _fake_gate writes a throwaway runner script. Naming that script after
+        the gate id made this control's own setup escape the temporary
+        directory before run_gate was reached, which surfaced only on runners
+        where the escaped path was unwritable -- so the defect was invisible on
+        the platform that introduced it. Containment is a property of the path,
+        not of the filesystem's permissions, so it is asserted directly here
+        and holds everywhere.
+        """
+        import tempfile
+        tmp = tempfile.mkdtemp(prefix="containment_")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = os.path.realpath(tmp)
+        for gid in ("../../escape", "..", "/etc/passwd", "a/b/c", ""):
+            with self.subTest(gate_id=gid):
+                script = _fake_gate(tmp, gid, "Ran 1 test in 0.0s\n\nOK\n")
+                self.assertTrue(
+                    os.path.realpath(script).startswith(root),
+                    f"the helper wrote {script} outside {tmp} for gate id "
+                    f"{gid!r}; it must never derive its own path from the id "
+                    f"it is helping test")
 
     def test_a_gate_id_cannot_choose_where_the_file_lands(self):
         body = "Ran 4 tests in 0.1s\n\nOK\n"
