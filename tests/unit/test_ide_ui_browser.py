@@ -485,6 +485,7 @@ class TestTheBundleIsServed(unittest.TestCase):
                                  "the request escaped the bundle and read win.ini")
                 self.assertIn(status, (200, 403, 404))
 
+    @needs_bundle
     def test_a_deep_unknown_path_falls_back_to_the_app_shell(self):
         status, _ctype, _body = self.fetch("/ui/some/client/route")
         self.assertEqual(status, 200)
