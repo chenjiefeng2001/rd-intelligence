@@ -385,6 +385,57 @@ def _no_evidence(reason):
     return {"captured": False, "indexed": False, "reason": reason}
 
 
+def _unaccounted_skips(gate, counts):
+    """Skips the gate has not declared, and so cannot conclude about.
+
+    A skip means no conclusion was reached for that test. When the gate declares
+    which skips it expects -- `allowed_skips`, a list of fragments matched
+    against the description unittest printed -- those are conclusions the gate
+    already accounted for elsewhere: a control that asserts a Windows-only fact
+    and correctly declines to run on Linux, or one whose prerequisite the
+    integration or fork gate declares and reports as INFRASTRUCTURE_FAILURE.
+
+    The list is matched by fragment rather than by exact id because unittest
+    prints a test's docstring first line when it has one, so two of the eight
+    are identifiable only that way.
+
+    Fails closed, which is the property that makes it safe to allow skips at
+    all. A skip not on the list is unaccounted. So is every skip when the gate
+    declares nothing -- and so is the whole set when the run printed no
+    identities to check, because a skip that cannot be named cannot be shown to
+    be on the list either. An earlier version of this returned the identity list
+    verbatim, so a non-verbose run produced an empty list, found nothing
+    unaccounted, and passed; the controls that pin "a skipped part is never a
+    pass" caught it immediately.
+    """
+    allowed = gate.get("allowed_skips") or []
+    identities = list(counts.get("skip_identities") or [])
+    if not allowed or (counts["skipped"] and not identities):
+        return identities or [f"<{counts['skipped']} skipped, none named>"]
+    return [i for i in identities
+            if not any(fragment in i for fragment in allowed)]
+
+
+def _classify_skips(gate, counts):
+    """A gate that skipped: (outcome, detail) for run_gate to record.
+
+    UNKNOWN unless every observed skip was declared in the gate's allowed_skips.
+    The declared ones are conclusions the gate reached elsewhere -- a control
+    asserting a Windows-only fact, or one whose prerequisite another gate
+    declares -- so withholding PASS for them would make the unit gate
+    permanently unreachable on a stock runner while saying nothing true about
+    the work. Anything undeclared still yields UNKNOWN, unchanged.
+    """
+    unaccounted = _unaccounted_skips(gate, counts)
+    if unaccounted:
+        return UNKNOWN, (f"{counts['skipped']} of {counts['total']} tests "
+                         f"skipped; no content conclusion for the skipped part")
+    return PASS, (f"{counts['executed']} of {counts['total']} checks executed "
+                  f"and passed; {counts['skipped']} skipped, each declared in "
+                  f"allowed_skips: "
+                  + "; ".join(counts.get("skip_identities") or []))
+
+
 def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
              spec_captures=None, evidence_root=None):
     """Run one gate and classify it. Never raises for a gate-level failure."""
@@ -573,9 +624,8 @@ def run_gate(gate, repo_root, env=None, timeout=None, runner=None,
                           f"and the exit status are separate facts",
                           exit_code=proc.returncode, **counts)
         if counts["skipped"]:
-            return record(UNKNOWN,
-                          f"{counts['skipped']} of {counts['total']} tests "
-                          f"skipped; no content conclusion for the skipped part",
+            outcome, detail = _classify_skips(gate, counts)
+            return record(outcome, detail,
                           exit_code=proc.returncode, **counts)
         return record(PASS,
                       f"{counts['executed']} checks executed, all passed",
