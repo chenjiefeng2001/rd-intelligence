@@ -50,6 +50,20 @@ mcp = ["mcp>=1.0,<2"]
 # Left unpinned: nothing in the project establishes a floor its [tool.ruff]
 # config needs, and a pin without a reason is a guess that ages badly.
 lint = ["ruff"]
+# The browser controls need the Playwright package and a browser to drive.
+# CHROME_CANDIDATES in the UI suite lists only Windows paths, so a Linux
+# runner has no system browser to fall back on and must use the Chromium that
+# `playwright install` downloads; the package alone is not enough, and
+# _probe_can_launch exists because those are two separate facts.
+#
+# Optional rather than required: it is needed to run a subset of the suite, not
+# to use the package. A test dependency declared as a runtime dependency would
+# put a browser driver in every install of a debugging tool.
+#
+# Upper bound because the sync API this suite calls has moved across major
+# versions; below 1.40 the launcher interface differs. Left open at the top
+# because nothing here establishes a floor beyond what has been verified.
+browser = ["playwright>=1.40,<2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
