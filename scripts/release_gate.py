@@ -757,6 +757,14 @@ def declare_unimplemented(spec):
     so it never reaches run_gate. It still has to appear in the report and it
     still has to hold the aggregate off PASS, because a required gate that
     never ran is exactly what I1 forbids treating as a pass.
+
+    The record now carries an evidence block like every other gate's. It says
+    there is no artifact because there was never a process, not because a write
+    failed -- which is the distinction the failed write already draws with
+    `error`. A gate that is missing this field cannot be told apart, from the
+    report alone, from a gate whose evidence was lost, and "no evidence" with
+    no reason for it is the same unreadable record that result_identities and
+    skip_identities were added to fix.
     """
     out = []
     for gate in spec["gates"]:
@@ -777,6 +785,16 @@ def declare_unimplemented(spec):
             "errors": None,
             "discovery_anomalies": [],
             "skip_identities": [],
+            "result_identities": [],
+            "missing_prerequisites": [],
+            "command": gate.get("command"),
+            "evidence": {
+                "captured": False,
+                "indexed": False,
+                "reason": "no_executable_check",
+                "detail": f"{state} gate declares no command, so no process ran "
+                          f"and no artifact exists; this is not a lost write",
+            },
             "exit_code": None,
             "duration_s": None,
             "detail": gate.get("rationale", ""),
