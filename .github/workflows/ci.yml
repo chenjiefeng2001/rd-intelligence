@@ -50,6 +50,14 @@ jobs:
       - name: Install the package, its lint dependencies, the MCP SDK, and Playwright
         run: python -m pip install -e ".[lint,mcp,browser]"
 
+      # The packaging controls run a real `python -m build` and skip without this
+      # backend, saying so: "CI installs it, so CI runs this." That was not true
+      # of this job -- the backend was installed only by package-build -- so five
+      # controls skipped here on the strength of an assumption the workflow did
+      # not meet. The statement was the intent; this is the install it expected.
+      - name: Install the build backend
+        run: python -m pip install --upgrade build
+
       # The browser package and the browser are separate installs. CHROME_CANDIDATES
       # names only Windows paths, so this runner has no system browser and the
       # Chromium below is the only one it can drive. --with-deps also installs the

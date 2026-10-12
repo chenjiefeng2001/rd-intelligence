@@ -67,9 +67,15 @@ RESULT_HEADER = re.compile(r"^(ERROR|FAIL): (.+)$", re.M)
 # failures all arrive through subtests reported a count with no identity -- the
 # report could say "29 failures" and name none of them.
 SUBFAILED = re.compile(r"^SUBFAILED(?:\([^)]*\))?\s+(\S+)", re.M)
-#: unittest prints a skip only in verbose mode, and prints it as the test
-#: description followed by "... skipped '<reason>'" on one line.
-SKIP_LINE = re.compile(r"^(\S+ \([^)\n]+\)) \.\.\. skipped '(.+)'", re.M)
+#: unittest prints a skip only in verbose mode, and prints it as the test's
+#: description followed by "... skipped '<reason>'". The description is not
+#: always an id: getDescription returns a test's docstring first line when it
+#: has one, and only falls back to "name (dotted.id)" when it does not. A
+#: pattern shaped like an id therefore silently loses every skipped test that
+#: carries a docstring -- run 38250175489 reported 13 skips and this read 11,
+#: the missing two being a class docstring and a method docstring. So the
+#: description is captured as whatever it is, and the reason is kept.
+SKIP_LINE = re.compile(r"^(.+?) \.\.\. skipped '(.+)'", re.M)
 DISCOVERY_MARKER = "unittest.loader._FailedTest"
 
 
@@ -98,10 +104,16 @@ def _discovery_anomalies(stream):
 def _skip_identities(stream):
     """Every skip, as unittest printed it, with the reason it gave.
 
-    A skip is only printed in verbose mode, and the shape is the same
-    description _result_identities reads for a failure followed by the reason:
+    A skip is only printed in verbose mode, and the shape is the description
+    unittest chose followed by the reason:
 
         test_x (pkg.mod.Case.test_x) ... skipped 'why'
+
+    The description is whatever getDescription returned: an id for a test with
+    no docstring, and the docstring's first line for one that has it. Both are
+    captured as printed, because a pattern that assumed the id shape read 11 of
+    the 13 skips run 38250175489 reported and lost the other two without saying
+    so. A skip named only by its docstring is still better evidence than a count.
 
     Without this, a run that skips reports "13 of 947 tests skipped; no content
     conclusion for the skipped part" and names none of them -- a count with no
