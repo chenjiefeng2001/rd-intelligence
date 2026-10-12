@@ -67,6 +67,9 @@ RESULT_HEADER = re.compile(r"^(ERROR|FAIL): (.+)$", re.M)
 # failures all arrive through subtests reported a count with no identity -- the
 # report could say "29 failures" and name none of them.
 SUBFAILED = re.compile(r"^SUBFAILED(?:\([^)]*\))?\s+(\S+)", re.M)
+#: unittest prints a skip only in verbose mode, and prints it as the test
+#: description followed by "... skipped '<reason>'" on one line.
+SKIP_LINE = re.compile(r"^(\S+ \([^)\n]+\)) \.\.\. skipped '(.+)'", re.M)
 DISCOVERY_MARKER = "unittest.loader._FailedTest"
 
 
@@ -92,6 +95,28 @@ def _discovery_anomalies(stream):
     return [i for i in _result_identities(stream) if DISCOVERY_MARKER in i]
 
 
+def _skip_identities(stream):
+    """Every skip, as unittest printed it, with the reason it gave.
+
+    A skip is only printed in verbose mode, and the shape is the same
+    description _result_identities reads for a failure followed by the reason:
+
+        test_x (pkg.mod.Case.test_x) ... skipped 'why'
+
+    Without this, a run that skips reports "13 of 947 tests skipped; no content
+    conclusion for the skipped part" and names none of them -- a count with no
+    identity, which is the same defect result_identities was added to fix for
+    failures, and the reason a run cannot be acted on. It is only visible with
+    `-v` on the gate command, which is why that flag is now part of the unit
+    gate's declared command rather than being left to the reader's guesswork.
+
+    An unprinted skip is not invented from the count: the same rule that governs
+    failure identities applies here.
+    """
+    return [f"{m.group(1).strip()} :: {m.group(2).strip()}"
+            for m in SKIP_LINE.finditer(stream)]
+
+
 def _parse_unittest(stream):
     """Extract total, skipped, failures and errors from unittest output."""
     ran = RAN.search(stream)
@@ -112,6 +137,7 @@ def _parse_unittest(stream):
         "executed": total - skipped,
         "discovery_anomalies": _discovery_anomalies(stream),
         "result_identities": _result_identities(stream),
+        "skip_identities": _skip_identities(stream),
     }
 
 
@@ -688,6 +714,7 @@ def declare_unimplemented(spec):
             "failures": None,
             "errors": None,
             "discovery_anomalies": [],
+            "skip_identities": [],
             "exit_code": None,
             "duration_s": None,
             "detail": gate.get("rationale", ""),

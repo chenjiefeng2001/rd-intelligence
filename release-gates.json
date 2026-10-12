@@ -29,7 +29,8 @@
         "unittest",
         "discover",
         "-s",
-        "tests/unit"
+        "tests/unit",
+        "-v"
       ],
       "runner": "unittest",
       "min_executed": 100,
