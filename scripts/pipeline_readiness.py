@@ -191,6 +191,17 @@ def _probe_corpus(repo_root, env):
             manifest_match = None
     return {"captures_present": bool(present), "capture_count": count,
             "tracked_captures": tracked, "manifest_match": manifest_match,
+            # Which population each field above speaks about. The block holds
+            # two, and reading it as one is how a green manifest_match became
+            # apparent proof that the 14 files sitting here were verified.
+            # They are not, and nothing in this repository claims they are.
+            "observed_population": "tests/workload/corpus (repo-generated "
+                                 "replay fixtures, FIXTURE-POPULATION-CONTRACT "
+                                 "N4 option A)",
+            "manifest_scope": "rdebug-validation N3-05A freeze manifest "
+                              "(external corpus, CAPTURE-CORPUS-CONTRACT) -- "
+                              "covers no file in tests/workload/corpus",
+            "fixture_determinism": "NOT_ESTABLISHED",
             # Declarations, not observations. These do not change with the
             # machine; they state what the corpus IS, so that its presence is
             # never mistaken for a repository guarantee. See

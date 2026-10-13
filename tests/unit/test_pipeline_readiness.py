@@ -249,6 +249,51 @@ class TestMissingRequirementsRenderReadably(unittest.TestCase):
             self.assertIn(".", name)
 
 
+class TestCorpusReportNamesItsTwoPopulations(unittest.TestCase):
+    """One block, two populations, and a green check that speaks about one.
+
+    `manifest_match` verifies the N3-05A freeze manifest in rdebug-validation:
+    two captures, their metadata, the corpus manifest and some machine reports.
+    It covers no file in tests/workload/corpus. Read next to
+    `capture_count: 14`, it looked like those fourteen had been verified. They
+    have not, and by N4 option A they are not supposed to be -- they are
+    repo-generated fixtures under FIXTURE-POPULATION-CONTRACT, deliberately
+    outside the corpus contract's scope.
+
+    So nothing here may be read as a claim about the other population.
+    """
+
+    def setUp(self):
+        self.corpus = R.probe_environment(REPO_ROOT, {})["corpus"]
+
+    def test_the_observed_counts_name_the_fixture_population(self):
+        self.assertIn("tests/workload/corpus", self.corpus["observed_population"])
+
+    def test_the_manifest_check_names_what_it_actually_verified(self):
+        scope = self.corpus["manifest_scope"]
+        self.assertIn("N3-05A", scope)
+        self.assertIn("tests/workload/corpus", scope)
+        self.assertIn("covers no file", scope)
+
+    def test_a_green_manifest_match_is_not_evidence_about_the_fixtures(self):
+        """The exact inference this report used to invite."""
+        if self.corpus["manifest_match"] is True:
+            self.assertEqual(self.corpus["fixture_determinism"],
+                             "NOT_ESTABLISHED",
+                             "a green manifest check on the external corpus "
+                             "says nothing about these fixtures")
+
+    def test_fixture_determinism_is_not_claimed(self):
+        self.assertEqual(self.corpus["fixture_determinism"], "NOT_ESTABLISHED")
+
+    def test_the_contract_specified_fields_are_still_present(self):
+        """The scope annotations are additive; §4 of the contract is intact."""
+        for key in ("captures_present", "capture_count", "tracked_captures",
+                    "manifest_match", "required", "source", "tracked",
+                    "provenance_required"):
+            self.assertIn(key, self.corpus)
+
+
 class TestCapabilityDeclaration(unittest.TestCase):
     """4.2.1: the four capability classes, and they are prerequisites."""
 
