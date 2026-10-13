@@ -10,7 +10,7 @@ document_living_note: >-
 
 Every document in this directory, one row each, grouped by topic.
 
-**16 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
+**17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
 and are constrained by it; **49 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
@@ -37,6 +37,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | Document | Role / freshness |
 | --- | --- |
 | [`CURRENT-EVIDENCE-FREEZE.md`](CURRENT-EVIDENCE-FREEZE.md) | `evidence_record` / `point_in_time` @ `2c6079e` |
+| [`N3-05A-PATCH-VERIFICATION-SUPERSESSION.md`](N3-05A-PATCH-VERIFICATION-SUPERSESSION.md) | `evidence_record` / `point_in_time` @ `4e3c485` |
 | [`PDB-ATTRIBUTION-RESULT.md`](PDB-ATTRIBUTION-RESULT.md) | not classified |
 | [`TEARDOWN-EVIDENCE-CASE.md`](TEARDOWN-EVIDENCE-CASE.md) | not classified |
 | [`TEARDOWN-CRASH-INVESTIGATION.md`](TEARDOWN-CRASH-INVESTIGATION.md) | not classified |
