@@ -31,3 +31,10 @@ build-probe/** -text
 # anything "fix" them -- rewriting the bytes would invalidate the digest that
 # is the whole point of storing them.
 fork-provenance/** -text
+
+# The fork-baseline fixture is evidence for the same reason: the control that
+# uses it pins a SHA-256, and the declared patch is applied to those bytes. A
+# CRLF rewrite on checkout would change the pre-image and the patch would stop
+# applying, which reads as "the artefact is broken" rather than "the checkout
+# translated the file". Same failure as above, one directory over.
+tests/fixtures/fork-baseline/** -text

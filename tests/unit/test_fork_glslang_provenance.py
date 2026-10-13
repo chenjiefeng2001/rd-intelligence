@@ -193,6 +193,193 @@ class TestGlslangArtefactReproduces(unittest.TestCase):
                             "a tampered artefact should not apply cleanly")
 
 
+FIXTURE = os.path.join(REPO_ROOT, "tests", "fixtures", "fork-baseline",
+                       "glslang_compile.cpp")
+
+#: The upstream file at the declared base, exported with
+#: `git show b7f1554fe...:renderdoc/driver/shaders/spirv/glslang_compile.cpp`.
+#: Vendored so the blast-radius check is verified on CI, which has no fork.
+#: RenderDoc is BSD-3-Clause; this is a verbatim upstream excerpt.
+FIXTURE_SHA256 = (
+    "c5f883b874010eda6fc762a3c3f1ba3e2e3b9018ee63d56644898382da81ef3d"
+)
+
+DECLARATION = os.path.join(REPO_ROOT, "fork-exception.json")
+
+
+def _load_verifier():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "fork_audit_for_glslang",
+        os.path.join(REPO_ROOT, "scripts", "audit_fork_integrity.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+VER = _load_verifier()
+
+
+def _git(repo, *args):
+    out = subprocess.run(["git", "-C", repo] + list(args),
+                         capture_output=True, text=True, encoding="utf-8",
+                         errors="replace")
+    if out.returncode != 0:
+        raise AssertionError("git {} failed: {}".format(" ".join(args),
+                                                       out.stderr))
+    return out.stdout
+
+
+def _scratch_repo(root, apply_artefact=True):
+    """A repository holding the upstream base file, with the artefact applied.
+
+    Built from the vendored fixture rather than a clone, so it works on CI.
+    """
+    fork = os.path.join(root, "ws")
+    dest = os.path.join(fork, *TARGET.split("/"))
+    os.makedirs(os.path.dirname(dest))
+    shutil.copyfile(FIXTURE, dest)
+    _git(fork, "init", "-q")
+    _git(fork, "config", "user.email", "t@example.invalid")
+    _git(fork, "config", "user.name", "t")
+    _git(fork, "add", "-A")
+    _git(fork, "commit", "-qm", "upstream base")
+    if apply_artefact:
+        body = open(ARTIFACT, "rb").read()
+        patched = os.path.join(root, "apply.patch")
+        with open(patched, "wb") as fh:
+            fh.write(body + b"\n")
+        subprocess.run(["git", "-C", fork, "apply", patched], check=True,
+                       capture_output=True)
+    return fork
+
+
+class TestDeclaredBlastRadius(unittest.TestCase):
+    """The declared symbols are the symbols the patch actually produces.
+
+    Every other control in this file checks what the artefact contains. None of
+    them checked that the declaration's blast radius matches it: the declared
+    list was only ever asserted to have four entries, so a renamed symbol, or
+    a patch whose hunks move, would leave the whole suite green while the F4
+    check began rejecting the very patch the exception exists to permit.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="glslang_radius_")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        with open(DECLARATION, encoding="utf-8") as fh:
+            self.doc = json.load(fh)
+        self.exc = next(e for e in self.doc["exceptions"]
+                        if e["exception_id"] == "glslang-rdcspv-lifecycle")
+        self.declared = sorted(self.exc["files"][TARGET]["allowed_symbols"])
+
+    def test_the_fixture_is_the_base_file_it_claims_to_be(self):
+        self.assertTrue(os.path.isfile(FIXTURE),
+                        "without the vendored base file the blast radius is "
+                        "only checkable where a RenderDoc checkout exists")
+        self.assertEqual(_digest(FIXTURE), FIXTURE_SHA256,
+                         "the vendored base file changed; the declared patch "
+                         "would no longer apply to it")
+
+    def test_the_declared_symbols_are_exactly_the_ones_the_patch_produces(self):
+        fork = _scratch_repo(self.root)
+        mods = VER.tracked_modifications(fork)
+        produced = sorted({VER._classify_hunk(fork, TARGET, h)
+                           for h in mods[TARGET]})
+        self.assertEqual(self.declared, produced)
+
+    def test_the_declaration_pins_the_base_the_fixture_came_from(self):
+        self.assertEqual(self.exc["provenance"]["base_commit"], BASE_COMMIT)
+
+    def test_a_symbol_outside_the_declared_set_is_rejected(self):
+        """The boundary is load-bearing, not decorative."""
+        fork = _scratch_repo(self.root)
+        narrowed = json.loads(json.dumps(self.exc))
+        narrowed["files"][TARGET]["allowed_symbols"] = ["rdcspv::Init"]
+        with self.assertRaises(VER.Violation) as ctx:
+            VER.verify(fork, self._with_only(narrowed), REPO_ROOT)
+        self.assertEqual(ctx.exception.code, "F4")
+
+    def _with_only(self, exc):
+        doc = json.loads(json.dumps(self.doc))
+        doc["exceptions"] = [exc]
+        path = os.path.join(self.root, "decl.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        return path
+
+
+class TestDeliveredWorkspacePasses(unittest.TestCase):
+    """The success path, proved rather than assumed.
+
+    Every committed control in this file proves a rejection. If the audit could
+    never return PASS on a compliant workspace, the suite would stay green and
+    the CI verdict would be indistinguishable from a real violation. The
+    capture exception's success path is covered elsewhere against a synthetic
+    repository; this covers the driver exception's.
+
+    The scratch repository's commit is not b7f1554fe -- it cannot be, it is a
+    different history -- so the declaration's base is repointed at it here. The
+    declared value itself is pinned separately, by
+    test_the_declaration_pins_the_base_the_fixture_came_from and by
+    TestGlslangArtefactIsDeclared.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="glslang_pass_")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        with open(DECLARATION, encoding="utf-8") as fh:
+            self.doc = json.load(fh)
+        self.exc = next(e for e in self.doc["exceptions"]
+                        if e["exception_id"] == "glslang-rdcspv-lifecycle")
+
+    def _declaration(self, fork):
+        doc = json.loads(json.dumps(self.doc))
+        doc["exceptions"] = [json.loads(json.dumps(self.exc))]
+        doc["exceptions"][0]["provenance"]["base_commit"] = _git(
+            fork, "rev-parse", "HEAD").strip()
+        path = os.path.join(self.root, "decl.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        return path
+
+    def test_the_delivered_workspace_passes(self):
+        fork = _scratch_repo(self.root)
+        summary = VER.verify(fork, self._declaration(fork), REPO_ROOT)
+        self.assertEqual(summary["exceptions"], 1)
+        self.assertEqual(summary["tracked_modifications"], 1)
+
+    def test_an_undeclared_driver_change_still_fails_it(self):
+        fork = _scratch_repo(self.root)
+        decl = self._declaration(fork)
+        VER.verify(fork, decl, REPO_ROOT)          # the compliant state
+        extra = os.path.join(fork, "renderdoc", "driver", "other.cpp")
+        os.makedirs(os.path.dirname(extra), exist_ok=True)
+        with open(extra, "w", encoding="utf-8") as fh:
+            fh.write("int stray;\n")
+        # Tracked, not merely present: the comparison reads `git diff HEAD`, so
+        # an untracked file is invisible to it and would make this pass for the
+        # wrong reason.
+        _git(fork, "add", "-A")
+        with self.assertRaises(VER.Violation) as ctx:
+            VER.verify(fork, decl, REPO_ROOT)
+        self.assertEqual(ctx.exception.code, "F1")
+
+    def test_a_tampered_digest_still_fails_it(self):
+        fork = _scratch_repo(self.root)
+        doc = json.loads(json.dumps(self.doc))
+        doc["exceptions"] = [json.loads(json.dumps(self.exc))]
+        doc["exceptions"][0]["provenance"]["base_commit"] = _git(
+            fork, "rev-parse", "HEAD").strip()
+        doc["exceptions"][0]["provenance"]["patch_sha256"] = "0" * 64
+        path = os.path.join(self.root, "bad.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        with self.assertRaises(VER.Violation) as ctx:
+            VER.verify(fork, path, REPO_ROOT)
+        self.assertEqual(ctx.exception.code, "F3")
+
+
 class TestGlslangArtefactIsDeclared(unittest.TestCase):
     """The artefact is declared, and declared narrowly.
 
