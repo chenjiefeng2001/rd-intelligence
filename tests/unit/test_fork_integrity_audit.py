@@ -299,8 +299,22 @@ class TestPositiveControl(VerifierBase):
             ["git", "-C", REAL_FORK, "rev-parse", "HEAD"],
             capture_output=True, text=True).stdout.strip()
         if head == base:
-            self.assertEqual(VER.verify(REAL_FORK, DECLARATION, REPO_ROOT)[
-                "exceptions"], 1)
+            # The fork is at the declared base. That does not make it
+            # compliant: the audit still has to bind the external capture
+            # evidence, and on a machine without it the honest outcome is the
+            # absence being reported, not a pass. The provisioning step on CI
+            # puts the fork here precisely so this path executes remotely.
+            try:
+                summary = VER.verify(REAL_FORK, DECLARATION, REPO_ROOT)
+            except VER.Violation as v:
+                self.assertEqual(v.code, "F3")
+                self.assertEqual(v.kind, VER.ABSENCE_EXTERNAL,
+                                 "a fork at its base that lacks the external "
+                                 "evidence is an absence, and reporting it as "
+                                 "anything else is a fabricated conclusion")
+                return
+            self.assertEqual(summary["exceptions"], 2,
+                             "both declared exceptions must be bound, not one")
             return
         with self.assertRaises(VER.Violation) as ctx:
             VER.verify(REAL_FORK, DECLARATION, REPO_ROOT)

@@ -37,8 +37,15 @@ DECLARED_SYMBOL = "RenderDoc::ShouldTriggerCapture"
 
 def _live_delta():
     """The sibling checkout's current delta, canonically normalised."""
+    # core.abbrev is pinned because git sizes the index line's blob
+    # abbreviations to the repository. The same delta hashes to
+    # 314744735..6b7bb2ab9 in a full clone and 3147447..6b7bb2a in the
+    # shallow one CI fetches, so the recorded digest only held on the machine
+    # it was taken on. Nine characters is what both sides then produce, which
+    # is why the artefact still hashes to what the declaration says.
     proc = subprocess.run(
-        ["git", "-C", FORK, "diff", "--", "renderdoc/core/core.cpp"],
+        ["git", "-C", FORK, "-c", "core.abbrev=9",
+         "diff", "--", "renderdoc/core/core.cpp"],
         capture_output=True, text=True)
     if proc.returncode != 0:
         return None

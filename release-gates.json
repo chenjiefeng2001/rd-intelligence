@@ -205,7 +205,9 @@
       "blocking": true,
       "command": [
         "python",
-        "scripts/audit_fork_integrity.py"
+        "scripts/audit_fork_integrity.py",
+        "--verdict-json",
+        ".fork_verdict.json"
       ],
       "runner": "verdict_json",
       "verdict_path": ".fork_verdict.json",
