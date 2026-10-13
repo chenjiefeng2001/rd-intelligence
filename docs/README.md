@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **16 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **48 are not classified** and are deliberately not
+and are constrained by it; **49 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -53,6 +53,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | --- | --- |
 | [`DOCUMENT-CLASSIFICATION-CONTRACT.md`](DOCUMENT-CLASSIFICATION-CONTRACT.md) | `contract` / `mixed` |
 | [`A1-FORK-INTEGRITY-CONTRACT.md`](A1-FORK-INTEGRITY-CONTRACT.md) | not classified |
+| [`CONTRACT-BINDINGS.json`](CONTRACT-BINDINGS.json) | `registry` / `living` |
 | [`A2-CI-INTEGRATION-CONTRACT.md`](A2-CI-INTEGRATION-CONTRACT.md) | not classified |
 | [`BUILD-GENERATION-PROBE.md`](BUILD-GENERATION-PROBE.md) | `contract` / `living` |
 | [`CAPTURE-CORPUS-CONTRACT.md`](CAPTURE-CORPUS-CONTRACT.md) | `contract` / `living` |

@@ -1,0 +1,250 @@
+{
+  "schema": "rdebug-contract-bindings/1",
+  "purpose": "Bind every contract to the controls that enforce it, at symbol level. A contract that is edited without its rules changing the controls is the silent way this project could lose a guarantee: the prose moves, the tests stay green, and nothing reports the gap. Binding by module name alone would not help -- renaming a control would leave the binding intact and just as unverified. So each binding names a symbol that must exist.",
+  "bindings": [
+    {
+      "contract": "A1-FORK-INTEGRITY-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_fork_integrity_audit.py",
+          "symbols": [
+            "TestF1UndeclaredModification",
+            "TestF2DeclaredButAbsent",
+            "TestF3ProvenanceBinding",
+            "TestF4BlastRadius"
+          ]
+        },
+        {
+          "test": "tests/unit/test_fork_glslang_provenance.py",
+          "symbols": [
+            "TestTheAuditStatesItsOwnVerdict",
+            "TestDeclaredBlastRadius",
+            "TestDeliveredWorkspacePasses"
+          ]
+        },
+        {
+          "test": "tests/unit/test_fork_delta_provenance.py",
+          "symbols": [
+            "TestDeltaArtifactIsIntact",
+            "TestLiveTreeStillMatchesTheArtifact"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "A2-CI-INTEGRATION-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_ci_pipeline.py",
+          "symbols": [
+            "TestVerdictMapping",
+            "TestFailureModesMapCorrectly"
+          ]
+        },
+        {
+          "test": "tests/unit/test_integration_capture_membership.py",
+          "symbols": [
+            "TestPreRunMembershipAdjudication"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "CAPTURE-CORPUS-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_capture_corpus_contract.py",
+          "symbols": [
+            "TestCorpusIsDeclaredExternal",
+            "TestAbsenceSemantics"
+          ]
+        },
+        {
+          "test": "tests/unit/test_capture_policy.py",
+          "symbols": [
+            "TestCaptureRootPolicy"
+          ]
+        },
+        {
+          "test": "tests/unit/test_pipeline_readiness.py",
+          "symbols": [
+            "TestCorpusReportNamesItsTwoPopulations"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "CI-ORCHESTRATION-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_release_gate.py",
+          "symbols": [
+            "TestClassificationIsFourWay",
+            "TestBlockingSemantics"
+          ]
+        },
+        {
+          "test": "tests/unit/test_unit_gate_verdict_invariants.py",
+          "symbols": [
+            "TestUnitVerdictInvariants",
+            "TestUnitGateDeclaresItsFloor"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "CONTROL-ADMISSION-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_ruling_enforcement.py",
+          "symbols": [
+            "TestOpenDecisionsCarriesOnlyOpenItems"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "DOCUMENT-CLASSIFICATION-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_document_classification.py",
+          "symbols": [
+            "TestDocumentClassificationSchema",
+            "TestAdmissionCondition"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "F12-CONTEXT-EID-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_pixel_trace_graph.py",
+          "symbols": [
+            "TestBuildGraph"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "FIXTURE-POPULATION-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_workload_corpus_producer.py",
+          "symbols": [
+            "TestProducerNamingContract",
+            "TestProducerMembershipIsExact"
+          ]
+        },
+        {
+          "test": "tests/unit/test_workload_corpus_discovery.py",
+          "symbols": [
+            "TestDiscoveryIsTheDeclaredPopulation"
+          ]
+        },
+        {
+          "test": "tests/unit/test_integration_capture_membership.py",
+          "symbols": [
+            "TestDeclaredPopulation",
+            "TestTheGateNeverRunsTheGenerator"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "GATE3-COLD-WARM-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_cold_warm_gate.py",
+          "symbols": [
+            "TestComparisonIsComplete",
+            "TestUnavailableIsNotEqual"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "IDE-INTERFACE-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_ide_input_contract.py",
+          "symbols": [
+            "TestCoordinateContract",
+            "TestResourceIdContract"
+          ]
+        },
+        {
+          "test": "tests/unit/test_ide_page_parses.py",
+          "symbols": [
+            "TestWholeScriptParses"
+          ]
+        },
+        {
+          "test": "tests/unit/test_ide_stream.py",
+          "symbols": [
+            "TestTheRevisionPrimitive"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "LINT-EXECUTION-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_lint_integration.py",
+          "symbols": [
+            "TestLintFailureClassification",
+            "TestLintIsFailClosedWhenItCannotRun"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "MCP-CONTRACT-GOVERNANCE.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_recorder.py",
+          "symbols": [
+            "TestStoredRequestShapes",
+            "TestItIsOptIn"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "PACKAGING-BUILD-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_build_package.py",
+          "symbols": [
+            "TestTheVerifierHasTeeth",
+            "TestTheRealBuild"
+          ]
+        },
+        {
+          "test": "tests/unit/test_build_probe_artifacts.py",
+          "symbols": [
+            "TestArtifactsAreIntact"
+          ]
+        }
+      ]
+    },
+    {
+      "contract": "QUERY-STORAGE-CONTRACT.md",
+      "enforced_by": [
+        {
+          "test": "tests/unit/test_unknown_discipline.py",
+          "symbols": [
+            "TestCompareScalarIsTheOnlyPlaceEmptinessIsDecided",
+            "TestFailedEnumerationYieldsUnknownNotSame"
+          ]
+        }
+      ]
+    }
+  ],
+  "known_unbound": [
+    {
+      "note": "Deliberately empty. Every docs/*CONTRACT*.md is bound above. A contract with no enforcing control belongs here WITH its filename, and test_the_registry_declares_no_unbound_contract will fail until someone writes a control for it. That is the point: the gap gets reported instead of remembered."
+    }
+  ]
+}
