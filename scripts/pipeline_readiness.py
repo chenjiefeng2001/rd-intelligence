@@ -97,25 +97,53 @@ def _probe_renderdoc(repo_root, env):
 
 
 def _probe_gpu(repo_root, env):
-    """Observed replay capability, not a claim about hardware."""
-    present, driver, replay_supported = False, None, None
-    path = env.get("RDEBUG_INTEGRATION_CAPTURE")
-    if path and os.path.isfile(path):
-        try:
-            from rdebug.adapter.core import CaptureSession
+    """Observed replay capability, not a claim about hardware.
 
-            s = CaptureSession(path)
-            try:
-                present = True
-                driver = s.driver
-                replay_supported = bool(s._cap.LocalReplaySupport())
-            finally:
-                s.close()
-        except Exception:  # noqa: BLE001 - the probe closes over whatever the import left behind
-            present = False
-    return {"present": present, "driver": driver,
+    The three states are kept apart on purpose. `present` used to be False
+    whenever no capture was configured, which asserted that this machine has
+    no GPU without anything having been asked. An operator reading
+    `gpu.present: false` would go looking for a driver to install, when the
+    actual situation was that nobody set RDEBUG_INTEGRATION_CAPTURE and no
+    probe ever ran. That is unavailable data presented as an observed fact --
+    the same defect core.py documents at its reflection branch, and the same
+    one sections 2.5 and 2.11 forbid.
+
+    So:
+
+        None  -> not probed; nothing was observed
+        False -> probed, and there is no replay
+        True  -> probed, and there is
+
+    capability_satisfied already treats None as unmet, so no gate verdict
+    changes. What changes is that the report can say which of those it is.
+    """
+    driver, replay_supported = None, None
+    path = env.get("RDEBUG_INTEGRATION_CAPTURE")
+    if not path or not os.path.isfile(path):
+        return {"present": None, "driver": None, "replay_supported": None,
+                "probe_capture": path,
+                "probe_status": "not_configured",
+                "probe_error": None}
+    try:
+        from rdebug.adapter.core import CaptureSession
+
+        s = CaptureSession(path)
+        try:
+            driver = s.driver
+            replay_supported = bool(s._cap.LocalReplaySupport())
+        finally:
+            s.close()
+    except Exception as e:  # noqa: BLE001 - the probe closes over whatever the import left behind
+        return {"present": False, "driver": driver,
+                "replay_supported": replay_supported,
+                "probe_capture": path,
+                "probe_status": "failed",
+                "probe_error": f"{type(e).__name__}: {e}"}
+    return {"present": True, "driver": driver,
             "replay_supported": replay_supported,
-            "probe_capture": path}
+            "probe_capture": path,
+            "probe_status": "probed",
+            "probe_error": None}
 
 
 def _probe_corpus(repo_root, env):
@@ -421,7 +449,7 @@ def main(argv=None):
               f"required={str(row['required_execution']):<5} "
               f"runnable={runnable:<5} {row['verdict']}")
         for miss in row["missing_requirements"]:
-            print(f"      missing: {', '.join(miss)}")
+            print(f"      missing: {miss}")
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
             json.dump(report, fh, indent=1, default=str)

@@ -102,6 +102,153 @@ FULL_ENVIRONMENT = {
 }
 
 
+class TestGpuProbeDistinguishesUnprobedFromAbsent(unittest.TestCase):
+    """The GPU probe must say which of the two it observed.
+
+    `present` used to be False whenever no capture was configured, which
+    asserted that this machine has no GPU without anything having been asked.
+    An operator would read that as "install a driver", when the real situation
+    was "nobody set RDEBUG_INTEGRATION_CAPTURE". Unknown presented as an
+    observed fact is what sections 2.5 and 2.11 forbid.
+    """
+
+    def _capture_file(self, name="c.rdc"):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("not a real capture; the probe never opens it for real")
+        return path
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.mkdtemp(prefix="gpu_probe_")
+        self.addCleanup(__import__("shutil").rmtree, self.tmp,
+                        ignore_errors=True)
+
+    def test_no_capture_configured_is_not_probed(self):
+        g = R._probe_gpu(self.tmp, {})
+        self.assertIsNone(g["present"],
+                          "no probe ran, so nothing was observed; False would "
+                          "be a claim about hardware that was never made")
+        self.assertEqual(g["probe_status"], "not_configured")
+        self.assertIsNone(g["probe_error"])
+
+    def test_a_capture_path_that_does_not_exist_is_not_probed(self):
+        g = R._probe_gpu(self.tmp,
+                         {"RDEBUG_INTEGRATION_CAPTURE": "no/such/file.rdc"})
+        self.assertIsNone(g["present"])
+        self.assertEqual(g["probe_status"], "not_configured")
+
+    def test_a_successful_probe_reports_what_it_observed(self):
+        cap = type("Cap", (), {
+            "driver": "D3D12",
+            "_cap": type("C", (), {"LocalReplaySupport": staticmethod(
+                lambda: 1)})(),
+            "close": lambda self: None,
+        })()
+        with mock.patch.dict(sys.modules, {"rdebug.adapter.core": mock.Mock(
+                CaptureSession=lambda path: cap)}):
+            g = R._probe_gpu(self.tmp,
+                             {"RDEBUG_INTEGRATION_CAPTURE": self._capture_file()})
+        self.assertIs(g["present"], True)
+        self.assertEqual(g["driver"], "D3D12")
+        self.assertIs(g["replay_supported"], True)
+        self.assertEqual(g["probe_status"], "probed")
+        self.assertIsNone(g["probe_error"])
+
+    def test_a_failed_probe_is_a_failure_and_not_a_verdict(self):
+        def boom(path):
+            raise RuntimeError("no device")
+        with mock.patch.dict(sys.modules, {"rdebug.adapter.core": mock.Mock(
+                CaptureSession=boom)}):
+            g = R._probe_gpu(self.tmp,
+                             {"RDEBUG_INTEGRATION_CAPTURE": self._capture_file()})
+        self.assertEqual(g["probe_status"], "failed")
+        self.assertIn("RuntimeError", g["probe_error"])
+        self.assertIn("no device", g["probe_error"])
+
+    def test_an_unprobed_gpu_still_blocks_the_gate(self):
+        """None must stay unmet, or the gates would pass on a silent probe."""
+        env = {"gpu": R._probe_gpu(self.tmp, {}), "renderdoc": {},
+               "corpus": {}, "runtime": {}}
+        for name in ("gpu.present", "gpu.replay_supported"):
+            self.assertFalse(R.capability_satisfied(env, name), name)
+
+
+class TestMissingRequirementsRenderReadably(unittest.TestCase):
+    """The console must name the missing capability, not its characters.
+
+    The rendering layer had no control at all, which is how this survived:
+    missing_requirements() returned a correct list, classify_missing() consumed
+    it correctly, and only the human-facing print spelled each name out one
+    letter at a time. The JSON was never wrong.
+
+    The controls compare the console against the JSON from the same run rather
+    than matching a phrase. An earlier draft asserted the absence of the exact
+    broken spelling; re-introducing the bug with a different separator made
+    those assertions pass while the output was still nonsense. A capability
+    name contains no comma, so "the console printed a comma inside a missing
+    line" catches every variant of the failure.
+    """
+
+    def _run(self):
+        import contextlib
+        import io
+        import tempfile
+        out = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+        out.close()
+        buf = io.StringIO()
+        saved = sys.argv
+        sys.argv = ["pipeline_readiness.py", "--json", out.name]
+        try:
+            with contextlib.redirect_stdout(buf):
+                R.main()
+        finally:
+            sys.argv = saved
+        with open(out.name, encoding="utf-8") as fh:
+            report = json.load(fh)
+        return buf.getvalue(), report
+
+    def _console_missing(self, text):
+        return [ln.strip()[len("missing:"):].strip()
+                for ln in text.splitlines() if ln.strip().startswith("missing:")]
+
+    def test_the_console_prints_exactly_what_the_json_reports(self):
+        text, report = self._run()
+        expected = [n for row in report["gates"]
+                    for n in row["missing_requirements"]]
+        self.assertTrue(expected,
+                        "this machine cannot run the GPU gates, so the report "
+                        "must name what is missing")
+        self.assertEqual(sorted(self._console_missing(text)), sorted(expected))
+
+    def test_a_missing_requirement_never_contains_a_separator(self):
+        text, _ = self._run()
+        for name in self._console_missing(text):
+            self.assertNotIn(",", name,
+                             "a capability name is one dotted token; a comma "
+                             "means the renderer split it into characters")
+            self.assertIn(".", name,
+                          "a capability name is dotted; a bare word means it "
+                          "was mangled")
+
+    def test_a_gpu_capability_is_not_spelled_out_letter_by_letter(self):
+        text, _ = self._run()
+        for name in self._console_missing(text):
+            # "renderdoc.module_importable" has letters too; the signal is
+            # that they are not individually separator-wrapped.
+            self.assertNotRegex(name, r"(?:\b\w\b[,\|]\s*){3,}",
+                                "single letters separated by punctuation is "
+                                "the exact shape of the original defect")
+
+    def test_the_json_report_carried_the_names_correctly_all_along(self):
+        """Why this went unnoticed: the machine-readable half was never wrong."""
+        _, report = self._run()
+        rows = {g["gate_id"]: g for g in report["gates"]}
+        for name in rows["integration"]["missing_requirements"]:
+            self.assertIsInstance(name, str)
+            self.assertIn(".", name)
+
+
 class TestCapabilityDeclaration(unittest.TestCase):
     """4.2.1: the four capability classes, and they are prerequisites."""
 
@@ -132,14 +279,32 @@ class TestCapabilityDeclaration(unittest.TestCase):
         env = R.probe_environment(REPO_ROOT, {})
         corpus = env["corpus"]
         self.assertIsInstance(corpus["captures_present"], bool)
-        self.assertIsInstance(env["gpu"]["present"], bool)
-        # The probe takes its inputs, so it can be pointed at an environment
-        # that does have them; nothing here is hardcoded to False.
-        source = open(os.path.join(REPO_ROOT, "scripts",
-                                   "pipeline_readiness.py"),
-                      encoding="utf-8").read()
-        self.assertNotIn('"captures_present": False', source)
-        self.assertNotIn('"present": False', source)
+        gpu = env["gpu"]
+        # present is tri-state: None when no probe ran, True or False once one
+        # did. It was required to be a bool, which is what let an unprobed
+        # machine report False -- a bool has nowhere to say "not asked".
+        self.assertIn(gpu["present"], (True, False, None))
+        if gpu["present"] is None:
+            self.assertIn(gpu["probe_status"], ("not_configured", "failed"))
+        else:
+            self.assertEqual(gpu["probe_status"], "probed")
+        # Nothing here is hardcoded to False, and the check is behavioural
+        # rather than a scan of the source text. The old scan looked for the
+        # literal '"present": False' and had to be relaxed the moment a real
+        # observation started returning it -- a failed probe legitimately
+        # reports False, and a text scan cannot tell that from an assumption.
+        # Asking the probe is the only way to tell them apart.
+        self.assertIsNot(gpu["present"], False,
+                         "nothing was probed here, so False would be a claim "
+                         "about hardware that was never made")
+        with mock.patch.dict(sys.modules, {"rdebug.adapter.core": mock.Mock(
+                CaptureSession=lambda path: (_ for _ in ()).throw(
+                    RuntimeError("no device")))}):
+            failed = R._probe_gpu(REPO_ROOT,
+                                  {"RDEBUG_INTEGRATION_CAPTURE": __file__})
+        self.assertIs(failed["present"], False,
+                      "a probe that ran and failed is an observation of False")
+        self.assertEqual(failed["probe_status"], "failed")
 
 
 class TestTheMcpSdkFact(unittest.TestCase):
