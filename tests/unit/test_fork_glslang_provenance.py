@@ -339,6 +339,52 @@ class TestTheAuditStatesItsOwnVerdict(unittest.TestCase):
         self.assertIn("violation_code", verdict["evidence"])
         self.assertIn("abort", verdict["evidence"])
 
+    def test_the_capture_exception_names_no_evidence_that_cannot_exist(self):
+        """A named evidence path must be a file that is actually there.
+
+        mechanism_path and recorded_path were removed from the capture
+        exception. They named capture_mechanism.patch and
+        capture_mechanism.patch_recorded under rdebug-validation, neither of
+        which exists anywhere, and patch_verification.json in that same tree
+        records verdict STOP with patch_verified_in_binary false -- no .rdc
+        from that run may be admitted.
+
+        The audit would have reported INFRASTRUCTURE_FAILURE forever, and the
+        only way to turn that green was to write the files, which is
+        fabricating the record of a capture its own evidence says did not
+        happen. A check that can only fail is not a check.
+        """
+        with open(DECLARATION, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        capture = next(e for e in doc["exceptions"]
+                       if e["exception_id"] == "n3-headless-capture-trigger")
+        prov = capture["provenance"]
+        for key in ("mechanism_path", "recorded_path"):
+            self.assertNotIn(key, prov,
+                             f"{key} names evidence that does not exist; put "
+                             "it back only if the file is real, and say where "
+                             "it came from")
+        root = os.path.normpath(os.path.join(
+            REPO_ROOT, prov.get("root", ".")))
+        for key, rel in prov.items():
+            if key.endswith("_path"):
+                path = rel if os.path.isabs(rel) else os.path.join(root, rel)
+                self.assertTrue(os.path.isfile(path),
+                                f"named evidence {rel} does not exist at {path}")
+
+    def test_the_provenance_that_can_be_verified_is_still_declared(self):
+        """Removing two fields must not quietly thin the contract."""
+        with open(DECLARATION, encoding="utf-8") as fh:
+            doc = json.load(fh)
+        prov = next(e for e in doc["exceptions"]
+                    if e["exception_id"] == "n3-headless-capture-trigger"
+                    )["provenance"]
+        for key in ("metadata_globs", "patch_artifact", "patch_sha256",
+                    "base_commit", "root"):
+            self.assertIn(key, prov,
+                          f"{key} is verifiable provenance and was not to be "
+                          "removed along with the two that were")
+
     def test_the_gate_is_wired_to_read_that_verdict(self):
         with open(os.path.join(REPO_ROOT, "release-gates.json"),
                   encoding="utf-8") as fh:
