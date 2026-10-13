@@ -24,4 +24,5 @@ tests/workload/reports/
 gate_report.json
 ci_pipeline_report.json
 .gate3_verdict.json
+.fork_verdict.json
 .g3probe.json

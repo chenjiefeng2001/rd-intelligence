@@ -80,6 +80,61 @@ jobs:
           npm ci
           npm run build
 
+      # The fork_integrity gate declares sibling_fork, and without a RenderDoc
+      # checkout beside the runner it reports INFRASTRUCTURE_FAILURE before its
+      # command runs. That is honest but leaves the audit itself unexecuted:
+      # the provenance dispatch, the F1/F2 split and the artefact identity
+      # checks would have no remote evidence at all.
+      #
+      # So the gate is given the workspace its declaration describes: the
+      # public base, plus the two declared patch artefacts applied as
+      # working-tree modifications. That is the delivery model fork-exception
+      # pins, not a convenience. The fork is fetched by the exact commit the
+      # declaration names -- never a branch tip -- so a moving branch cannot
+      # quietly change what the audit is measuring.
+      #
+      # The unpushed commit f4b3d4fa lives only on a developer's machine and is
+      # deliberately not published; nothing here can fetch it, and nothing
+      # should. Expect INFRASTRUCTURE_FAILURE from this gate: on this runner
+      # ../rdebug-validation does not exist, and the audit reports an absent
+      # external artefact as infrastructure rather than as a regression, per
+      # CAPTURE-CORPUS-CONTRACT section 5.
+      - name: Provision the declared fork workspace
+        run: |
+          set -euo pipefail
+          PINNED=b7f1554feb0d7d7120f2b9280364b98972ec37d3
+          FORK="$(dirname "$GITHUB_WORKSPACE")/renderdoc"
+          mkdir -p "$FORK"
+          git -C "$FORK" init -q
+          git -C "$FORK" remote add origin https://github.com/chenjiefeng2001/renderdoc.git
+          git -C "$FORK" fetch -q --depth 1 origin "$PINNED"
+          git -C "$FORK" checkout -q FETCH_HEAD
+          ACTUAL="$(git -C "$FORK" rev-parse HEAD)"
+          if [ "$ACTUAL" != "$PINNED" ]; then
+            echo "::error::fork at $ACTUAL, declaration pins $PINNED"
+            exit 1
+          fi
+          # The artefacts are canonicalised without a trailing newline, which
+          # git apply requires. Copy first and add the newline to the copy:
+          # editing the checked-out artefact in place would change the bytes
+          # the unit gate's digest controls read two steps later, and those
+          # controls are exactly what proves the artefact is intact.
+          # --whitespace=nowarn because a context line for an empty source
+          # line is a single space; that is the patch format, and the digests
+          # are computed over these exact bytes.
+          TMPPATCH="$(mktemp -d)"
+          for artefact in \
+            fork-provenance/core-cpp-n3-headless-capture-trigger.patch \
+            fork-provenance/glslang-rdcspv-lifecycle-init-shutdown.patch; do
+            cp "$GITHUB_WORKSPACE/$artefact" "$TMPPATCH/$(basename "$artefact")"
+            printf '\n' >> "$TMPPATCH/$(basename "$artefact")"
+            git -C "$FORK" apply --whitespace=nowarn "$TMPPATCH/$(basename "$artefact")"
+          done
+          git -C "$FORK" diff --stat
+          # The audit reads the pristine artefacts from the repository, not the
+          # copies git apply consumed.
+          sha256sum "$GITHUB_WORKSPACE"/fork-provenance/*.patch
+
       - name: Run the section 4 gates
         id: gates
         run: python scripts/ci_pipeline.py --json ci_pipeline_report.json
