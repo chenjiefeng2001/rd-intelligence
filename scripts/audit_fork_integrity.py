@@ -99,11 +99,20 @@ def _classify_hunk(fork, path, hunk):
     return _enclosing_symbol(lines, lineno)
 
 
+#: An external artefact the declaration names is simply not here. Not a
+#: statement about the work: CAPTURE-CORPUS-CONTRACT section 5 forbids turning
+#: an absence into REGRESSION. Marked at the raise site rather than recovered
+#: from the message, because a string match would guess.
+ABSENCE_EXTERNAL = "absence_external"
+VIOLATION = "violation"
+
+
 class Violation(Exception):
-    def __init__(self, code, detail):
+    def __init__(self, code, detail, kind=VIOLATION):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
+        self.kind = kind
 
 
 def _git(fork, *args):
@@ -383,6 +392,7 @@ def _verify_capture_metadata(exc, repo_root):
             "F3",
             f"no capture metadata matched {globs} under {root}, so provenance cannot "
             "be bound",
+            kind=ABSENCE_EXTERNAL,
         )
     seen = 0
     for path in files:
@@ -441,7 +451,46 @@ def _verify_named_evidence(exc, root):
                 f"declaration names {key}={rel!r} as provenance evidence, but "
                 f"{rel!r} does not exist under {root}; a declaration that "
                 f"names evidence it cannot produce is not verified evidence",
+                kind=ABSENCE_EXTERNAL,
             )
+
+
+def _outcome_for(v, declaration):
+    """INFRASTRUCTURE_FAILURE or REGRESSION, and why.
+
+    release_gate maps any non-zero gate exit to REGRESSION. That is right for a
+    gate that ran and found the work wrong, and wrong here: the commonest
+    reason this audit fails on a clean machine is that the external capture
+    evidence it binds to is not present. CAPTURE-CORPUS-CONTRACT section 5
+    forbids translating an absence into REGRESSION, and DESIGN_SPEC 4.2.2 lists
+    "capture does not exist -> REGRESSION" as an explicitly forbidden mapping.
+    So the audit states its own four-state verdict rather than letting the exit
+    code speak for it.
+
+    The discriminator is absent-external versus present-and-disagreeing:
+
+      the declared provenance root does not exist      -> INFRASTRUCTURE_FAILURE
+      evidence is there and disagrees with us          -> REGRESSION
+      an in-repo artefact has the wrong digest         -> REGRESSION
+      the fork is not at the base it declares          -> REGRESSION
+    """
+    if getattr(v, "kind", VIOLATION) == ABSENCE_EXTERNAL:
+        return ("INFRASTRUCTURE_FAILURE",
+                "a declared external artefact is absent on this machine; "
+                "nothing was concluded about the fork")
+    return "REGRESSION", "provenance is present and disagrees with the declaration"
+
+
+def _write_verdict(path, outcome, why, code=None, abort=None):
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({
+            "schema": "rdebug-fork-verdict/1",
+            "outcome": outcome,
+            "detail": why,
+            "cases": {},
+            "evidence": ({"violation_code": code} if code else {})
+                       | ({"abort": abort} if abort else {}),
+        }, fh, indent=1)
 
 
 def main(argv=None):
@@ -451,6 +500,8 @@ def main(argv=None):
     ap.add_argument("--fork", default=os.path.normpath(
         os.path.join(repo_root, "..", "renderdoc")))
     ap.add_argument("--declaration", default=os.path.join(repo_root, "fork-exception.json"))
+    ap.add_argument("--verdict-json", default=None,
+                    help="write the four-state verdict here for the gate runner")
     args = ap.parse_args(argv)
 
     print("fork integrity audit (DESIGN_SPEC 2.1.1)")
@@ -459,7 +510,11 @@ def main(argv=None):
     try:
         summary = verify(args.fork, args.declaration, repo_root)
     except Violation as v:
+        outcome, why = _outcome_for(v, args.declaration)
         print(f"  FAIL  {v}")
+        print(f"  outcome  {outcome}: {why}")
+        if args.verdict_json:
+            _write_verdict(args.verdict_json, outcome, why, v.code, abort=str(v))
         return 1
     print(
         f"  PASS  {summary['tracked_modifications']} tracked modification(s) "
@@ -470,6 +525,11 @@ def main(argv=None):
     print("  F2 declared but absent          : not present")
     print("  F3 provenance unbound/mismatched: not present")
     print("  F4 outside declared blast radius: not present")
+    if args.verdict_json:
+        _write_verdict(args.verdict_json, "PASS",
+                       "{} tracked modification(s) under {} declared "
+                       "exception(s)".format(summary["tracked_modifications"],
+                                             summary["exceptions"]))
     return 0
 
 

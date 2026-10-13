@@ -22,6 +22,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -252,6 +253,101 @@ def _scratch_repo(root, apply_artefact=True):
         subprocess.run(["git", "-C", fork, "apply", patched], check=True,
                        capture_output=True)
     return fork
+
+
+class TestTheAuditStatesItsOwnVerdict(unittest.TestCase):
+    """A missing external evidence root is not a regression.
+
+    release_gate maps any non-zero gate exit to REGRESSION. That is right for
+    a gate that ran and found the work wrong, and wrong here: the commonest
+    failure on a clean machine is that the external capture evidence this audit
+    binds to is not present. CAPTURE-CORPUS-CONTRACT section 5 forbids
+    translating an absence into REGRESSION and DESIGN_SPEC 4.2.2 lists it as an
+    explicitly forbidden mapping, so the audit writes its own four-state verdict
+    and the gate reads that instead of the exit code.
+    """
+
+    def _run(self, fork, declaration, tag):
+        out = os.path.join(self.root, tag + ".json")
+        proc = subprocess.run(
+            [sys.executable,
+             os.path.join(REPO_ROOT, "scripts", "audit_fork_integrity.py"),
+             "--fork", fork, "--declaration", declaration,
+             "--verdict-json", out],
+            capture_output=True, text=True)
+        with open(out, encoding="utf-8") as fh:
+            return proc.returncode, json.load(fh)
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="fork_verdict_")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _declaration_with_root(self, root):
+        doc = json.loads(json.dumps(
+            json.load(open(DECLARATION, encoding="utf-8"))))
+        doc["exceptions"][0]["provenance"]["root"] = root
+        path = os.path.join(self.root, "decl.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh)
+        return path
+
+    def test_absent_external_evidence_root_is_infrastructure(self):
+        """The discrimination, at the level it is actually made.
+
+        Tested here rather than end to end because reaching the F3 requires a
+        fork carrying both declared modifications, and the scratch repository
+        holds one file: the capture exception is absent first and F2 fires
+        before provenance is ever reached.
+        """
+        missing = os.path.join(self.root, "no-such-validation-tree")
+        decl = self._declaration_with_root(missing)
+        v = VER.Violation(
+            "F3",
+            f"declaration names mechanism_path='capture_mechanism.patch' as "
+            f"provenance evidence, but 'capture_mechanism.patch' does not "
+            f"exist under {missing}",
+            kind=VER.ABSENCE_EXTERNAL)
+        outcome, why = VER._outcome_for(v, decl)
+        self.assertEqual(outcome, "INFRASTRUCTURE_FAILURE")
+        self.assertIn("absent on this machine", why)
+
+    def test_evidence_present_but_disagreeing_is_a_regression(self):
+        decl = self._declaration_with_root(self.root)
+        v = VER.Violation("F3", "N3-05A1.json records patch 'OTHER'")
+        outcome, _why = VER._outcome_for(v, decl)
+        self.assertEqual(outcome, "REGRESSION")
+
+    def test_a_wrong_artefact_digest_is_a_regression(self):
+        """The artefact is in this repository, so a mismatch is a real fact."""
+        decl = self._declaration_with_root(self.root)
+        v = VER.Violation("F3", "patch artefact hashes to deadbeef")
+        outcome, _why = VER._outcome_for(v, decl)
+        self.assertEqual(outcome, "REGRESSION")
+
+    def test_a_violation_that_is_not_provenance_is_always_a_regression(self):
+        for code in ("F1", "F2", "F4"):
+            decl = self._declaration_with_root(os.path.join(self.root, "gone"))
+            outcome, _why = VER._outcome_for(VER.Violation(code, "x"), decl)
+            self.assertEqual(outcome, "REGRESSION", code)
+
+    def test_the_verdict_file_carries_the_reason_and_the_violation(self):
+        fork = _scratch_repo(self.root)
+        decl = self._declaration_with_root(os.path.join(self.root, "gone"))
+        _code, verdict = self._run(fork, decl, "reason")
+        self.assertEqual(verdict["outcome"], "REGRESSION")
+        self.assertTrue(verdict["detail"])
+        self.assertIn("violation_code", verdict["evidence"])
+        self.assertIn("abort", verdict["evidence"])
+
+    def test_the_gate_is_wired_to_read_that_verdict(self):
+        with open(os.path.join(REPO_ROOT, "release-gates.json"),
+                  encoding="utf-8") as fh:
+            gate = next(g for g in json.load(fh)["gates"]
+                        if g["id"] == "fork_integrity")
+        self.assertEqual(gate["runner"], "verdict_json",
+                         "an exit_code runner would collapse the four-state "
+                         "verdict back into pass or REGRESSION")
+        self.assertTrue(gate["verdict_path"])
 
 
 class TestDeclaredBlastRadius(unittest.TestCase):

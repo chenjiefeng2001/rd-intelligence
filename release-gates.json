@@ -207,7 +207,8 @@
         "python",
         "scripts/audit_fork_integrity.py"
       ],
-      "runner": "exit_code",
+      "runner": "verdict_json",
+      "verdict_path": ".fork_verdict.json",
       "min_executed": null,
       "requires": {
         "sibling_fork": true,
