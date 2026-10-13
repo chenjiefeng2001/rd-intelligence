@@ -1,0 +1,56 @@
+diff --git a/renderdoc/driver/shaders/spirv/glslang_compile.cpp b/renderdoc/driver/shaders/spirv/glslang_compile.cpp
+index e7e6b2dce..c653fe854 100644
+--- a/renderdoc/driver/shaders/spirv/glslang_compile.cpp
++++ b/renderdoc/driver/shaders/spirv/glslang_compile.cpp
+@@ -39,14 +39,32 @@ rdcarray<glslang::TProgram *> *allocatedPrograms = NULL;
+ 
+ void rdcspv::Init()
+ {
+-  if(!glslang_inited)
++  if(glslang_inited)
++    return;
++
++  glslang::InitializeProcess();
++
++  // Allocate both containers *before* publishing the initialised flag. If either
++  // allocation throws, glslang_inited stays false, so Shutdown() can never enter
++  // its body and therefore can never dereference a null container. The exception
++  // is deliberately not swallowed: a genuine initialisation failure stays visible
++  // to the caller at the point it happens rather than surfacing much later as a
++  // teardown crash.
++  allocatedPrograms = new rdcarray<glslang::TProgram *>;
++  try
+   {
+-    glslang::InitializeProcess();
+-    glslang_inited = true;
+-
+-    allocatedPrograms = new rdcarray<glslang::TProgram *>;
+     allocatedShaders = new rdcarray<glslang::TShader *>;
+   }
++  catch(...)
++  {
++    // Roll back to the state we had on entry, then pair FinalizeProcess with the
++    // InitializeProcess above, and let the failure continue to propagate.
++    SAFE_DELETE(allocatedPrograms);
++    glslang::FinalizeProcess();
++    throw;
++  }
++
++  glslang_inited = true;
+ }
+ 
+ void rdcspv::Shutdown()
+@@ -67,6 +85,13 @@ void rdcspv::Shutdown()
+     SAFE_DELETE(allocatedShaders);
+ 
+     glslang::FinalizeProcess();
++
++    // Reset the flag last, so that it keeps meaning "both containers are live and
++    // glslang is initialised" for the whole teardown. Clearing it is what makes a
++    // second Shutdown() a no-op and lets a later Init() genuinely re-initialise;
++    // previously the flag was never cleared, so after any Shutdown() the guard in
++    // Init() silently did nothing and left null containers behind.
++    glslang_inited = false;
+   }
+ }
+ 

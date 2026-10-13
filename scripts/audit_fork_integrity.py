@@ -186,21 +186,51 @@ def verify(fork, declaration, repo_root):
         )
 
     covered = set()
+    scope = []
     for exc in exceptions:
-        eid = exc["exception_id"]
         files = exc.get("files") or {}
-        allowed_syms = {s for spec in files.values() for s in spec.get("allowed_symbols", [])}
-        allowed_scope = {s for spec in files.values() for s in spec.get("allowed_file_scope", [])}
-
         hit = [p for p in mods if p in files]
-        if not hit:
-            raise Violation(
-                "F1",
-                f"exception {eid!r} covers {sorted(files)} "
-                f"but the modifications are {sorted(mods)}",
-            )
         covered.update(hit)
+        scope.append((exc, files, hit))
 
+    # Order matters when a declaration is wrong in both directions at once.
+    # An undeclared modification is the primary finding: it is a change in the
+    # fork that nobody claims. A declaration naming a modification that is not
+    # there is a secondary fact about the declaration, and reporting it first
+    # would hide the breach behind bookkeeping. F1 is also decided before any
+    # provenance check, deliberately: provenance used to run inside the loop
+    # above, so a declaration whose metadata had gone missing reported F3 and
+    # the real violation -- a file no declaration covers -- never surfaced.
+    # A gate that reports the wrong code for a real breach is not auditing it.
+    undeclared = sorted(set(mods) - covered)
+    if undeclared:
+        raise Violation(
+            "F1",
+            f"tracked modification(s) not covered by any declaration: {undeclared}",
+        )
+
+    for exc, files, hit in scope:
+        eid = exc["exception_id"]
+        if not hit:
+            # F2, not F1. This is "a declaration names a patch that is not
+            # present in the working tree", which is what F2 was defined to
+            # mean at the top of this file. F1 is the opposite, and is decided
+            # above from the set difference. With one exception the two
+            # situations coincide and the code could not tell them apart; with
+            # two they do not. It matters now: the sibling checkout carries the
+            # driver fix as a commit, so it is absent from the working tree
+            # this reads, and reporting that as an undeclared modification
+            # would name a file the fork never touched.
+            raise Violation(
+                "F2",
+                f"exception {eid!r} declares {sorted(files)} but no such "
+                f"modification is present in the working tree {sorted(mods)}",
+            )
+
+        allowed_syms = {s for spec in files.values()
+                        for s in spec.get("allowed_symbols", [])}
+        allowed_scope = {s for spec in files.values()
+                         for s in spec.get("allowed_file_scope", [])}
         for path in hit:
             for hunk in mods[path]:
                 where = _classify_hunk(fork, path, hunk)
@@ -217,14 +247,9 @@ def verify(fork, declaration, repo_root):
                     f"{eid}: {path} touches excluded surface via {excluded!r}",
                 )
 
-        _verify_provenance(exc, repo_root)
+    for exc in exceptions:
+        _verify_provenance(exc, fork, repo_root)
 
-    undeclared = sorted(set(mods) - covered)
-    if undeclared:
-        raise Violation(
-            "F1",
-            f"tracked modification(s) not covered by any declaration: {undeclared}",
-        )
     return {
         "tracked_modifications": len(mods),
         "exceptions": len(exceptions),
@@ -236,13 +261,117 @@ def verify(fork, declaration, repo_root):
     }
 
 
-def _verify_provenance(exc, repo_root):
+def _verify_patch_identity(exc, fork, repo_root):
+    """F3: the patch artefact and the base it applies to must be the real ones.
+
+    Three facts, all optional in the declaration so a synthetic fixture that
+    declares none is unaffected, and all enforced when declared:
+
+      the artefact named by `patch_artifact` exists and hashes to
+      `patch_sha256`; the fork's HEAD is `base_commit`; and every file the fork
+      differs from `base_commit` by is one the declaration covers.
+
+    The third is the one that matters most and the reason this exists at all.
+    tracked_modifications compares the working tree against HEAD, so it is blind
+    to anything already committed. That check is exactly the one this module's
+    own docstring disclaims -- "that check would pass for a fork that silently
+    diverges from upstream". Reproduced against a real fork carrying an unpushed
+    commit that touches renderdoc/driver/, a surface the declaration lists as
+    excluded: the working tree showed only the declared patch, the driver commit
+    was invisible, and the verifier returned PASS.
+    """
+    prov = exc.get("provenance") or {}
+    artifact = prov.get("patch_artifact")
+    want_sha = prov.get("patch_sha256")
+    base = prov.get("base_commit")
+
+    if artifact:
+        path = artifact if os.path.isabs(artifact) else os.path.join(repo_root, artifact)
+        if not os.path.isfile(path):
+            raise Violation(
+                "F3",
+                f"declared patch artefact {artifact!r} does not exist, so the "
+                f"patch this exception names cannot be identified",
+            )
+        import hashlib
+        with open(path, "rb") as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()
+        if want_sha and digest != want_sha:
+            raise Violation(
+                "F3",
+                f"patch artefact {artifact} hashes to {digest}, declaration "
+                f"says {want_sha}",
+            )
+
+    if base:
+        head = _git(fork, "rev-parse", "HEAD").strip()
+        if head != base:
+            raise Violation(
+                "F3",
+                f"fork HEAD is {head[:12]} but the declaration pins "
+                f"{base[:12]}; a commit past the base is not covered by any "
+                f"declaration, because a committed change is invisible to the "
+                f"working-tree comparison",
+            )
+
+
+def _verify_provenance(exc, fork, repo_root):
+    """F3: dispatch on the identity facts the declaration actually carries.
+
+    Two kinds of provenance exist and they are not interchangeable. A capture
+    exception is bound to a capture corpus: the metadata must exist, must name
+    the same mechanism, and must record the patch as applied. A driver
+    lifecycle fix has no capture corpus at all; its provenance is a pinned
+    patch artefact, its digest and a pinned base.
+
+    Forcing the second kind through the first is what previously made a
+    driver-only exception unexpressible: it could only be declared by
+    fabricating capture-corpus metadata, which merges two identities, or by
+    weakening F3 for everything, which weakens the capture exception too.
+    Neither is necessary, so neither is done.
+
+    The dispatch is deliberately not an either/or. Declaring both runs both.
+    Declaring neither is F3, because a declaration that omits its identity
+    fields is not thereby exempt from proving them. Declaring the patch triple
+    partially is F3 for the same reason: two of three fields are an identity
+    nobody can verify.
+    """
+    prov = exc.get("provenance") or {}
+    globs = prov.get("metadata_globs") or []
+    patch_fields = ("patch_artifact", "patch_sha256", "base_commit")
+    declared = [f for f in patch_fields if prov.get(f)]
+
+    if declared and len(declared) != len(patch_fields):
+        raise Violation(
+            "F3",
+            f"exception {exc.get('exception_id')!r} declares "
+            f"{declared} but not {sorted(set(patch_fields) - set(declared))}; "
+            "a partial patch identity cannot be verified, so it is not treated "
+            "as one",
+        )
+    if not globs and not declared:
+        raise Violation(
+            "F3",
+            f"exception {exc.get('exception_id')!r} declares no provenance: "
+            "neither capture metadata globs nor a patch identity, so nothing "
+            "binds it to reality",
+        )
+
+    # Patch identity first, then capture evidence. An exception can be wrong
+    # both ways, and only one reason is reported. Fork identity is the more
+    # urgent fact -- it says which fork this is -- and reporting the weaker
+    # evidence gap first would bury the base divergence underneath it.
+    if declared:
+        _verify_patch_identity(exc, fork, repo_root)
+    if globs:
+        _verify_capture_metadata(exc, repo_root)
+
+
+def _verify_capture_metadata(exc, repo_root):
     """F3: the metadata must record the patch, and agree with reality."""
     prov = exc.get("provenance") or {}
     globs = prov.get("metadata_globs") or []
     root = os.path.normpath(os.path.join(repo_root, prov.get("root", ".")))
-    prov.get("mechanism_path", "capture_mechanism.patch")
-    prov.get("recorded_path", "capture_mechanism.patch_recorded")
 
     import glob as _glob
 
@@ -274,7 +403,45 @@ def _verify_provenance(exc, repo_root):
         seen += 1
     if not seen:
         raise Violation("F3", "no capture metadata verified")
+    _verify_named_evidence(exc, root)
     return seen
+
+
+def _verify_named_evidence(exc, root):
+    """F3: every path the declaration names as evidence must actually exist.
+
+    These two lines used to be here, doing nothing:
+
+        prov.get("mechanism_path", "capture_mechanism.patch")
+        prov.get("recorded_path", "capture_mechanism.patch_recorded")
+
+    Bare expressions. The keys were read and the values discarded, so a
+    declaration could name evidence that does not exist and still pass. On the
+    real declaration that is not hypothetical: both files are absent from
+    rdebug-validation, and the exception verified anyway.
+
+    The contract states the rule this was supposed to implement --
+    "patch_recorded agrees with patch presence"
+    (docs/A1-FORK-INTEGRITY-CONTRACT.md line 74). Agreement needs both sides.
+    Only the recorded side was ever read.
+
+    Presence is what is checked here, not content. Nothing in the repository
+    fixes a format for either artefact, and inventing one would be a guess
+    wearing a check's clothing.
+    """
+    prov = exc.get("provenance") or {}
+    for key in ("mechanism_path", "recorded_path"):
+        rel = prov.get(key)
+        if not rel:
+            continue
+        path = rel if os.path.isabs(rel) else os.path.join(root, rel)
+        if not os.path.isfile(path):
+            raise Violation(
+                "F3",
+                f"declaration names {key}={rel!r} as provenance evidence, but "
+                f"{rel!r} does not exist under {root}; a declaration that "
+                f"names evidence it cannot produce is not verified evidence",
+            )
 
 
 def main(argv=None):

@@ -44,12 +44,66 @@
         "root": "../rdebug-validation",
         "mechanism_path": "capture_mechanism.patch",
         "recorded_path": "capture_mechanism.patch_recorded",
+        "patch_artifact": "fork-provenance/core-cpp-n3-headless-capture-trigger.patch",
+        "patch_sha256": "76389727458c9a4e129ae910b5f800541dbb8e8a33a7c3a525a756999bfddd12",
+        "base_commit": "b7f1554feb0d7d7120f2b9280364b98972ec37d3",
         "scope_note": "Narrowed from *.json after the F3 check rejected it: N3-02 and N3-03 were captured without the patch and record no mechanism, so only the N3-05A captures are covered by this exception."
       },
 
       "not_a_replay_change": true,
 
       "scope_note": "This exception authorises exactly the modification described above and nothing else. It does not carry forward to any future patch: a new patch must re-enter the same Contract and evidence flow and be declared separately."
+    },
+
+    {
+      "exception_id": "glslang-rdcspv-lifecycle",
+      "enabled": true,
+      "category": "driver_lifecycle_fix",
+      "purpose": "rdcspv::Init published glslang_inited before its two containers were allocated, so an allocation failure left the flag true with null pointers. Shutdown() then dereferenced NULL, and a later Init() silently did nothing. This restores the invariant that the flag means both containers are live.",
+
+      "granted_by": {
+        "source": "Adjudicated exception ruling, recorded locally",
+        "evidence": "docs/PDB-ATTRIBUTION-RESULT.md sections 12-15",
+        "note": "The attribution is binary-level: the fault at image offset 0x4A0A4E (mov rbx,[rax]) is rdcspv::Shutdown() dereferencing a null allocatedPrograms, with glslang_inited read but never reset anywhere in the module."
+      },
+
+      "source_commit": {
+        "sha": "f4b3d4fac3412e35f472036e1a5d344c3a7e60a1",
+        "role": "patch provenance record only",
+        "note": "This commit is where the change was written, not the baseline this exception audits against. It is deliberately not the verification base: the delivery model is a clean checkout of the public base with this patch applied as a working-tree modification. The sibling checkout still carries this commit, and the base pin is what reports that."
+      },
+
+      "files": {
+        "renderdoc/driver/shaders/spirv/glslang_compile.cpp": {
+          "allowed_symbols": [
+            "rdcspv::Init",
+            "unclassified:try",
+            "unclassified:allocatedShaders = new rdcarray<glslang::TShader *>;",
+            "glslang::FinalizeProcess"
+          ],
+          "allowed_file_scope": []
+        }
+      },
+
+      "excluded_surfaces": [
+        "replay",
+        "serialise",
+        "mcp",
+        "ai",
+        "semantic_graph",
+        "indexing"
+      ],
+
+      "excluded_surfaces_note": "driver is absent here because this exception is scoped to exactly one file inside that directory, enforced by files and by the patch digest. excluded_surfaces is not executed by the verifier, so it is not what bounds this exception; the allowed_symbols list and the digest are.",
+
+      "provenance": {
+        "patch_artifact": "fork-provenance/glslang-rdcspv-lifecycle-init-shutdown.patch",
+        "patch_sha256": "2a87e8bb01ce6698e2486b03ac4c2eb16fdeb874aef305b68ee9a14ad70f7d89",
+        "base_commit": "b7f1554feb0d7d7120f2b9280364b98972ec37d3",
+        "scope_note": "The patch identity is verified; the capture-corpus metadata is not applicable here and is deliberately absent rather than borrowed. A driver lifecycle fix has no capture corpus, and declaring the N3-05A globs to satisfy the check would merge two separate identities."
+      },
+
+      "scope_note": "This exception authorises exactly the change in the named artefact, on the named base, in the named file. It does not extend to renderdoc/driver/ generally: any other modification under that directory is undeclared and is rejected as F1."
     }
   ]
 }

@@ -37,12 +37,16 @@
       "allowed_skips": [
         "test_the_ntstatus_survives_a_real_process_on_windows",
         "test_the_working_tree_delta_still_matches_the_saved_copy",
-        "test_cli_exit_code_is_zero_for_the_real_state",
         "Positive control on the state the project is actually in.",
         "test_this_machine_takes_the_system_browser_path",
         "Conditional, but not a blanket skip.",
         "test_spawn_captures_private_memory_baseline",
-        "test_private_memory_trigger_recycles_a_live_worker"
+        "test_private_memory_trigger_recycles_a_live_worker",
+        "test_it_applies_cleanly_to_the_pinned_base",
+        "test_applying_it_rebuilds_the_recorded_scope",
+        "test_the_rebuilt_file_matches_the_sibling_checkout",
+        "Identity is what makes the artefact evidence, so prove it binds.",
+        "The real fork is measured, not assumed compliant."
       ],
       "requires": {
         "capabilities": []

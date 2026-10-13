@@ -14,3 +14,20 @@
 # now produces exactly the bytes they were taken from. This preserves the
 # recorded evidence; it does not redefine what the evidence is.
 build-probe/** -text
+
+# The fork patch artefacts are evidence in the same way, and the identity of
+# each one is literally its bytes: fork-exception.json records a patch_sha256
+# and audit_fork_integrity.py compares it against the file on disk. Same
+# failure, same shape. With no rule here, core.autocrlf=true rewrote them to
+# CRLF on checkout, so a fresh clone on Windows produced 1589 bytes where the
+# blob had 1540, and the digest became a4065a60... instead of the recorded
+# 76389727458c..., failing both the shipped digest control and the F3 patch
+# identity check. Linux CI never saw it, because autocrlf does not apply there.
+#
+# The artefacts are also git diff output: a context line for an empty source
+# line is a single space, and the files are canonicalised without a trailing
+# newline. That is why `git diff --check` reports trailing whitespace and a
+# blank line at EOF here. Those are the format, not defects. Do not let
+# anything "fix" them -- rewriting the bytes would invalidate the digest that
+# is the whole point of storing them.
+fork-provenance/** -text
