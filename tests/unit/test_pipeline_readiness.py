@@ -198,12 +198,31 @@ class TestMissingRequirementsRenderReadably(unittest.TestCase):
         out.close()
         buf = io.StringIO()
         saved = sys.argv
+        # The rendering controls need a report that names something missing,
+        # and the environment decides whether anything is. Run bare, no
+        # capture is configured and the GPU probe reports not_configured, so
+        # the missing list has a subject. Run through the pipeline -- which is
+        # the one environment that always sets the replay variables -- the
+        # probe runs, everything is satisfied, nothing is missing, and the
+        # first control below asserted a premise the machine had already
+        # refuted while the rest passed vacuously: controls with no subject.
+        # Point the probe's capture at a path that cannot exist, so the
+        # report names gpu.present and gpu.replay_supported as missing on
+        # every machine, in every environment. Restored before any assertion
+        # runs, so the rest of the suite sees the real environment.
+        saved_capture = os.environ.get("RDEBUG_INTEGRATION_CAPTURE")
+        os.environ["RDEBUG_INTEGRATION_CAPTURE"] = os.path.join(
+            tempfile.gettempdir(), "rdebug-rendering-control-not-a-capture.rdc")
         sys.argv = ["pipeline_readiness.py", "--json", out.name]
         try:
             with contextlib.redirect_stdout(buf):
                 R.main()
         finally:
             sys.argv = saved
+            if saved_capture is None:
+                os.environ.pop("RDEBUG_INTEGRATION_CAPTURE", None)
+            else:
+                os.environ["RDEBUG_INTEGRATION_CAPTURE"] = saved_capture
         with open(out.name, encoding="utf-8") as fh:
             report = json.load(fh)
         return buf.getvalue(), report
