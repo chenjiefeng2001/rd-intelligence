@@ -1,16 +1,15 @@
 ---
 document_role: evidence_record
 freshness_policy: point_in_time
-as_of_commit: 2c6079e
+as_of_commit: 8d7cb0c
 document_point_in_time_note: >-
   本文档是冻结证据，不追随 HEAD。其中的测量结果（如 unit 计数）
   属于某一时点，按裁决不做自动数值校验；身份事实与语义事实仍受控。
 ---
 # CURRENT EVIDENCE FREEZE
 
-冻结日期：2026-10-02（前一版 2026-09-29，基线 `ed59113`；本日两次刷新，
-前一刷新基线为 `a81600e`）
-baseline_commit: 9a4f48e
+冻结日期：2026-10-16（前一版 2026-10-02，基线 `9a4f48e`）
+baseline_commit: 8d7cb0c
 baseline_drift: 0
 
 `baseline_drift` 是本文档自陈的陈旧度。**刷新节奏为 milestone** ——
@@ -52,83 +51,94 @@ freshness_policy: point_in_time
 在落地瞬间即失效。
 覆盖仓库：`rd-intelligence`（`rdebug-validation` 冻结物**本轮只读未复验**，见下）
 
-> **本版与上一版的差异来源**：审计（`docs/AUDIT-2026-10-02.md`）发现本文件与
-> `STATUS.md` 均停留在 `ed59113`，落后本轮全部工作。刷新时**只写本轮实测事实**；
-> 凡本轮未复验者一律显式标注，不沿用旧值充当新证据。
+> **本版与上一版的差异来源**：独立跨仓库审计（`D:/renderdoc_no_mcp/AUDIT-2026-10-16.md`，
+> 2026-10-16 实测）触发整改并经项目负责人当日授权推进：G-1 部署（X2 修复产物入
+> pymodules，事故二进制对先经双哈希封存）、fork 对齐声明交付模型（HEAD 回声明基线
+> `b7f1554` + 双 patch 工作树修改，v1.x 分支保留 `f4b3d4fac`，零丢弃）、两处门禁自身
+> 缺陷修复（`eb02db0` 渲染控制前提、`8d7cb0c` gate-logs 忽略块）。本版把以上与全量
+> pipeline 新实测写入规范块；凡本轮未复验者一律显式标注，不沿用旧值充当新证据。
+> `rdebug-validation` 冻结物本轮**只读未复验**（沿用上一版边界）。
 
 ```text
 CURRENT EVIDENCE FREEZE
 ──────────────────────────────────────────────
 §2.1 fork integrity      COMPLIANT WITH DECLARED EXCEPTION
-  └ core.cpp +32 tracked ── 仍存在，1 tracked / 1 declared，
-                              provenance 绑定、被 F1–F4 强制
-  └ audit_fork_integrity exit 0（本轮实测）
-  └ git status --porcelain 仍**非空**（2 行），本冻结不宣称其为空
-  └ ✅ 已接线为 blocking 门禁（§4 门 5），非「无人运行则不阻止任何事」
-14 frozen artifacts      14/14 hash MATCH（本轮实测）
-  └ 验证机制 = pipeline_readiness._probe_corpus 的 manifest_match
+  └ 2 tracked / 2 declared：core.cpp +32（n3-headless-capture-trigger）与
+                            glslang_compile.cpp +35（glslang-rdcspv-lifecycle）
+  └ fork HEAD = 声明基线 b7f1554feb0d（2026-10-16 对齐交付模型：
+     v1.x 分支保留 f4b3d4fac、零丢弃；两 patch 以工作树修改存在，
+     与 CI 供给的 workspace 完全同构；规范化 diff 证明 glslang
+     工作树内容 == f4b3d4fac 即 X2 构建源）
+  └ audit_fork_integrity exit 0（2026-10-16 实测，F1–F4 全 not present）
+  └ git status --porcelain 为两行声明修改，本冻结如实记录其非空
+  └ blocking 门禁（§4 门 5）持续接线
+14 frozen artifacts      14/14 hash MATCH（2026-10-02 实测；**本轮未复验**，
+                           rdebug-validation 侧只读未触碰，沿用上版边界）
 §4 automation            RESOLVED WITH OBSERVED CONSEQUENCE (A2) → 门禁已接线并可运行
 context_eid             FIXED / VERIFIED（real capture confirmation 仍 pending）
 CI gate verdict (§4.1)   DEFINED / FROZEN
 G1 / G2 verdicts         COMPLETE / VERIFIED
-§4 门 1 unit             IMPLEMENTED / blocking / PASS 370→387
+§4 门 1 unit             IMPLEMENTED / blocking / PASS 1014（2026-10-16 实测）
 §4 门 1 transport        IMPLEMENTED / blocking / PASS 58
-§4 门 1 integration      IMPLEMENTED / blocking / INFRASTRUCTURE_FAILURE 63
-                                       (process exit 3221225477)
+§4 门 1 integration      IMPLEMENTED / blocking / PASS 77 / process exit 0
+                           —— G-1 部署后首次干净退出（历史：63 OK +
+                           exit 3221225477；X2 e1dce4d0 已入 pymodules 生产路径，
+                           事故二进制对先经双哈希封存；pyd 配对由
+                           PDB-ATTRIBUTION-RESULT §24.1 验收证明）
 §4 门 2 boundary_audit   IMPLEMENTED / blocking / PASS 18/18 + 1 deviation
 §4 门 3 cold_warm_equivalence
                          IMPLEMENTED / blocking / PASS（bounded coverage）
 §4 门 4 benchmark_archive
                          PROCESS_ONLY / not blocking / UNKNOWN（Gate 4）
-§4 门 5 fork_integrity   IMPLEMENTED / blocking / PASS（audit exit 0）
+§4 门 5 fork_integrity   IMPLEMENTED / blocking / PASS（audit exit 0，2/2）
 Pipeline Phase 1         COMPLETE / FROZEN
-  overall               BLOCKED_INFRA / exit 3 / failure   ← 本轮由 exit 4 变更
+  overall（本地全量）    NEEDS_REVIEW / exit 4 / neutral
+                           —— 六个可执行门**首次全 PASS**；唯一非 PASS =
+                           benchmark_archive PROCESS_ONLY（合法休止态）
+  overall（远端 run 23） BLOCKED_INFRA / exit 3 —— 成因仅为外部前置缺失：
+                           无 GPU runner；unit 1011 / transport 58 /
+                           boundary_audit 远端全 PASS；fork 审计照
+                           F3 ABSENCE_EXTERNAL 如实报 infra
 Pipeline readiness      COMPLETE / VERIFIED / FROZEN
 Execution accounting    COMPLETE / VERIFIED / FROZEN
-Teardown crash          REPRODUCED / FAULTING BYTES ESTABLISHED
-  previous interp       SUPERSEDED -- see TEARDOWN-CRASH-INVESTIGATION 13
-  faulting instruction  mov rbx, qword ptr [rax]  (48 8b 18)
-  instruction start     0x4A0A4E  (runtime-measured fault address)
-  faulting register     RAX == 0 at the fault; it is the dereferenced pointer
-  rbx / [rbx]           RBX = 00007ffb`0c1edc80 (non-null);
-                         [rbx] = 0x1, readable -- EXCLUDED as fault source
-  prior byte claim      SUPERSEDED -- "ff 50 virtual call / vtable pointer zero"
-                         refuted by runtime measurement (TEARDOWN 9 and 13)
-  root cause            OPEN -- which global [rip+...] is, which static owns
-                         it, and why it is zero are all unestablished
-  module                renderdoc.dll（非 renderdoc.pyd）
-  access                read of address 0 (c0000005)
-  function attribution  NOT_ESTABLISHED（PDB 未提供该地址私有符号）
+Teardown crash          ROOT CAUSE ESTABLISHED（P-b′）/ REPAIR DEPLOYED
+  faulting instruction   mov rbx, qword ptr [rax]  (48 8b 18) @ 0x4A0A4E
+  faulting register      RAX == 0（解引用源；RBX/[RBX] 实测排除）
+  root cause             rdcspv::Shutdown 非幂等 + glslang_inited 未复位
+                           → 重新 Init 被旧守卫短路 → exit-time 再次
+                           Shutdown 解引用 NULL（P-c REFUTED；
+                           「第 47 行 new 抛异常」DISPROVEN）
+  Scheme C               ROOT-CAUSE REPAIR / IMPLEMENTED（因果理由 CORRECTED）
+  behavior acceptance    ESTABLISHED：同 epoch==2 条件，63/63 正常且
+                           exit 0xC0000005 → exit 0
+  verified repair        NOT_YET_ESTABLISHED（Acceptance 3/4 受 CDB 同名
+                           模块寻址边界，冻结为观测能力缺口；
+                           NOT_YET_ESTABLISHED ≠ 修复可疑）
+  deployment             2026-10-16 已部署（见 integration 行）；部署改变的是
+                           修复产物位置，不改变已证明内容
+  module                 renderdoc.dll（非 renderdoc.pyd）
+  access                 read of address 0 (c0000005)
+  function attribution   NOT_ESTABLISHED（函数级符号仍不可得，
+                           OBSERVABILITY-CAPABILITY-MATRIX 冻结该边界）
 Termination evidence    COMPLETE / VERIFIED / FROZEN
-   Report schema owner.   IMPLEMENTED / VERIFIED  (commit 2bb188e)
-     direction             contract 6.1 <-> pipeline report, both directions
-     field split            diagnosis fields follow the contract; naming follows
-                            the implementation. Section 6.2's invariants depend
-                            only on executed/attempted/required_execution/state,
-                            so no gate semantics moved
-     report schema          rdebug-ci-pipeline-report /2 -> /3, produced by a
-                            real run (7/7 gate rows carry all five fields)
-     history preserved     release-gates /1-/6 and ci-pipeline /2-/4 all
-                            present; append-only control added after this round
-                            truncated the history it was extending
-     open by decision      evidence_ref, duration_s -- removing a contractual
-                            requirement is a relaxation, not a cleanup
-   Lint execution          COMPLETE / VERIFIED / FROZEN  (commit 2c6079e)
-     direction             ruff as a precondition of the existing unit gate
-     gate count            7 — unchanged; lint is not an eighth gate
-     spec schema           release-gates /5 -> /6 (gate sub-records only)
-     mapping               0 -> PASS; 1 -> REGRESSION; other -> INFRA
-     availability probe    required; `python -m ruff` exits 1 when absent,
-                           which is also ruff's 'violations found' code
-     open by decision      noqa permanent approver; expiry auto-check
-  classification        跨平台实测（Windows + WSL Ubuntu）
-  crash claim           恒不成立（is_crash 恒 False）
-workload mcp_contract   RETIRED（covered_by_existing_blocking_gates）
+Report schema owner     IMPLEMENTED / VERIFIED（commit 2bb188e；schema /3
+                           由真实运行产出）
+Lint execution          COMPLETE / VERIFIED / FROZEN（commit 2c6079e）
+  mapping                0 -> PASS; 1 -> REGRESSION; other -> INFRA
+  availability probe     required（ruff 缺失即 INFRA，远端已显式安装）
+classification           跨平台实测（Windows + WSL Ubuntu）
+crash claim             恒不成立（is_crash 恒 False）
+workload mcp_contract    RETIRED（covered_by_existing_blocking_gates）
 Gate 4 (§4.4)            PROCESS_ONLY / UNKNOWN
 release blocking         NOT AUTHORIZED
-CI configuration wiring  NOT AUTHORIZED（.github/workflows/ci.yml 仅为声明）
-runner environment       已建立可探测模型；**从未在真缺能力机器上执行**
-capture distribution     NOT ESTABLISHED（0 tracked .rdc）
+CI configuration wiring  已交付并运行（.github/workflows/ci.yml 两 job；
+                           远端 23 次 run，无 GPU runner 上诚实 BLOCKED_INFRA）
+runner environment       已建立可探测模型：本地齐备（exit 4）；远端缺
+                           GPU/RenderDoc/capture，按契约报
+                           INFRASTRUCTURE_FAILURE（run 22/23 实测）
+capture distribution     NOT ESTABLISHED（0 tracked .rdc；14 个 untracked
+                           fixture 属 FIXTURE-POPULATION-CONTRACT N4-A，
+                           不入库）
 shader reflection       CONTRACT DEFINED
 reflection catch        DEFERRED / defensive
 D6                      MEASURED / NO REGRESSION
@@ -138,10 +148,65 @@ N3-05B                  NOT AUTHORIZED
 F-N3-1                  NOT AUTHORIZED
 RenderDoc 归属 scope     RULED / FROZEN
   upstream report       ACCEPTED as future path（仅证据包，不声称归因）
-  fork modification     NOT AUTHORIZED
+  fork modification     NOT AUTHORIZED（2026-10-16 的交付模型对齐**不是**
+                           新的源码修改：仅把 checkout 移回声明基线并以声明
+                           工件形式携带既有修复；v1.x 分支保留 f4b3d4fac
+                           未推送、刻意不发布）
   replay exclusion      NOT AUTHORIZED to amend
 ──────────────────────────────────────────────
 ```
+
+## 2026-10-16 刷新：六个可执行门首次全 PASS（整改实测）
+
+**基线** `9a4f48e` → `8d7cb0c`。本版按 F4 的 milestone 节奏刷新：
+本里程碑 = G-1 部署 + fork 交付模型对齐 + 两处门禁自身缺陷修复 +
+本地全量 pipeline 首次六个可执行门全 PASS。整改由独立跨仓库审计
+（`D:/renderdoc_no_mcp/AUDIT-2026-10-16.md`）触发，经项目负责人
+2026-10-16 授权推进。
+
+| Checkpoint 项 | 值（2026-10-16 实测） |
+| --- | --- |
+| HEAD / 工作树 | `8d7cb0c` / clean；与 origin/main 同步（run 23 已完成并取回报告） |
+| unit | **1014 PASS**（整改前曾因 N1 漂移 49>19 而 REGRESSION） |
+| transport | 58 PASS |
+| integration | **77 PASS / process exit 0**（G-1 部署后；历史：63 OK + `3221225477`） |
+| boundary_audit | 18/18 + 1 recorded deviation |
+| cold_warm_equivalence | PASS |
+| fork_integrity | **PASS（audit exit 0；2 tracked / 2 declared）**（整改前曾 F2 REGRESSION） |
+| benchmark_archive | UNKNOWN（PROCESS_ONLY，设计如此） |
+| overall（本地） | **NEEDS_REVIEW / exit 4 / neutral** |
+| overall（远端 run 23） | BLOCKED_INFRA / exit 3（成因仅为外部前置缺失） |
+| ruff | clean |
+| 14 冻结物 | **本轮未复验**（rdebug-validation 只读未触碰） |
+
+### 本轮实现状态变化（相对上一版冻结）
+
+1. **G-1（X2 部署）**：`pymodules/renderdoc.dll` 由事故二进制 `97cad315…`
+   换为 X2 修复产物 `e1dce4d0…`（构建自 `f4b3d4fac`）。事故二进制对
+   （dll + pdb）先经**双哈希核对**封存于
+   `rdebug-validation/forensics/pymodules-accident-binary/`，失配旧 PDB
+   移出运行目录。`verified repair` 仍 NOT_YET_ESTABLISHED——部署改变的是
+   修复产物位置，不是已证明内容。
+2. **fork 对齐交付模型**：本地 fork 由「HEAD 领先声明基线一个 commit（修复
+   以 commit 形式存在，新审计按设计报 F2）」整改为「HEAD = 声明基线
+   `b7f1554feb0d` + 双 patch 工作树修改」，与 CI 供给 workspace 完全同构。
+   v1.x 分支保留 `f4b3d4fac`，零丢弃、可逆。规范化 diff 证明工作树
+   glslang 内容 == `f4b3d4fac`（X2 构建源）。
+3. **门禁自身缺陷修复**：`eb02db0`（readiness 渲染控制前提崩塌——pipeline
+   是唯一总设回放环境变量的运行方式，GPU probe 真跑 → missing 空 → 断言被
+   机器否证、姊妹控制空洞通过；修复 = 对照期注入必然缺失的 capture 前置，
+   双向验证 4/4×2）；`8d7cb0c`（`.gate-logs/` 补入 gate run outputs 忽略块）。
+
+### 本轮不改变的事
+
+release blocking 仍 NOT AUTHORIZED；MAX_DRIFT 19 未动（本轮是按既有界值
+修复欠账，非调界值灭警）；P9b / P10 / D3b / D4 / D7 / eid discovery / A8 /
+N3-05B / F-N3-1 / longrun / Real-world Validation 维持原状态；14 冻结物
+未复验；上游 issue 草稿未填；`f4b3d4fac` 不发布。
+
+以下各节（自「Checkpoint 事实（2026-10-02 实测）」起）为上一版冻结时点的
+历史记录，按 point_in_time 语义原样保留；其结论与上方规范块冲突处，一律以
+**上方 2026-10-16 规范块**为准。
 
 ## Checkpoint 事实（2026-10-02 实测）
 

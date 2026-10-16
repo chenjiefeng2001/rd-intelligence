@@ -188,18 +188,39 @@ class TestTheDriftBoundIsScopedNotWeakened(unittest.TestCase):
 
     def test_a_living_document_still_fails_past_the_bound(self):
         # Proved by reclassification rather than asserted about: temporarily
-        # declare the freeze document `living` and the bound must fire again at
-        # the current drift. Bytes in, bytes out -- a text round trip would
-        # normalise line endings and leave the file altered.
+        # declare the freeze document `living` and the bound must fire again.
+        # Bytes in, bytes out -- a text round trip would normalise line
+        # endings and leave the file altered.
+        #
+        # The staleness is synthesized, not borrowed from the calendar. The
+        # first version of this control relied on the live document already
+        # sitting past the bound, so it proved the scoping only while the
+        # document was stale -- which was every day it had existed until a
+        # refresh set baseline_commit near HEAD again. At that moment the
+        # reclassified document is within the bound, nothing fires, and the
+        # pin fails on the one day it exists to guard: the day of the
+        # refresh. Instead the mutated copy is pinned to a real ancestor
+        # beyond the bound, so the document it produces describes a
+        # repository that exists and the bound firing for it is the property
+        # under test rather than an accident of when the control is run.
         path = os.path.join(REPO_ROOT, self.FREEZE_REL)
         original = open(path, "rb").read()
         case = TestStatusBaselineDeclaresItsOwnDrift(
             "test_declared_drift_is_within_a_bound")
         try:
-            mutated = original.decode("utf-8").replace(
+            text = original.decode("utf-8")
+            mutated = text.replace(
                 "freshness_policy: point_in_time", "freshness_policy: living", 1)
-            self.assertNotEqual(mutated, original.decode("utf-8"),
-                                "the mutation did not apply")
+            self.assertNotEqual(mutated, text,
+                                "the policy mutation did not apply")
+            stale = _git("rev-parse", f"HEAD~{MAX_DRIFT + 6}")
+            self.assertTrue(_is_ancestor(stale),
+                             "the pinned baseline must be a real ancestor")
+            mutated, pinned = re.subn(r"(?m)^baseline_commit: .+$",
+                                      f"baseline_commit: {stale}",
+                                      mutated, count=1)
+            self.assertEqual(pinned, 1,
+                             "the baseline mutation did not apply")
             with open(path, "wb") as handle:
                 handle.write(mutated.encode("utf-8"))
             with self.assertRaises(AssertionError) as caught:
