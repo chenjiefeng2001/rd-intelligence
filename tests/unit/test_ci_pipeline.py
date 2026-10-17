@@ -289,12 +289,44 @@ class TestReportContents(PipelineHarness):
         for field in ("exit_code", "status", "conclusion", "meaning"):
             self.assertIn(field, report["overall"])
 
-    def test_report_does_not_claim_release_blocking(self):
+    def test_report_carries_the_specified_blocking_flag(self):
+        # The harness copies the real spec, so the report must carry whatever
+        # the spec declares rather than a hardcoded value. It used to assert
+        # False because the spec said False; the spec now says True, and the
+        # control keeps its shape: the flag in the report is the flag in the
+        # spec, read from data on both sides.
         _, report = self._run([
             {"gate": "g1", "outcome": "PASS", "executed": 3,
              "overall": "PASS", "exit": 0},
         ], exit_codes=TestVerdictMapping.MAPPING)
-        self.assertFalse(report["release_blocking_enabled"])
+        with open(PIPELINE_SPEC, encoding="utf-8") as fh:
+            self.assertEqual(
+                report["release_blocking_enabled"],
+                bool(json.load(fh)["release_blocking"]["enabled"]))
+
+    def test_a_spec_without_the_flag_reports_no_blocking(self):
+        # The other direction: a spec that does not declare the flag must not
+        # make the report claim it. Keeps the report honest for any consumer
+        # that assembles a spec without release_blocking.
+        _, report = self._run([
+            {"gate": "g1", "outcome": "PASS", "executed": 3,
+             "overall": "PASS", "exit": 0},
+        ], exit_codes=TestVerdictMapping.MAPPING)
+        spec_path = os.path.join(self.tmp, "bare.json")
+        with open(PIPELINE_SPEC, encoding="utf-8") as fh:
+            spec = json.load(fh)
+        spec.pop("release_blocking", None)
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            json.dump(spec, fh)
+        entry = self._entry_script([
+            {"gate": "g1", "outcome": "PASS", "executed": 3,
+             "overall": "PASS", "exit": 0}])
+        spec["entry"]["command"] = [sys.executable, entry]
+        with open(spec_path, "w", encoding="utf-8") as fh:
+            json.dump(spec, fh)
+        _, bare = CP.run(spec_path, self.tmp,
+                         report_path=os.path.join(self.tmp, "bare-report.json"))
+        self.assertFalse(bare["release_blocking_enabled"])
 
     def test_report_is_json_serialisable(self):
         _, report = self._run([
@@ -353,11 +385,15 @@ class TestShippedDeclarations(unittest.TestCase):
     def test_pipeline_spec_declares_the_four_outcomes(self):
         with open(PIPELINE_SPEC, encoding="utf-8") as fh:
             spec = json.load(fh)
-        self.assertEqual(spec["schema"], "rdebug-ci-pipeline/4")
+        self.assertEqual(spec["schema"], "rdebug-ci-pipeline/5")
         self.assertEqual(sorted(spec["conclusion_mapping"]), ["0", "2", "3", "4"])
+        # With release blocking enabled, an UNKNOWN blocks the release: exit 4
+        # was neutral only while a gate had nothing to run, and no gate is in
+        # that state any more. The flip is pinned so re-softening it fails a
+        # control rather than slipping through a review.
         self.assertEqual(spec["conclusion_mapping"]["4"]["conclusion"],
-                         "neutral")
-        self.assertFalse(spec["release_blocking"]["enabled"])
+                         "failure")
+        self.assertTrue(spec["release_blocking"]["enabled"])
 
     def test_pipeline_entry_is_the_orchestrator_not_itself(self):
         """A self-referential entry recursed until the run timed out.
@@ -422,15 +458,18 @@ class TestShippedDeclarations(unittest.TestCase):
                          "benchmark-archive-manifest.json")),
             "the gate's declared spec_ref must exist")
 
-    def test_github_workflow_exists_and_does_not_enable_blocking(self):
+    def test_github_workflow_exists_and_states_the_blocking_policy(self):
         path = os.path.join(REPO_ROOT, ".github", "workflows", "ci.yml")
         self.assertTrue(os.path.isfile(path))
         body = open(path, encoding="utf-8").read()
         self.assertIn("ci_pipeline.py", body)
+        # The three ways a red build could be laundered into a green one.
+        # These predate the blocking policy and stay pinned: the workflow
+        # must not soften a non-PASS exit, whatever the policy says about it.
         self.assertNotIn("continue-on-error", body)
         self.assertNotIn("|| true", body)
         self.assertNotIn("if: failure()", body)
-        self.assertIn("release blocking is NOT authorized", body)
+        self.assertIn("release blocking is enabled", body)
 
 
 if __name__ == "__main__":

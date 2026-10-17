@@ -28,8 +28,11 @@ reimplements any part of it. Duplicating that logic would create a second
 copy with none of the controls the original carries, and the original's
 discriminating power came from staying coupled to the frozen artifacts.
 
-Nothing here schedules anything. Wiring a forge is a separate decision, and
-release blocking is explicitly not enabled.
+Nothing here schedules anything. Wiring a forge is a separate decision.
+Release blocking is enabled: the section 4 gates authorize a release, and
+any non-PASS overall blocks it -- the mapping for exit 4 says failure for
+that reason, and it is declared in ci-pipeline.json so it can be audited
+as data.
 """
 
 import argparse
@@ -38,7 +41,7 @@ import os
 import subprocess
 import sys
 
-SCHEMA = "rdebug-ci-pipeline/4"
+SCHEMA = "rdebug-ci-pipeline/5"
 
 PASS_EXIT = 0
 REGRESSION_EXIT = 2

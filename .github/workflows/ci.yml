@@ -161,11 +161,13 @@ jobs:
           # reach .git, .github or any other hidden path in the checkout.
           include-hidden-files: true
 
-      - name: Release blocking is not enabled
+      - name: Release blocking is enabled
         if: always()
         run: |
-          echo "release blocking is NOT authorized; an exit 4 is a legitimate"
-          echo "resting state and must not be treated as a green build."
+          echo "release blocking is enabled: the section 4 gates authorize a"
+          echo "release, and any non-PASS overall -- exit 2, 3 or 4 -- blocks it."
+          echo "An exit 4 is no longer a resting state: every gate is executable,"
+          echo "so an UNKNOWN is a gate that cannot conclude, and it blocks too."
 
   # A separate job on purpose. The gates above cannot pass on a hosted runner, so
   # folding packaging into them would make a real packaging failure

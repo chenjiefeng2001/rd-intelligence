@@ -690,12 +690,22 @@ class TestShippedDeclarations(unittest.TestCase):
         for token in ("renderdoc", "gpu", "corpus", "runtime"):
             self.assertIn(token, blob)
 
-    def test_release_blocking_stays_off(self):
+    def test_release_blocking_is_enabled(self):
+        """The blocking policy flipped with the gate set it guards.
+
+        This control previously asserted the flag stayed off, because turning
+        it on while a required gate could never pass would have made the
+        pipeline permanently red and mixed "cannot verify" with "found a
+        problem". All seven section 4 gates are now executable and passing,
+        so that objection is gone, and the flag is on: the gates authorize a
+        release and any non-PASS overall blocks it. Re-disabling must be a
+        deliberate, pinned change rather than a quiet revert.
+        """
         import json
 
         with open(PIPELINE_SPEC, encoding="utf-8") as fh:
             spec = json.load(fh)
-        self.assertFalse(spec["release_blocking"]["enabled"])
+        self.assertTrue(spec["release_blocking"]["enabled"])
 
     def test_readiness_module_provisions_nothing(self):
         """4.2.1 declares prerequisites; it must not create them.
