@@ -75,12 +75,18 @@ class FixtureRepo:
     def head(self):
         return self._git("rev-parse", "HEAD").stdout.strip()
 
-    def sha256(self, rel):
-        h = hashlib.sha256()
-        with open(os.path.join(self.root, rel), "rb") as fh:
-            for chunk in iter(lambda: fh.read(1 << 20), b""):
-                h.update(chunk)
-        return h.hexdigest()
+    def blob_sha(self, rel):
+        """The hash of the version-controlled content, not the worktree bytes.
+
+        The gate hashes blobs at HEAD, so the fixture must too -- otherwise
+        the manifest it writes describes a file the gate cannot hash the
+        same way, and the fixture passes while the real thing cannot.
+        """
+        blob = subprocess.run(
+            ["git", "-C", self.root, "show", f"HEAD:{rel}"],
+            capture_output=True)
+        assert blob.returncode == 0, f"no blob at HEAD for {rel}"
+        return hashlib.sha256(blob.stdout).hexdigest()
 
     def manifest(self, base=None, monitored=("src/session_cache.py",),
                  files=("docs/archive.md",), schema="rdebug-benchmark-archive/1"):
@@ -94,8 +100,8 @@ class FixtureRepo:
                 # gate classifies its absence before it ever hashes, so a
                 # control can build that state without fabricating evidence.
                 {"path": rel,
-                 "sha256": self.sha256(rel) if os.path.isfile(
-                     os.path.join(self.root, rel)) else "0" * 64}
+                 "sha256": self.blob_sha(rel) if self._at_head(rel)
+                 else "0" * 64}
                 for rel in files
             ],
         }
@@ -103,6 +109,10 @@ class FixtureRepo:
         with open(path, "w", encoding="utf-8", newline="") as fh:
             json.dump(doc, fh, indent=1)
         return path
+
+    def _at_head(self, rel):
+        probe = self._git("cat-file", "-e", f"HEAD:{rel}")
+        return probe.returncode == 0
 
     def close(self):
         shutil.rmtree(self.root, ignore_errors=True)
@@ -199,6 +209,30 @@ class TestEvidenceIntegrity(unittest.TestCase):
         self.assertEqual(caught.exception.outcome, "REGRESSION")
         self.assertIn("docs/archive.md", caught.exception.detail)
 
+    def test_the_gate_answers_a_tree_question_not_a_worktree_one(self):
+        """Blob-at-HEAD semantics, pinned in the direction CI forced.
+
+        The first version hashed working-tree bytes, and the first remote
+        run went REGRESSION on evidence nobody had touched: text-mode stdout
+        had written CRLF, git had cleaned it to LF in the tree, and a fresh
+        checkout hashed to bytes the manifest could not describe. The gate
+        now hashes blobs at HEAD, so an uncommitted worktree edit is outside
+        what it verifies -- git status reports that -- while the committed
+        change is the REGRESSION the previous control pins. Both directions
+        are asserted, or the semantics could drift back to either side.
+        """
+        manifest = self.repo.manifest()
+        # Uncommitted edit to the archive: the tree has not changed, so the
+        # archive still covers it. The gate must not flip on a dirty file.
+        self.repo.write("docs/archive.md", "# uncommitted local edit\n")
+        summary = self.gate.verify(self.repo.root, manifest)
+        self.assertTrue(summary["archive_files"])
+        # Committing the edit is the content change, and that is REGRESSION.
+        self.repo.commit("edit the archived evidence for real")
+        with self.assertRaises(self.gate.GateFailure) as caught:
+            self.gate.verify(self.repo.root, manifest)
+        self.assertEqual(caught.exception.outcome, "REGRESSION")
+
 
 class TestVerdictProtocol(unittest.TestCase):
     """The gate speaks the verdict_json protocol the runner consumes."""
@@ -271,14 +305,19 @@ class TestTheRealArchive(unittest.TestCase):
                              f"monitored path {rel} is not at HEAD")
 
     def test_every_real_archive_file_hash_matches(self):
+        # Blob at HEAD, exactly as the gate hashes: working-tree bytes depend
+        # on the local line-ending configuration, and the first remote run
+        # demonstrated the two are not the same thing.
         with open(REAL_MANIFEST, encoding="utf-8") as fh:
             doc = json.load(fh)
         for rec in doc["archive_files"]:
-            h = hashlib.sha256()
-            with open(os.path.join(REPO_ROOT, rec["path"]), "rb") as fh2:
-                for chunk in iter(lambda: fh2.read(1 << 20), b""):
-                    h.update(chunk)
-            self.assertEqual(h.hexdigest(), rec["sha256"],
+            blob = subprocess.run(
+                ["git", "-C", REPO_ROOT, "show", f"HEAD:{rec['path']}"],
+                capture_output=True)
+            self.assertEqual(blob.returncode, 0,
+                             f"archive file {rec['path']} has no blob at HEAD")
+            self.assertEqual(hashlib.sha256(blob.stdout).hexdigest(),
+                             rec["sha256"],
                              f"archive file {rec['path']} drifted")
 
 

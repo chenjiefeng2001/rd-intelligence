@@ -11,11 +11,24 @@ is attached to?
 
   manifest missing / unreadable / wrong schema         INFRASTRUCTURE_FAILURE
   archived_at_commit not a real ancestor of HEAD       INFRASTRUCTURE_FAILURE
-  a declared archive file is absent                   INFRASTRUCTURE_FAILURE
+  a declared archive file is absent from HEAD         INFRASTRUCTURE_FAILURE
   nothing is monitored                                 INFRASTRUCTURE_FAILURE
-  a declared archive file hashes differently           REGRESSION
+  a declared archive file's blob hashes differently    REGRESSION
   a monitored file changed since the archive          REGRESSION (names them)
   otherwise                                           PASS
+
+The archive files are hashed as **blobs at HEAD**, not as working-tree
+bytes. The first version hashed the files on disk, and the first remote
+run caught it: bench output written through Python's Windows text-mode
+stdout carried CRLF, git cleaned it to LF on the way into the tree, and
+a fresh checkout on another platform hashed to something the manifest
+could not describe -- the gate went REGRESSION on evidence nobody had
+touched. Version-controlled content is the identity of archived evidence,
+and a blob hash is the same on every checkout regardless of line-ending
+configuration. The gate therefore answers a question about the tree: a
+worktree edit that is not committed is outside what it verifies (git
+status already reports that), and a committed change to archived
+evidence is what REGRESSION exists for.
 
 A missing manifest or archive file is infrastructure rather than regression:
 a gate that cannot find its own control input has concluded nothing about the
@@ -61,14 +74,6 @@ class GateFailure(Exception):
 def _git(repo_root, *args):
     return subprocess.run(["git", "-C", repo_root, *args],
                           capture_output=True, text=True)
-
-
-def _sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def verify(repo_root, manifest_path):
@@ -138,13 +143,18 @@ def verify(repo_root, manifest_path):
             raise GateFailure(
                 INFRA,
                 f"archive_files entry {rec!r} must carry both path and sha256")
-        full = os.path.normpath(os.path.join(repo_root, rel))
-        if not os.path.isfile(full):
+        # The blob at HEAD, not the bytes on disk: the same version-controlled
+        # content on every checkout, whatever the local line-ending
+        # configuration does to the working tree.
+        blob = subprocess.run(
+            ["git", "-C", repo_root, "show", f"HEAD:{rel}"],
+            capture_output=True)
+        if blob.returncode:
             raise GateFailure(
                 INFRA,
-                f"declared archive file {rel} is absent from this checkout; "
-                "a gate that cannot read its declared evidence is not a pass")
-        got = _sha256(full)
+                f"declared archive file {rel} is absent from HEAD; a gate "
+                "that cannot read its declared evidence is not a pass")
+        got = hashlib.sha256(blob.stdout).hexdigest()
         if got != want:
             raise GateFailure(
                 REGRESSION,
