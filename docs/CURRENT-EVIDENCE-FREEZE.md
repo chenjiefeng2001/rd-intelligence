@@ -9,7 +9,7 @@ document_point_in_time_note: >-
 # CURRENT EVIDENCE FREEZE
 
 冻结日期：2026-10-16（前一版 2026-10-02，基线 `9a4f48e`）
-baseline_commit: 8d7cb0c
+baseline_commit: e1f1ae1
 baseline_drift: 0
 
 `baseline_drift` 是本文档自陈的陈旧度。**刷新节奏为 milestone** ——
@@ -58,6 +58,10 @@ freshness_policy: point_in_time
 > 缺陷修复（`eb02db0` 渲染控制前提、`8d7cb0c` gate-logs 忽略块）。本版把以上与全量
 > pipeline 新实测写入规范块；凡本轮未复验者一律显式标注，不沿用旧值充当新证据。
 > `rdebug-validation` 冻结物本轮**只读未复验**（沿用上一版边界）。
+>
+> **同日第三次刷新**：Gate 4 可执行化（`11867d4`）与 release blocking 启用
+> （`e1f1ae1`）在同日达成，构成第二个 milestone：七个门全部 IMPLEMENTED、
+> 全量 pipeline **首次 overall PASS / exit 0**。详情见下方「2026-10-16 刷新 2」节。
 
 ```text
 CURRENT EVIDENCE FREEZE
@@ -89,12 +93,16 @@ G1 / G2 verdicts         COMPLETE / VERIFIED
 §4 门 3 cold_warm_equivalence
                          IMPLEMENTED / blocking / PASS（bounded coverage）
 §4 门 4 benchmark_archive
-                         PROCESS_ONLY / not blocking / UNKNOWN（Gate 4）
+                         IMPLEMENTED / blocking / PASS（2026-10-16 实测；变更耦合：
+                           清单声明 archived_at_commit + 受监控 session/latency 面，
+                           scripts/benchmark_archive_gate.py 验证归档覆盖当前代码；
+                           初始归档为当前代码实测 bench（w00001/w00512），非沿用
+                           2026-08-24 旧基线充当新证据）
 §4 门 5 fork_integrity   IMPLEMENTED / blocking / PASS（audit exit 0，2/2）
 Pipeline Phase 1         COMPLETE / FROZEN
-  overall（本地全量）    NEEDS_REVIEW / exit 4 / neutral
-                           —— 六个可执行门**首次全 PASS**；唯一非 PASS =
-                           benchmark_archive PROCESS_ONLY（合法休止态）
+  overall（本地全量）    **PASS / exit 0 / conclusion success（2026-10-16 首次）**
+                           —— 七个门全部 IMPLEMENTED 且全 PASS；release blocking
+                           已启用：任何非 PASS 的 overall 都阻断放行
   overall（远端 run 23） BLOCKED_INFRA / exit 3 —— 成因仅为外部前置缺失：
                            无 GPU runner；unit 1011 / transport 58 /
                            boundary_audit 远端全 PASS；fork 审计照
@@ -129,10 +137,12 @@ Lint execution          COMPLETE / VERIFIED / FROZEN（commit 2c6079e）
 classification           跨平台实测（Windows + WSL Ubuntu）
 crash claim             恒不成立（is_crash 恒 False）
 workload mcp_contract    RETIRED（covered_by_existing_blocking_gates）
-Gate 4 (§4.4)            PROCESS_ONLY / UNKNOWN
-release blocking         NOT AUTHORIZED
+Gate 4 (§4.4)            IMPLEMENTED / PASS（变更耦合判定）
+release blocking         AUTHORIZED / ENABLED（2026-10-16；exit 4 的
+                           conclusion 由 neutral 改为 failure）
 CI configuration wiring  已交付并运行（.github/workflows/ci.yml 两 job；
-                           远端 23 次 run，无 GPU runner 上诚实 BLOCKED_INFRA）
+                           24+ 次远端 run；本地环境 exit 0 PASS，远端 runner
+                           缺 GPU/外部证据按契约 BLOCKED_INFRA）
 runner environment       已建立可探测模型：本地齐备（exit 4）；远端缺
                            GPU/RenderDoc/capture，按契约报
                            INFRASTRUCTURE_FAILURE（run 22/23 实测）
@@ -155,6 +165,55 @@ RenderDoc 归属 scope     RULED / FROZEN
   replay exclusion      NOT AUTHORIZED to amend
 ──────────────────────────────────────────────
 ```
+
+## 2026-10-16 刷新 2：Gate 4 可执行化、release blocking、首次 overall PASS
+
+**基线** `8d7cb0c` → `e1f1ae1`。授权：项目负责人 2026-10-16「全部授权，
+继续推进」。本节入账两个 commit（`11867d4` Gate 4、`e1f1ae1` release blocking）。
+
+### Gate 4（§4.4 benchmark_archive）：PROCESS_ONLY → IMPLEMENTED
+
+| 项 | 事实 |
+| --- | --- |
+| 判定路径 | **变更耦合**：`docs/validation/benchmark-archive-manifest.json` 声明 `archived_at_commit`（归档测量所对应的代码提交）与 `monitored_paths`（session/latency 面 6 文件）；`scripts/benchmark_archive_gate.py` 验证归档仍覆盖当前代码 |
+| 四态语义 | 受控面有变更而无新归档 → **REGRESSION**（具名变更文件）；清单缺失/不可解析/schema 不符/基线非祖先/归档文件缺失/受控路径不存在于 HEAD → **INFRASTRUCTURE_FAILURE**；归档文件哈希不符 → **REGRESSION** |
+| 空洞 PASS 防护 | 清单里写错的 monitored path 会使 git diff 静默为空 → 门增加「受控路径必须存在于 HEAD」检查 |
+| 初始归档 | **当前代码实测**（`732a0d0` 工作树，X2 运行时）：`bench.py` 于 w00001/w00512，原始 JSON + 摘要存 `docs/validation/`，三文件 sha256 登记于清单。**不沿用** 2026-08-24 `perf-baseline.md` 旧数据充当新证据 |
+| I4 精确化 | 测量禁令从**词表**（bench/smoke/workload…）改为**测量工具本身**（`scripts/bench.py` 等 9 个）：门命令不得调用其裁决是「机器的属性」而非「树的属性」的脚本——Gate 4 命名 benchmark 而不运行任何测量，正是被授权的形态 |
+| 控制 | `test_benchmark_archive_gate.py` 17 项（fixture 仓库驱动全部四态 + verdict 协议 + 真实归档覆盖实测） |
+
+### release blocking：NOT AUTHORIZED → AUTHORIZED / ENABLED
+
+| 项 | 事实 |
+| --- | --- |
+| 旧反对理由 | 「必需门永远无法通过时开启 blocking 会把『无法验证』与『验证失败』混为同一阻断原因，且永久红」——七门全可执行且全 PASS 后，该理由消失 |
+| 语义 | 七个 §4 门现在**授权一次 release**；任何非 PASS overall（exit 2/3/4）阻断 |
+| exit 4 语义变更 | UNKNOWN 曾是「无可执行检查的门」的休止态 → neutral；现在每个门都可执行，UNKNOWN = 门无法得出结论 → **conclusion 由 neutral 改为 failure**（仍以数据形式声明于 `ci-pipeline.json` /5） |
+| 反漂白 | `continue-on-error` / `|| true` / `if: failure()` 三种漂白手段继续被控制断言不存在 |
+| ci-pipeline schema | /4 → **/5**（schema_history 登记） |
+
+### 过程中暴露并修复的第四个门禁自身缺陷
+
+`overall()` 的 not-run 检查把 `executed` 当真值读——`executed` 是 unittest 专属
+计数，四个 verdict/exit-code 门恒为 `None` → **PASS 结构性不可达**（每个全
+PASS 的运行都被按在 NEEDS_REVIEW）。修复：`attempted` 判「门是否运行」，
+`executed == 0` 判「计数的门跑了零个」（None ≠ 0）；可达性控制改为构造
+**真实记录形态**的行（此前给每行 executed=1，掩盖了该缺陷——控制证明的是
+一个不存在的 pipeline），并新增负对照钉住两扇门（未 attempted / 计数为零
+的 PASS 行仍压住 PASS）。
+
+### 实测终态（2026-10-16，`e1f1ae1`，工作树 clean）
+
+```
+overall = PASS / exit 0 / conclusion success          ← 项目首次
+  unit 1034 / transport 58 / integration 77 全 PASS；
+  boundary_audit / cold_warm / benchmark_archive / fork_integrity 全 PASS
+  release_blocking_enabled = True
+```
+
+本地与远端的分野不变：远端 runner 缺 GPU/RenderDoc/外部证据 → replay 门按
+契约报 INFRA → 远端 overall = `BLOCKED_INFRA / exit 3`（正确形态，非回归）。
+14 冻结物本轮仍只读未复验；`verified repair`、P9b/P10/D7 等全部维持原状态。
 
 ## 2026-10-16 刷新：六个可执行门首次全 PASS（整改实测）
 
