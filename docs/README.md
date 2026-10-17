@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **49 are not classified** and are deliberately not
+and are constrained by it; **53 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -108,21 +108,25 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`phase5c-observability.md`](validation/phase5c-observability.md) | not classified |
 | [`phase5d-workload.md`](validation/phase5d-workload.md) | not classified |
 | [`perf-baseline.md`](validation/perf-baseline.md) | not classified |
+| [`benchmark-archive-2026-10-16.md`](validation/benchmark-archive-2026-10-16.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
 * [`phase3a-closure.json`](validation/phase3a-closure.json)
 * [`phase4c-answers.json`](validation/phase4c-answers.json)
 * [`phase4c-reasoning.json`](validation/phase4c-reasoning.json)
+* [`benchmark-archive-2026-10-16-w00001.json`](validation/benchmark-archive-2026-10-16-w00001.json)
+* [`benchmark-archive-2026-10-16-w00512.json`](validation/benchmark-archive-2026-10-16-w00512.json)
+* [`benchmark-archive-manifest.json`](validation/benchmark-archive-manifest.json) — the gate 4 control input (see `scripts/benchmark_archive_gate.py`); machine-read, so unlike the other unclassified companions a change to it is a change to what a release gate verifies
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 64 |
+| Documents indexed | 70 |
 | Machine-classified | 16 |
-| Not classified | 48 |
-| Of which validation evidence | 10 markdown + 3 json |
+| Not classified | 53 |
+| Of which validation evidence | 11 markdown + 6 json |
 
 ## Known limits of this index
 

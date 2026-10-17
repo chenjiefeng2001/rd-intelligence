@@ -1,0 +1,111 @@
+{
+  "_meta": {
+    "capture": "D:\\renderdoc_no_mcp\\rd-intelligence\\tests\\workload\\corpus\\w00001_frame11.rdc",
+    "captureSizeBytes": 403973,
+    "repeats": 4,
+    "pixel": [
+      320,
+      240
+    ]
+  },
+  "openSession": 3077.2,
+  "flattenAllEvents": {
+    "coldMs": 0.48,
+    "warmMsBest": 0.03,
+    "warmMsAll": [
+      0.07,
+      0.04,
+      0.03
+    ]
+  },
+  "_capture": {
+    "eventCount": 4,
+    "drawCount": 1,
+    "resourceCount": 12,
+    "textureCount": 3,
+    "bufferCount": 1,
+    "lastDrawEventId": 11,
+    "traceTarget": "ResourceId::35"
+  },
+  "pipelineSnapshotAtLastDraw": {
+    "coldMs": 0.86,
+    "warmMsBest": 0.21,
+    "warmMsAll": [
+      0.32,
+      0.21,
+      0.23
+    ]
+  },
+  "pixelHistorySamePixel": {
+    "coldMs": 13.15,
+    "warmMsBest": 4.44,
+    "warmMsAll": [
+      10.0,
+      4.44,
+      10.52
+    ]
+  },
+  "_pixelHistory": {
+    "modifications": 2
+  },
+  "tracePixelSamePixel": {
+    "coldMs": 6.49,
+    "warmMsBest": 5.83,
+    "warmMsAll": [
+      6.38,
+      5.83,
+      6.09
+    ]
+  },
+  "_tracePixel": {
+    "modifications": 2,
+    "analyzedDraws": 2,
+    "truncated": false,
+    "nodes": 7,
+    "edges": 6
+  },
+  "tracePixelDistinctPixelsMs": [
+    5.18,
+    7.94,
+    6.7
+  ],
+  "debugPixel": {
+    "coldMs": 212.65,
+    "warmMsBest": 184.85,
+    "warmMsAll": [
+      184.85,
+      207.79,
+      205.57
+    ]
+  },
+  "_debugPixel": {
+    "eventId": 11,
+    "instructionCount": 5,
+    "truncated": false
+  },
+  "traceResourceSameResource": {
+    "coldMs": 0.32,
+    "warmMsBest": 0.17,
+    "warmMsAll": [
+      0.22,
+      0.19,
+      0.17
+    ]
+  },
+  "_traceResource": {
+    "usageCount": 2,
+    "writers": 2,
+    "readers": 0
+  },
+  "pixelPipelineSharedHistory": {
+    "totalMs": 198.06,
+    "historyCallsExpected": 1,
+    "graphNodes": 7,
+    "resourceFlows": [
+      "ResourceId::47"
+    ],
+    "debugEventId": 11,
+    "separatePathMsEstimate": 219.14000000000001
+  },
+  "pythonPeakAllocKbDuringAnalysis": 29
+}

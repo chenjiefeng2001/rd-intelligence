@@ -1,0 +1,29 @@
+{
+  "schema": "rdebug-benchmark-archive/1",
+  "spec_gate": "DESIGN_SPEC 4.4",
+  "declared_at": "2026-10-16",
+  "archived_at_commit": "732a0d01585391b088cb94f8218e6477619e1808",
+  "note": "The archive manifest for the benchmark gate. archived_at_commit names the commit whose code the archived measurements were taken on; monitored_paths name the files whose changes plausibly alter session/latency behavior. The gate (scripts/benchmark_archive_gate.py) answers one question: does the archive still cover the code it is attached to? If a monitored file changes, re-run scripts/bench.py, archive the raw JSON here, add it to archive_files and advance archived_at_commit. Widening monitored_paths is itself a manifest change: if the new paths differ since the archive, the gate goes REGRESSION until it is re-archived. An empty monitored_paths list would make the gate vacuous and is rejected as infrastructure.",
+  "monitored_paths": [
+    "src/rdebug/adapter/core.py",
+    "src/rdebug/session_cache.py",
+    "src/rdebug/worker_manager.py",
+    "src/rdebug/workers.py",
+    "src/rdebug/observability.py",
+    "src/rdebug/recorder.py"
+  ],
+  "archive_files": [
+    {
+      "path": "docs/validation/benchmark-archive-2026-10-16.md",
+      "sha256": "0b702109900754eea9f19e80db8fbd0c2227e37e68759b8b240d7d89bf6d3bb9"
+    },
+    {
+      "path": "docs/validation/benchmark-archive-2026-10-16-w00001.json",
+      "sha256": "437e4c6e027a1023f8449254ec860e7e488cee4e186497a84fca20532c0f56f7"
+    },
+    {
+      "path": "docs/validation/benchmark-archive-2026-10-16-w00512.json",
+      "sha256": "f7795a9c78a7d96ba35a20b4422fe1cc3fccbb5ab44193015306e349204ed109"
+    }
+  ]
+}

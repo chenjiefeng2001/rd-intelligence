@@ -513,17 +513,29 @@ class TestG1FourStateAggregate(unittest.TestCase):
         self.assertEqual(len(set(seen.values())), len(seen),
                          "G1: two states share an exit code")
 
-    def test_real_spec_today_is_needs_review(self):
-        """Acceptance: gate 3 and gate 4 must keep the result off PASS."""
+    def test_real_spec_today_reaches_pass(self):
+        """Acceptance: with gates 3 and 4 executable, all-PASS reaches PASS.
+
+        This control previously pinned the aggregate at NEEDS_REVIEW, because
+        gate 3 and gate 4 had nothing executable and the aggregate could not
+        reach PASS by design. Gate 4 became executable with an archive
+        coverage check, so the resting state flips: every gate implemented
+        and passing must now aggregate to PASS. The flip is pinned, not
+        slipped in -- if a gate ever goes non-executable again, this control
+        fails and the aggregate is held off PASS by notice.
+        """
         spec = RG.load_spec(GATE_SPEC)
+        for g in spec["gates"]:
+            self.assertEqual(g.get("state"), "IMPLEMENTED",
+                             f"gate {g['id']} is not IMPLEMENTED; a "
+                             "non-executable gate in the release set must be "
+                             "a pinned decision, not a drift back")
         passing = [
             self._res(g["id"], RG.PASS, executed=max(g.get("min_executed") or 1, 1))
-            for g in spec["gates"] if g.get("state", "IMPLEMENTED") == "IMPLEMENTED"
+            for g in spec["gates"]
         ]
         report = RG.overall(spec, passing)
-        self.assertEqual(report["status"], RG.NEEDS_REVIEW)
-        self.assertIn("cold_warm_equivalence", report["reasons"][0] + "".join(report["reasons"]))
-        self.assertIn("benchmark_archive", "".join(report["reasons"]))
+        self.assertEqual(report["status"], RG.PASS)
 
     def test_report_is_machine_readable(self):
         report = RG.overall(self._spec([]), [self._res("a", RG.PASS, executed=3)])
@@ -537,7 +549,7 @@ class TestG1FourStateAggregate(unittest.TestCase):
 
     def test_schema_and_gates(self):
         spec = RG.load_spec(GATE_SPEC)
-        self.assertEqual(spec["schema"], "rdebug-release-gates/6")
+        self.assertEqual(spec["schema"], "rdebug-release-gates/7")
         self.assertTrue(spec["gates"])
 
     def test_every_gate_declares_a_rationale(self):
@@ -588,9 +600,22 @@ class TestG1FourStateAggregate(unittest.TestCase):
                          "gate 3 carries its own four-state verdict")
         self.assertIn("cold_warm_gate.py",
                       " ".join(by_spec["4.3"]["command"]))
-        self.assertEqual(by_spec["4.4"]["state"], "PROCESS_ONLY")
-        self.assertIsNone(by_spec["4.4"].get("command"),
-                          "gate 4 still has no executable check")
+        # Gate 4 joined gate 3 on the same terms: a real command, a
+        # verdict_json protocol and no measurement smuggled in as the check.
+        # Its implementation is an archive-coverage check, not a benchmark
+        # run -- the machine-dependent half of the old PROCESS_ONLY state is
+        # what stays banned, and test_no_gate_executes_a_performance_
+        # measurement pins that half now.
+        self.assertEqual(by_spec["4.4"]["state"], "IMPLEMENTED")
+        self.assertTrue(by_spec["4.4"].get("command"),
+                        "gate 4 must be a real command, not a placeholder")
+        self.assertEqual(by_spec["4.4"].get("runner"), "verdict_json",
+                         "gate 4 carries its own four-state verdict")
+        self.assertIn("benchmark_archive_gate.py",
+                      " ".join(by_spec["4.4"]["command"]))
+        self.assertIn("benchmark-archive-manifest.json",
+                      by_spec["4.4"].get("spec_ref", ""),
+                      "gate 4's decision inputs must be named, not implied")
 
     def test_gate_three_capture_is_keyed_by_gate_id(self):
         """The capture table must use the gate id, or substitution silently
@@ -658,10 +683,25 @@ class TestG1FourStateAggregate(unittest.TestCase):
         self.assertTrue(gate["requires"].get("capture"))
         self.assertIsNotNone(gate["min_executed"])
 
-    def test_no_benchmark_is_a_release_gate(self):
-        """I4: anything machine-dependent stays out of the gate set."""
+    def test_no_gate_executes_a_performance_measurement(self):
+        """I4: anything machine-dependent stays out of the gate set.
+
+        The first version banned the words bench/smoke/workload/d4/probe/
+        reasoning anywhere in a gate command. That was a lexical proxy for
+        the property, written when gates 3 and 4 had nothing executable and
+        the risk was a measurement standing in for a missing check. Gate 4
+        is now an archive-coverage check, which names benchmarks without
+        running any, so the vocabulary ban fires on a word rather than on
+        the thing it stood for. The ban moves from the words to the
+        measurement tools: no gate command may invoke a script whose verdict
+        would be a property of the machine rather than of the tree.
+        """
         spec = RG.load_spec(GATE_SPEC)
-        banned = ("bench", "smoke", "workload", "d4", "probe", "reasoning")
+        banned = ("scripts/bench.py", "scripts/bench_transport.py",
+                  "scripts/session_bench.py", "scripts/workload_run.py",
+                  "scripts/workload_corpus.py", "scripts/mcp_smoke.py",
+                  "scripts/ide_smoke.py", "scripts/d4_evidence_probe.py",
+                  "scripts/reasoning_bench.py")
         for g in spec["gates"]:
             if not g.get("command"):
                 continue
@@ -669,7 +709,8 @@ class TestG1FourStateAggregate(unittest.TestCase):
             for word in banned:
                 self.assertNotIn(
                     word, joined,
-                    "{} looks machine-dependent and must not gate a release".format(g["id"]),
+                    "{} runs a machine-dependent measurement and must not "
+                    "gate a release".format(g["id"]),
                 )
 
     def test_classification_vocabulary_is_declared(self):

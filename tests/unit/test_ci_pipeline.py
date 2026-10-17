@@ -207,7 +207,12 @@ class TestFailureModesMapCorrectly(PipelineHarness):
         self.assertIn("G2", row["detail"])
         self.assertNotEqual(row["outcome"], "REGRESSION")
 
-    def test_gate_four_has_no_command_and_contributes_unknown(self):
+    def test_a_process_only_row_passes_through_unexecuted(self):
+        # A synthetic PROCESS_ONLY row, not the real gate: the aggregate's
+        # treatment of a gate with nothing to run is a property of the
+        # four-state ordering, and it has to stay true for any gate that is
+        # ever declared PROCESS_ONLY again -- including one that is not the
+        # benchmark archive.
         code, report = self._run([
             {"gate": "benchmark_archive", "outcome": "UNKNOWN", "executed": 0,
              "state": "PROCESS_ONLY", "required_execution": False,
@@ -392,12 +397,30 @@ class TestShippedDeclarations(unittest.TestCase):
             self.assertTrue(req.get("module"), gid)
             self.assertTrue(req.get("capture"), gid)
 
-    def test_gate_four_still_has_no_command(self):
+    def test_gate_four_has_a_command_and_states_its_own_verdict(self):
+        """Gate 4 became executable; the pin flips with it, explicitly.
+
+        The old control asserted gate four had no command -- the PROCESS_ONLY
+        state that held the aggregate off PASS. Making the benchmark archive
+        requirement executable is the authorized transition, and the flip is
+        pinned rather than silently dropped: the gate must now carry a real
+        command, block, and speak the verdict_json protocol, because an
+        implemented gate whose verdict the runner cannot read would be a
+        REGRESSION reported as infrastructure.
+        """
         with open(GATE_SPEC, encoding="utf-8") as fh:
             gates = json.load(fh)
         g = next(x for x in gates["gates"] if x["spec_gate"] == "4.4")
-        self.assertEqual(g["state"], "PROCESS_ONLY")
-        self.assertIsNone(g.get("command"))
+        self.assertEqual(g["state"], "IMPLEMENTED")
+        self.assertEqual(g["runner"], "verdict_json")
+        self.assertEqual(g.get("verdict_path"), ".gate4_verdict.json")
+        self.assertIn("benchmark_archive_gate.py", " ".join(g["command"]))
+        self.assertTrue(g["blocking"])
+        self.assertTrue(g["required_execution"])
+        self.assertTrue(os.path.isfile(
+            os.path.join(REPO_ROOT, "docs", "validation",
+                         "benchmark-archive-manifest.json")),
+            "the gate's declared spec_ref must exist")
 
     def test_github_workflow_exists_and_does_not_enable_blocking(self):
         path = os.path.join(REPO_ROOT, ".github", "workflows", "ci.yml")

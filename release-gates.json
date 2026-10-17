@@ -1,5 +1,5 @@
 {
-  "schema": "rdebug-release-gates/6",
+  "schema": "rdebug-release-gates/7",
   "declared_at": "2026-09-29",
   "schema_history": {
     "rdebug-release-gates/1": "gate set and I1/I2 enforcement",
@@ -7,7 +7,8 @@
     "rdebug-release-gates/3": "gate 3 becomes IMPLEMENTED: cold_warm_equivalence now has a command and a verdict. The release runner needs a new runner kind so the gate four-state verdict is consumed rather than collapsed into pass or non-zero, which is what exit_code would do.",
     "rdebug-release-gates/4": "gate 3 declares the environment it actually needs. It was listed as pure python, which is wrong: it spawns workers that replay, so without the renderdoc module and a capture it aborts as INFRASTRUCTURE_FAILURE. A pipeline cannot provision what the spec does not declare.",
     "rdebug-release-gates/5": "gates declare required capabilities as dotted names so the readiness layer can resolve them against a probed environment. This is a declaration only; nothing is provisioned.",
-    "rdebug-release-gates/6": "A gate may declare a lint precondition. Its result is recorded as a lint sub-record on the gate row rather than as a gate of its own, so the gate count and the exit mapping are unchanged."
+    "rdebug-release-gates/6": "A gate may declare a lint precondition. Its result is recorded as a lint sub-record on the gate row rather than as a gate of its own, so the gate count and the exit mapping are unchanged.",
+    "rdebug-release-gates/7": "gate 4 becomes IMPLEMENTED: the benchmark archive requirement now has a mechanical decision path. The manifest (docs/validation/benchmark-archive-manifest.json) declares the commit the archived measurements were taken on and the monitored session/latency surface; the gate verifies the archive still covers the code it is attached to, so a monitored change without re-archiving is a REGRESSION and the aggregate can reach PASS only when the archive covers this tree. The gate states its own four-state verdict, consumed as verdict_json, because an exit code cannot tell a stale archive from an unreadable manifest."
   },
   "note": "Gate definitions for DESIGN_SPEC section 4. This file declares what must run before a change can be treated as verified. It is not a pipeline: nothing here schedules, blocks a pull request, or talks to a forge. Running it by hand is still a manual action, and that residual gap is recorded rather than claimed solved.",
   "exit_codes": {
@@ -187,15 +188,22 @@
     {
       "id": "benchmark_archive",
       "spec_gate": "4.4",
-      "state": "PROCESS_ONLY",
-      "required_execution": false,
-      "blocking": false,
-      "command": null,
-      "contributes": "UNKNOWN",
-      "rationale": "DESIGN_SPEC 4.4 requires session and latency data changes to be archived under docs/validation. That is a process requirement with no automatic decision path, which is why it is PROCESS_ONLY rather than NOT_IMPLEMENTED. It is not blocking because there is nothing executable to block on, but it still keeps the aggregate off PASS. The D6 benchmark is explicitly not this gate: D6 is performance evidence and is not a release gate.",
+      "state": "IMPLEMENTED",
+      "required_execution": true,
+      "blocking": true,
+      "command": [
+        "python",
+        "scripts/benchmark_archive_gate.py",
+        "--json",
+        ".gate4_verdict.json"
+      ],
+      "rationale": "DESIGN_SPEC 4.4 requires session and latency data changes to be archived under docs/validation. The decision path is change coupling: the manifest declares the commit the archived measurements were taken on and the monitored session/latency surface, and the gate verifies the archive still covers the code it is attached to. A monitored change without a new archive is REGRESSION; a missing or unreadable manifest, or an absent declared archive file, is INFRASTRUCTURE_FAILURE -- the same discrimination the fork audit makes between an absent control input and present evidence that disagrees. The D6 benchmark is explicitly not this gate: D6 is performance evidence, not a release gate, and this gate proves coverage, not the absence of regressions.",
       "requires": {
         "capabilities": []
-      }
+      },
+      "runner": "verdict_json",
+      "verdict_path": ".gate4_verdict.json",
+      "spec_ref": "docs/validation/benchmark-archive-manifest.json"
     },
     {
       "id": "fork_integrity",

@@ -1,0 +1,111 @@
+{
+  "_meta": {
+    "capture": "D:\\renderdoc_no_mcp\\rd-intelligence\\tests\\workload\\corpus\\w00512_frame11.rdc",
+    "captureSizeBytes": 407554,
+    "repeats": 4,
+    "pixel": [
+      320,
+      240
+    ]
+  },
+  "openSession": 2731.24,
+  "flattenAllEvents": {
+    "coldMs": 4.99,
+    "warmMsBest": 4.04,
+    "warmMsAll": [
+      4.31,
+      4.04,
+      4.36
+    ]
+  },
+  "_capture": {
+    "eventCount": 515,
+    "drawCount": 512,
+    "resourceCount": 12,
+    "textureCount": 3,
+    "bufferCount": 1,
+    "lastDrawEventId": 522,
+    "traceTarget": "ResourceId::35"
+  },
+  "pipelineSnapshotAtLastDraw": {
+    "coldMs": 4.9,
+    "warmMsBest": 0.42,
+    "warmMsAll": [
+      0.59,
+      0.48,
+      0.42
+    ]
+  },
+  "pixelHistorySamePixel": {
+    "coldMs": 2347.63,
+    "warmMsBest": 1559.29,
+    "warmMsAll": [
+      3899.71,
+      1559.29,
+      1847.84
+    ]
+  },
+  "_pixelHistory": {
+    "modifications": 513
+  },
+  "tracePixelSamePixel": {
+    "coldMs": 2176.85,
+    "warmMsBest": 2088.02,
+    "warmMsAll": [
+      2841.87,
+      2866.02,
+      2088.02
+    ]
+  },
+  "_tracePixel": {
+    "modifications": 513,
+    "analyzedDraws": 16,
+    "truncated": true,
+    "nodes": 533,
+    "edges": 547
+  },
+  "tracePixelDistinctPixelsMs": [
+    89.42,
+    2598.53,
+    3041.18
+  ],
+  "debugPixel": {
+    "coldMs": 4529.5,
+    "warmMsBest": 3587.6,
+    "warmMsAll": [
+      4824.81,
+      3587.6,
+      5019.75
+    ]
+  },
+  "_debugPixel": {
+    "eventId": 522,
+    "instructionCount": 5,
+    "truncated": false
+  },
+  "traceResourceSameResource": {
+    "coldMs": 49.3,
+    "warmMsBest": 42.34,
+    "warmMsAll": [
+      42.34,
+      68.71,
+      69.6
+    ]
+  },
+  "_traceResource": {
+    "usageCount": 513,
+    "writers": 513,
+    "readers": 0
+  },
+  "pixelPipelineSharedHistory": {
+    "totalMs": 5111.87,
+    "historyCallsExpected": 1,
+    "graphNodes": 533,
+    "resourceFlows": [
+      "ResourceId::47"
+    ],
+    "debugEventId": 522,
+    "separatePathMsEstimate": 6706.35
+  },
+  "pythonPeakAllocKbDuringAnalysis": 2650
+}

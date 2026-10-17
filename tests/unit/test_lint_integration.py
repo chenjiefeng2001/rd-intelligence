@@ -123,9 +123,10 @@ class TestLintIsAUnitGatePrecondition(unittest.TestCase):
         about this control.
 
         So this drives overall() and compares what it returns against
-        DEFAULT_EXIT_CODES. A synthetic spec with every gate IMPLEMENTED is used
-        because the real one keeps benchmark_archive PROCESS_ONLY, which holds
-        the aggregate off PASS by design -- asserted separately below.
+        DEFAULT_EXIT_CODES. A synthetic spec with every gate IMPLEMENTED is
+        used so the mapping is checked independently of whatever the real
+        gate set happens to contain today; the real spec's own reachability
+        is asserted separately below.
         """
         import importlib.util
         spec = importlib.util.spec_from_file_location(
@@ -163,12 +164,54 @@ class TestLintIsAUnitGatePrecondition(unittest.TestCase):
                 "actually uses.")
 
     def test_a_process_only_gate_holds_the_aggregate_off_pass(self):
-        """The invariant from contract 1.1, checked against the real spec.
+        """The invariant from contract 1.1, on a spec the control builds.
 
-        Declaring a gate PROCESS_ONLY must make it impossible to report PASS.
-        If this ever passes, a gate with nothing to run has stopped holding
-        the aggregate off PASS -- which is the failure the whole four-state
-        ordering exists to prevent.
+        Declaring a gate PROCESS_ONLY must make it impossible to report
+        PASS. If this ever passes, a gate with nothing to run has stopped
+        holding the aggregate off PASS -- which is the failure the whole
+        four-state ordering exists to prevent.
+
+        This used to run against the real spec, whose single PROCESS_ONLY
+        gate (benchmark_archive) provided the subject. That gate became
+        executable, so the real spec can no longer provide this subject --
+        and that is the other half of the transition, pinned by the test
+        that follows: with every gate implemented, all-PASS rows must reach
+        PASS. The invariant itself stays pinned on a synthetic spec,
+        because it must stay true for any gate ever declared PROCESS_ONLY
+        again.
+        """
+        import importlib.util
+        loader = importlib.util.spec_from_file_location(
+            "rg", os.path.join(REPO_ROOT, "scripts", "release_gate.py"))
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+        spec = {"gates": [
+            {"id": "g1", "state": "IMPLEMENTED", "required_execution": True,
+             "blocking": True},
+            {"id": "g2", "state": "PROCESS_ONLY", "required_execution": False},
+        ]}
+        rows = [
+            {"gate": "g1", "outcome": "PASS", "state": "IMPLEMENTED",
+             "required_execution": True, "attempted": True, "executed": 1},
+            {"gate": "g2", "outcome": "UNKNOWN", "state": "PROCESS_ONLY",
+             "required_execution": False, "attempted": False, "executed": 0},
+        ]
+        got = module.overall(spec, rows)
+        self.assertNotEqual(
+            got["status"], "PASS",
+            "every implemented gate passed and the aggregate still reached "
+            "PASS, so a declared PROCESS_ONLY gate stopped holding it off")
+        self.assertEqual(got["status"], "NEEDS_REVIEW")
+
+    def test_the_real_spec_reaches_pass_now_that_gate_four_is_executable(self):
+        """The other half of the transition, checked against the real spec.
+
+        The aggregate could not report PASS while any gate was
+        PROCESS_ONLY, by design. With gate four executable the aggregate
+        must be ABLE to report PASS when every gate passes -- and if a
+        future gate is re-declared PROCESS_ONLY, this control fails and
+        the aggregate is held off PASS again, this time by notice rather
+        than by surprise.
         """
         import importlib.util
         loader = importlib.util.spec_from_file_location(
@@ -178,16 +221,59 @@ class TestLintIsAUnitGatePrecondition(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, "release-gates.json"),
                   encoding="utf-8") as fh:
             spec = json.load(fh)
+        for g in spec["gates"]:
+            self.assertEqual(g["state"], "IMPLEMENTED",
+                             f"gate {g['id']} is not IMPLEMENTED; a "
+                             "non-executable gate must be a deliberate, "
+                             "pinned decision, not a drift back")
+        # The rows mirror the real record shapes: unittest gates carry test
+        # counts, verdict and exit-code gates carry executed=None because
+        # there is nothing to count. The first version of this control gave
+        # every row executed=1, which hid a defect the real pipeline then
+        # hit: the aggregate's not-run check read executed as a truth
+        # value, so the four gates with no test count held every all-pass
+        # run at NEEDS_REVIEW and PASS was structurally unreachable. The
+        # rows must be the shapes that actually occur, or the control
+        # proves a pipeline that does not exist.
+        runners = {g["id"]: g.get("runner") for g in spec["gates"]}
         rows = [{"gate": g["id"], "outcome": "PASS", "state": "IMPLEMENTED",
                  "required_execution": bool(g.get("required_execution", True)),
-                 "attempted": True, "executed": 1}
+                 "attempted": True,
+                 "executed": 1 if runners.get(g["id"]) == "unittest" else None}
                 for g in spec["gates"]]
         got = module.overall(spec, rows)
-        self.assertNotEqual(
-            got["status"], "PASS",
-            "every implemented gate passed and the aggregate still reached "
-            "PASS, so a declared PROCESS_ONLY gate stopped holding it off")
-        self.assertEqual(got["status"], "NEEDS_REVIEW")
+        self.assertEqual(got["status"], "PASS",
+                         "every gate is implemented, ran and passed -- with "
+                         "the verdict gates carrying executed=None, as they "
+                         "really do -- so the aggregate must reach PASS")
+
+    def test_a_pass_row_that_never_attempted_holds_off_pass(self):
+        """The other side of the not-run check, so the fix is not a removal.
+
+        Reading attempted instead of executed must not open the door the
+        check exists to close: a required gate that reports PASS without
+        ever attempting its command still keeps the aggregate off PASS,
+        and so does a test gate whose count is zero.
+        """
+        import importlib.util
+        loader = importlib.util.spec_from_file_location(
+            "rg", os.path.join(REPO_ROOT, "scripts", "release_gate.py"))
+        module = importlib.util.module_from_spec(loader)
+        loader.loader.exec_module(module)
+        spec = {"gates": [
+            {"id": "g1", "state": "IMPLEMENTED", "required_execution": True},
+        ]}
+        for row in (
+            {"gate": "g1", "outcome": "PASS", "state": "IMPLEMENTED",
+             "required_execution": True, "attempted": False, "executed": None},
+            {"gate": "g1", "outcome": "PASS", "state": "IMPLEMENTED",
+             "required_execution": True, "attempted": True, "executed": 0},
+        ):
+            got = module.overall(spec, [row])
+            self.assertEqual(
+                got["status"], "NEEDS_REVIEW",
+                f"row {row} is a gate that did not run, and the aggregate "
+                "must not say PASS for it")
 
     def test_four_states_and_exit_mapping_are_unchanged(self):
         path = os.path.join(REPO_ROOT, "scripts", "release_gate.py")

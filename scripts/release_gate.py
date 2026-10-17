@@ -39,7 +39,7 @@ import re
 import subprocess
 import sys
 
-SCHEMA = "rdebug-release-gates/6"
+SCHEMA = "rdebug-release-gates/7"
 
 PASS = "PASS"
 REGRESSION = "REGRESSION"
@@ -834,10 +834,21 @@ def overall(spec, results, exit_codes=None):
             r for r in records
             if r.get("required_execution") and r.get("state") != "IMPLEMENTED"
         ]
+        # "Did the gate run" is "attempted", and for a test-counting gate
+        # "ran nothing" is executed == 0. executed is None for verdict and
+        # exit-code gates because there is nothing to count there, so reading
+        # it as a truth value made PASS structurally unreachable: every
+        # all-pass run was held at NEEDS_REVIEW by the four gates that carry
+        # no test count, which is the G1 defect wearing a new shape -- an
+        # aggregate that cannot say PASS cannot authorize anything. None is
+        # therefore not 0: a gate that ran its command and produced a real
+        # verdict is not "a gate that ran nothing", while a test gate whose
+        # count is zero still holds the aggregate off PASS here, which is the
+        # defense in depth the original check exists for.
         not_run = [
             r for r in records
             if r.get("required_execution") and r.get("state", "IMPLEMENTED") == "IMPLEMENTED"
-            and not r.get("executed")
+            and (not r.get("attempted") or r.get("executed") == 0)
         ]
         if required_unimplemented or not_run:
             status = NEEDS_REVIEW

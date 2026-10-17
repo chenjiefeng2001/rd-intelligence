@@ -27,3 +27,4 @@ ci_pipeline_report.json
 .fork_verdict.json
 .g3probe.json
 .gate-logs/
+.gate4_verdict.json
