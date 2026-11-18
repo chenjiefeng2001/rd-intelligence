@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **54 are not classified** and are deliberately not
+and are constrained by it; **55 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -109,6 +109,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`phase5d-workload.md`](validation/phase5d-workload.md) | not classified |
 | [`perf-baseline.md`](validation/perf-baseline.md) | not classified |
 | [`benchmark-archive-2026-10-16.md`](validation/benchmark-archive-2026-10-16.md) | not classified |
+| [`r3-r4-closure-2026-11-18.md`](validation/r3-r4-closure-2026-11-18.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -124,10 +125,10 @@ Machine-readable companions, listed for completeness:
 
 | | Count |
 | --- | --- |
-| Documents indexed | 71 |
+| Documents indexed | 72 |
 | Machine-classified | 16 |
-| Not classified | 54 |
-| Of which validation evidence | 11 markdown + 7 json |
+| Not classified | 55 |
+| Of which validation evidence | 12 markdown + 7 json |
 
 ## Known limits of this index
 
