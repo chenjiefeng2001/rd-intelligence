@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **72 are not classified** and are deliberately not
+and are constrained by it; **74 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -117,6 +117,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`query-pushdown-r64-2026-11-18.md`](validation/query-pushdown-r64-2026-11-18.md) | not classified |
 | [`r6-closure-2026-11-18.md`](validation/r6-closure-2026-11-18.md) | not classified |
 | [`capability-coverage-c1-c2-2026-11-19.md`](validation/capability-coverage-c1-c2-2026-11-19.md) | not classified |
+| [`dependency-semantics-c3-2026-11-19.md`](validation/dependency-semantics-c3-2026-11-19.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -137,15 +138,16 @@ Machine-readable companions, listed for completeness:
 * [`capability-coverage-n3-02-2026-11-19.json`](validation/capability-coverage-n3-02-2026-11-19.json) — C1 scan of external D3D12 capture (negative/no-edge case)
 * [`positive-copy-sample-a-d3d11-2026-11-19.json`](validation/positive-copy-sample-a-d3d11-2026-11-19.json) — C2 positive CopyDst -> PS_Resource relation set (a)
 * [`positive-copy-sample-b-d3d11-2026-11-19.json`](validation/positive-copy-sample-b-d3d11-2026-11-19.json) — C2 positive CopyDst -> PS_Resource relation set (b)
+* [`c3-real-dependency-index-2026-11-19.json`](validation/c3-real-dependency-index-2026-11-19.json) — C3 typed dependency index over the real Copy -> Sampling sample
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 89 |
+| Documents indexed | 91 |
 | Machine-classified | 16 |
-| Not classified | 72 |
-| Of which validation evidence | 19 markdown + 17 json |
+| Not classified | 74 |
+| Of which validation evidence | 20 markdown + 18 json |
 
 ## Known limits of this index
 

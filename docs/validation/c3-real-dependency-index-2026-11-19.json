@@ -1,0 +1,30 @@
+{
+  "kind": "c3-real-dependency-index",
+  "capture": "a-d3d11-fixture.rdc",
+  "resourceId": "ResourceId::47",
+  "dependencyCount": 256,
+  "byType": {
+    "raw": 256,
+    "war": 0,
+    "waw": 0,
+    "copy": 0,
+    "resolve": 0
+  },
+  "viaCopy": 256,
+  "truncated": false,
+  "unresolved": [
+    {
+      "field": "subresource",
+      "status": "unknown",
+      "reason": "ReplayController.GetUsage does not expose mip/layer/slice"
+    },
+    {
+      "field": "alias",
+      "status": "unknown",
+      "reason": "equal resource ids do not prove physical memory aliasing"
+    }
+  ],
+  "supportLevels": [
+    "inferred_from_order"
+  ]
+}
