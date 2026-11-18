@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **66 are not classified** and are deliberately not
+and are constrained by it; **72 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -116,6 +116,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`resource-access-profile-r63-2026-11-18.md`](validation/resource-access-profile-r63-2026-11-18.md) | not classified |
 | [`query-pushdown-r64-2026-11-18.md`](validation/query-pushdown-r64-2026-11-18.md) | not classified |
 | [`r6-closure-2026-11-18.md`](validation/r6-closure-2026-11-18.md) | not classified |
+| [`capability-coverage-c1-c2-2026-11-19.md`](validation/capability-coverage-c1-c2-2026-11-19.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -131,15 +132,20 @@ Machine-readable companions, listed for completeness:
 * [`real-workload-05a2-2026-11-18.json`](validation/real-workload-05a2-2026-11-18.json) — R6.1 real N3-05A2 per-resource access/edge/perf data
 * [`resource-access-profile-r63-2026-11-18.json`](validation/resource-access-profile-r63-2026-11-18.json) — R6.3 per-stage p50 without tracemalloc instrumentation
 * [`query-pushdown-r64-2026-11-18.json`](validation/query-pushdown-r64-2026-11-18.json) — R6.4 full-vs-streamed filtered query timings and edge-set equivalence
+* [`capability-coverage-a-d3d11-2026-11-19.json`](validation/capability-coverage-a-d3d11-2026-11-19.json) — C1 scan of the registered D3D11 fixture a
+* [`capability-coverage-b-d3d11-2026-11-19.json`](validation/capability-coverage-b-d3d11-2026-11-19.json) — C1 scan of the registered D3D11 fixture b
+* [`capability-coverage-n3-02-2026-11-19.json`](validation/capability-coverage-n3-02-2026-11-19.json) — C1 scan of external D3D12 capture (negative/no-edge case)
+* [`positive-copy-sample-a-d3d11-2026-11-19.json`](validation/positive-copy-sample-a-d3d11-2026-11-19.json) — C2 positive CopyDst -> PS_Resource relation set (a)
+* [`positive-copy-sample-b-d3d11-2026-11-19.json`](validation/positive-copy-sample-b-d3d11-2026-11-19.json) — C2 positive CopyDst -> PS_Resource relation set (b)
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 83 |
+| Documents indexed | 89 |
 | Machine-classified | 16 |
-| Not classified | 66 |
-| Of which validation evidence | 18 markdown + 12 json |
+| Not classified | 72 |
+| Of which validation evidence | 19 markdown + 17 json |
 
 ## Known limits of this index
 
