@@ -2,19 +2,22 @@
 
 RenderDoc 的**外部调试智能层**：RenderDoc 负责事实（capture / replay / pixel history），本项目负责理解事实（查询 / 局部依赖图 / 证据输出）。第一阶段不含 AI、不建数据库、不修改 RDC 格式。
 
-> **当前状态（2026-09-29 核对并修复）**
+> **当前状态（2026-11-18 审计核对）**
 > - Phase 1a → 5d 全部完成，每阶段有 `docs/validation/` 下的验证报告与原始数据。
-> - **唯一开放的 roadmap 项是 Real-world Validation（A/B/C），尚未开始**，且其前置条件（≥1 周真实负载遥测）尚不满足。
+> - **M1 迁移（SessionManager → WorkerManager）已完成**并通过 M1.5 acceptance matrix；
+>   D6 性能证据已采集。MCP/IDE 均通过 one-worker-per-capture 的进程隔离路径，
+>   §2.9 的运行时隔离已接线并有测试。迁移设计见 `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`。
 > - 系统性排查「失败被伪装成结果」类缺陷，**共修复 20 项**并全部提交入库。
 >   其中最严重的一项（`GetAllUsedDescriptors` 失败被当成空列表 → `diff-pixel`
 >   报 **`same`**）此前一路通过 15 项机械审计——已补上针对该类缺陷的
 >   §2.5 / §2.6 审计。详见 `../STATUS.md` §2.3。
-> - Note: **§2.9 唯一未满足的 MUST**：MCP/IDE 仍走遗留进程内 `SessionManager`。
->   已实测确认为真实隔离问题（同一进程内 2 个 ReplayController 与 1 个
->   replay runtime 并存，即 W1-R1 F-1/F-2 形态）。
->   **当前阶段 M0：迁移范围与验收设计已交付**（`docs/SESSIONMANAGER-MIGRATION-SCOPE.md`），
->   含两道已验证的机械架构 Gate 与 7 项待裁决。M0 未改任何生产代码。
-> - 跨仓库完成情况总报告见 `../STATUS.md`。
+> - 七个 §4 门全部 IMPLEMENTED / blocking，本地齐备环境下
+>   `overall = PASS / exit 0`；release blocking 已授权启用。远端无 GPU runner
+>   时 replay 门按契约报 `INFRASTRUCTURE_FAILURE`，不伪造绿灯。
+> - teardown `0xC0000005` 修复已部署到 pymodules，integration 77 项 + 进程干净退出；
+>   `verified repair` 仍为 NOT_YET_ESTABLISHED（工具寻址边界，非修复可疑）。
+> - **Real-world Validation（A/B/C）仍未开始（0/5）**，前置（≥1 周真实负载遥测）不满足。
+> - 跨仓库完成情况总报告见 `../STATUS.md`；独立审计见 `../AUDIT-2026-11-18.md`。
 
 ## 架构边界
 
@@ -347,8 +350,9 @@ tests_transport/                  # 58 tests；MCP/IDE 传输层不变量，与�
   Round 1 GATE FAIL 暴露 WLF-1（LRU 逐出路径原生 AV），Round 2（2026-08-25）
   **GATE PASS**：2193 queries、correctness 11/11、0 violation，见
   `docs/validation/phase5d-workload.md`）
-- [ ] Runtime Isolation（§2.9 WorkerManager 模型）—— **代码已写但未提交、未接线、
-  无测试覆盖**。详见下方「Runtime Isolation 实现状态」。
+- [x] Runtime Isolation（§2.9 WorkerManager 模型）—— M1 迁移完成并接线，
+  one worker per capture；M1.5 acceptance matrix 与隔离测试在 integration 门内 PASS。
+  详见下方「Runtime Isolation 实现状态」。
 
 - [x] **P0/P1** Baseline Freeze + UX Readiness 审计（11 项缺陷，全部静默失败）
 - [x] **P2-A** D1 `deep` 语义一致 + D2 trace scope 可见
@@ -392,11 +396,11 @@ tests_transport/                  # 58 tests；MCP/IDE 传输层不变量，与�
 - **§2.9「语义结果不依赖 worker 生命周期」实测成立**：跨 6 代次
   语义 payload 逐字节一致（该性质在修复前无法验证——因为从不发生回收）。
 
-**仍存在的差距**
+**已闭合的历史差距（2026-10-02 更正）**
 
 | 状态 | 项 |
 | --- | --- |
-| Note: 未接线 | `rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留的进程内 `SessionManager`。W1-R1 的 F-1/F-2 正是发生在该路径上。`audit_boundaries.py` 现将其登记为 DEVIATION（不判失败，但会持续显示）——这是 §2.9 唯一未满足的 MUST。**迁移设计见 `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`（M0，未实施）** |
+| 已闭合 | ~~`rdebug_mcp/server.py:34` 与 `rdebug_ide/app.py:39` 仍实例化遗留 `SessionManager`~~ —— 不成立。M1.3/M1.4 已迁移到 `WorkerManager`（one worker per capture），`test_m15_acceptance:127-129` 主动断言遗留符号必须不存在。`audit_boundaries.py` 的 DEVIATION（§2.9 GATE B）是**有意保留的过渡形态记录**，不是待办 |
 | Note: CI 已接线 | `.github/workflows/ci.yml` 存在并运行 `ci_pipeline.py`；hosted runner 上 unit / transport / boundary_audit 通过，integration / cold_warm / fork_integrity 因缺 RenderDoc 与 corpus 报 INFRASTRUCTURE_FAILURE |
 
 ### 语义层「失败不得冒充观测」（2026-09-29 第二轮修复）
@@ -478,10 +482,10 @@ rdebug-mcp          # stdio MCP server，四个 tool：trace_pixel / trace_resou
 - 运行期错误以 `{"error": ..., "tool": "..."}` JSON 返回，不中断会话；
 - 会话复用已实现（Phase 4d `SessionManager`：路径隔离 / LRU / 健康探测 /
   失效恢复），稳态 **184.5ms vs cold 6993.5ms（≈38×）**，语义等价 4/4。
-  Note: 但 `server.py:34` 当前仍实例化**遗留的进程内** `SessionManager`，
-  未迁移到 §2.9 的 WorkerManager 模型；W1-R1 的 F-1/F-2（多 controller 共存导致
-  静默值污染 / 原生挂起 / 0xC0000005）正发生在该路径上。
-  缓解：Agent/IDE 切换 capture 即重建 transport。见 `DESIGN_SPEC.md` §2.9。
+  Note: 上述 Phase 4d 的进程内 `SessionManager` 已被 M1 迁移取代：
+  `rdebug_mcp/server.py` 现持有 `_WORKERS: WorkerManager`（one worker per capture），
+  W1-R1 的 F-1/F-2 形态在该路径上不再存在。见 `DESIGN_SPEC.md` §2.9 与
+  `docs/SESSIONMANAGER-MIGRATION-SCOPE.md`。
 
 客户端配置示例（Claude Desktop / 任意 MCP client）：
 

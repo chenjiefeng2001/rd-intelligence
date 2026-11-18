@@ -229,6 +229,10 @@ class TestOpenDecisionsCarriesOnlyOpenItems(unittest.TestCase):
         "evidence_ref": "CI-ORCHESTRATION-CONTRACT.md 6.1 removal record",
         "duration_s": "CI-ORCHESTRATION-CONTRACT.md 6.1 removal record",
         "noqa": "LINT-EXECUTION-CONTRACT.md governance section",
+        "Release blocking": (
+            "CURRENT-EVIDENCE-FREEZE.md release blocking AUTHORIZED / ENABLED "
+            "2026-10-16; ci-pipeline.json /5 release_blocking.enabled"
+        ),
     }
 
     def _text(self):
@@ -274,14 +278,32 @@ class TestOpenDecisionsCarriesOnlyOpenItems(unittest.TestCase):
                 "record, with the place its decision now lives")
 
     def test_the_document_states_what_remains_open(self):
-        """Empty is only correct if the genuinely open items are still named."""
+        """Empty is only correct if the genuinely open items are still named.
+
+        Release blocking was ruled AUTHORIZED / ENABLED on 2026-10-16 and moved
+        to the decided-items table. The first version asserted it was still in
+        the open list, so a correct move-out would have been read as a loss of
+        coverage. Split the document and assert each item lives on its own side.
+        """
         text = self._text()
-        for still_open in ("Release blocking", "RenderDoc attribution"):
-            self.assertIn(
-                still_open, text,
-                f"{still_open} is frozen or deferred rather than decided, so it "
-                "belongs in the open list. Removing it would make the document "
-                "claim nothing is outstanding.")
+        cut = text.find("## 4. ")
+        self.assertNotEqual(cut, -1, "the decided-items table must exist")
+        open_list, removed = text[:cut], text[cut:]
+        self.assertIn(
+            "RenderDoc attribution", open_list,
+            "this is deferred rather than decided, so it belongs in the open "
+            "list. Removing it would make the document claim nothing is "
+            "outstanding.")
+        self.assertNotIn(
+            "Release blocking", open_list,
+            "release blocking was ruled AUTHORIZED / ENABLED on 2026-10-16; "
+            "leaving it in the open list makes a settled decision look open.")
+        self.assertIn(
+            "Release blocking", removed,
+            "the decided item must stay named in the removal record, with the "
+            "place its decision now lives")
+        self.assertIn("AUTHORIZED / ENABLED", removed,
+                      "the removal record must name the ruling, not just the item")
 
     def test_the_move_out_rule_is_still_stated(self):
         """Anchored on section 2, where the rule is stated.

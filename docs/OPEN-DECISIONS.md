@@ -24,7 +24,6 @@ purpose: 让待裁决项的选项与后果可见，使裁决成为一次选择�
 
 | 项 | 状态 | 缺什么 |
 | --- | --- | --- |
-| **Release blocking** | FROZEN / NOT AUTHORIZED | 授权。技术前置是 teardown：required gate 每次通过测试却无法干净退出，会**永久阻断** |
 | **RenderDoc attribution（函数级）** | FROZEN / DEFERRED | 该构建的完整非裁剪 PDB，或可符号化的 RenderDoc build。故障**字节**已确立，映射到函数仍需符号 |
 | **RenderDoc fork replay 修改** | NOT AUTHORIZED | 若归因落在 replay，需先重开 scope decision |
 | **Layer B / R2（内容身份与替换检测）** | OPEN / **阻塞于外部前置条件** | R2 = 保留 canonical 名而替换其内容。Layer A **结构上无法检出**，不得声称已解决。关闭它需要足以证明 O1 重复生成确定性的**外部证据**；本项目当前**不产生**该证据。见 `FIXTURE-POPULATION-CONTRACT.md` §14.9、§14.4 |
@@ -159,7 +158,7 @@ PASS/INFRA、不把 `UNKNOWN` 从 `overall` 中提出。
 不因此成为未决项。
 
 与 §2 的 N4 项相邻但不同：N4 是 capture 的**治理归属**，本项是**门禁对环境的依赖**。
-本仓库无 remote、`ci.yml` 从未执行，故该路径至今未被任何真实 CI 验证。
+该说法已过时：本仓库已配置 `origin`，`ci.yml` 已交付并运行 26 次；远端 runner 缺 GPU/外部证据，replay 门按契约报 `INFRASTRUCTURE_FAILURE`，纯 Python 门真实执行且 PASS。
 
 ### 2.3 N4 的新增观测与可裁决选项（2026-10；选项，非裁决）
 
@@ -205,19 +204,24 @@ N4 已按 move-out 规则移入 §4。**注意**：A **不豁免**下面这条 d
 **未裁决，且不由本节合并**：把「已提供的外部 corpus 只能被计数、无法被验证」
 （`AUDIT-2026-10-02-B.md` §257）单独立项，还是并入其他范围。
 
-## 3. 与 verdict 上限的关系
+## 3. 与 verdict 上限的关系（历史裁决，已由 2026-10-16 追加 29 取代）
 
-`benchmark_archive` 为 `PROCESS_ONLY` / `UNKNOWN`，按 G4 裁决贡献 `UNKNOWN`，
+以下为 Gate 4 可执行化与 release blocking 授权之前的裁决上限，**仅作历史记录**；
+当前状态以 `docs/CURRENT-EVIDENCE-FREEZE.md` 规范块与 `STATUS.md` 追加 29 为准。
+
+当时的判断：`benchmark_archive` 为 `PROCESS_ONLY` / `UNKNOWN`，按 G4 裁决贡献 `UNKNOWN`，
 故**总体永不可能 `PASS`** —— 这是设计后果，不是缺陷。
 
-实测裁决上限：
+当时的实测裁决上限：
 
 | 情形 | 总体 | exit |
 | --- | --- | --- |
-| 现状（integration INFRASTRUCTURE_FAILURE） | `BLOCKED_INFRA` | 3 |
+| 当时现状（integration INFRASTRUCTURE_FAILURE） | `BLOCKED_INFRA` | 3 |
 | 若 teardown 完全修复 | `NEEDS_REVIEW` | 4 |
 
-即：**只有 teardown 能把总体从 3 推到 4；已授权工作无法使总体变为 `PASS`。**
+**当前事实**：`11867d4` 使 Gate 4 具备可执行检查（变更耦合），`e1f1ae1` 授权启用
+release blocking；七门全 IMPLEMENTED 且全 PASS 时总体为 `PASS / exit 0`。
+无 GPU runner 的远端仍为 `BLOCKED_INFRA / exit 3`，成因仅为外部前置缺失。
 
 ## 4. 已移出本节的已裁决项
 
@@ -234,6 +238,7 @@ N4 已按 move-out 规则移入 §4。**注意**：A **不豁免**下面这条 d
 | fixture drop-in 输入身份（Layer A 部分） | 已关闭 — 范围 **C1 仅 integration**、裁决 **S1 pre-run INFRA**、source **producer declaration**。`integration` 只接受 producer 声明的 canonical 路径；非成员在运行前归入既有 `INFRASTRUCTURE_FAILURE` 并带独立 reason。`FIXTURE-POPULATION-CONTRACT.md` §8–13 |
 | fixture 确定性 / 完整性验证 | **EXTERNAL PREREQUISITE / NOT ESTABLISHED / NOT IMPLEMENTED** — 本项目**不具备**该能力且**不产生**该证据；关闭 R2 / 实施 Layer B 前必须先由外部提供足以证明 O1 重复生成确定性的证据。`FIXTURE-POPULATION-CONTRACT.md` §14.9 |
 | `unit` 门禁裁决的环境敏感性 | **DOCUMENTED / VERIFIED INVARIANT / FROZEN** — 裁决 **U1：维持现状 + 文档化**。实测与源码均证明 `executed == 0`、低于 `min_executed`、`skipped > 0` 均**不可能**产生 `PASS`，属既有设计行为而非 defect。环境 prerequisite 已写入 `CI-ORCHESTRATION-CONTRACT.md` §6.1；三条不变量由 §6.2 与真实 unittest 运行（非 mock）回归钉住。`overall` 中 `UNKNOWN` 被更高优先级 `INFRA` 掩盖，记为**已知可解释性边界**，非当前 defect。证据材料见本文档 §2.2 |
+| Release blocking | **AUTHORIZED / ENABLED（2026-10-16）** — 位置：`docs/CURRENT-EVIDENCE-FREEZE.md` 规范块 `release blocking` 行（AUTHORIZED / ENABLED，exit 4 的 conclusion 由 neutral 改为 failure）；`ci-pipeline.json` schema `/5` 的 `release_blocking.enabled: true` 与 `schema_history` `/5` 理由条目。原反对理由（teardown 未干净退出会永久阻断）已由 G-1 部署与七门全可执行消除 |
 
 ## 5. 已冻结项（不在本文档内裁决）
 

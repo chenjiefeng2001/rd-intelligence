@@ -4,8 +4,9 @@ name: ci
 #
 # Two facts about this file are recorded rather than smoothed over.
 #
-# rd-intelligence has no git remote, so this configuration cannot execute
-# today. It is a declaration that can be audited, not a pipeline that runs.
+# rd-intelligence has an `origin` remote and this workflow has run 26 times on
+# GitHub Actions (latest at HEAD d779ba9). It is both an auditable declaration
+# and an executing pipeline.
 #
 # A GitHub-hosted runner has no GPU and no RenderDoc replay runtime, and this
 # repository has no sibling ../renderdoc checkout. The two replay gates

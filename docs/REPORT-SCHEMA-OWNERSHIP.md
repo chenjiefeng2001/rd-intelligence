@@ -53,14 +53,16 @@ schema drift 有两个方向，本次**不采用单一方向**，按字段性质
   `spec_ref` / `test_result` / `lint`。
 * **schema 升版**：`ci-pipeline /3 → /4`，报告 `/2 → /3`，并补齐两处理由条目。
 
-## 4. 待裁决（本 workstream 不单方面处理）
+## 4. 已裁决移除的两项（原「待裁决」）
 
-* `evidence_ref` —— 契约要求，实现从未输出，§6.2 不依赖。
+* `evidence_ref` —— 契约曾要求，但实现从未输出，§6.2 不依赖。
 * `duration_s` —— 同上。
 
-删除任一项都属于**放宽契约**，须经裁决。它们目前在 §6.1 中显式标为
-「待裁决」，由 `test_pending_rulings_are_still_recorded_as_pending` 保证
-该标注不会随时间消失。
+两项已按裁决**从 mandatory report contract 中移除**，理由与记录见
+`CI-ORCHESTRATION-CONTRACT.md` §6.1（分别为 `test_evidence_ref_is_not_a_contract_requirement`
+与 `test_duration_s_is_not_a_contract_requirement` 钉住）。这是**契约收窄**，
+不是实现缺失；`test_a_report_without_those_fields_still_satisfies_the_contract`
+保证报告不带这两项仍然合规。旧文本所称的「待裁决」状态已失效，故在此更正为已裁决。
 
 ## 5. 强制手段
 

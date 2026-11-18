@@ -5,8 +5,8 @@
   "forge_target": {
     "kind": "github-actions",
     "config": ".github/workflows/ci.yml",
-    "remote_present": false,
-    "caveat": "rd-intelligence has no git remote, so this configuration cannot execute here. It is written against the conventional target and is auditable as a declaration, not as a running pipeline."
+    "remote_present": true,
+    "caveat": "origin is configured and this workflow has executed 26 times on GitHub Actions; the latest run is against HEAD d779ba9. Hosted runners lack a GPU, a RenderDoc replay runtime and the external validation checkout, so the replay and fork gates report INFRASTRUCTURE_FAILURE there by design."
   },
   "entry": {
     "command": [
@@ -106,7 +106,7 @@
       "gate": "benchmark_archive",
       "requires": [],
       "provided_by": "none",
-      "note": "PROCESS_ONLY. A process requirement with no executable check. It is declared here so every gate in the gate spec has a stated environment, and it keeps the overall result off PASS. No runner capability can satisfy it, and none is invented."
+      "note": "IMPLEMENTED since 2026-10-16 (release-gates schema /7). The requirement now has an executable check: docs/validation/benchmark-archive-manifest.json declares the commit the archived measurements were taken on and the monitored session/latency surface, and scripts/benchmark_archive_gate.py verifies the archive still covers this tree. No special runner capability is needed; a monitored change without re-archiving is a REGRESSION and a missing/unreadable manifest is INFRASTRUCTURE_FAILURE."
     }
   ],
   "artifacts": {
