@@ -296,21 +296,129 @@ def build_causal_graph(accesses, versions, resource_id, capture):
     }
 
 
-def build_lifetime(accesses):
+LIFETIME_STATUSES = ("observed", "partial", "unknown", "multiple", "order_conflict")
+
+
+def build_lifetime(accesses, lifecycle_events=None):
+    """Describe a resource lifetime without inventing missing endpoints.
+
+    ``lifecycle_events`` is optional and carries explicit create/release
+    observations when the caller has them. GetUsage itself does not, so the
+    default result has unknown endpoints and an incomplete interval. Multiple
+    create/release pairs are reported as separate instances rather than being
+    merged by resource id -- equal ids do not prove one continuous lifetime.
+    """
     writes = [a["eventId"] for a in accesses if a["legacyKind"] == "write"
               and a["eventId"] is not None]
     reads = [a["eventId"] for a in accesses if a["legacyKind"] == "read"
              and a["eventId"] is not None]
+    first_access = min(writes + reads) if (writes or reads) else None
+    last_access = max(writes + reads) if (writes or reads) else None
+
+    events = sorted(lifecycle_events or (), key=lambda e: e.get("eventId", 0))
+    creates = [e for e in events if e.get("kind") == "create"
+               and e.get("eventId") is not None]
+    releases = [e for e in events if e.get("kind") == "release"
+                and e.get("eventId") is not None]
+    create = creates[0] if creates else None
+    release = next((r for r in reversed(releases)
+                    if last_access is None or r["eventId"] >= last_access), None)
+
+    order_conflict = bool(
+        (create and first_access is not None and create["eventId"] > first_access)
+        or (release and last_access is not None and release["eventId"] < last_access)
+    )
+
+    def endpoint(event, reason, expected_side):
+        if event is None:
+            return {"status": "unknown", "eventId": None, "observationStatus": "unknown",
+                    "reason": reason}
+        return {"status": "observed", "eventId": int(event["eventId"]),
+                "observationStatus": "observed", "reason": None,
+                "evidenceRefs": [
+                    {"id": ev.get("id")} for ev in event.get("evidence", ()) if ev.get("id")
+                ]}
+
+    creation = endpoint(create, "creation_event_not_observed", "before")
+    destruction = endpoint(release, "release_event_not_observed", "after")
+    first_endpoint = endpoint(
+        {"eventId": first_access} if first_access is not None else None,
+        "no_access_event_observed", "first")
+    last_endpoint = endpoint(
+        {"eventId": last_access} if last_access is not None else None,
+        "no_access_event_observed", "last")
+
+    instances = []
+    if creates or releases:
+        for index_, creation_event in enumerate(creates or [{"eventId": None}], 1):
+            following = next(
+                (r for r in releases
+                 if creation_event["eventId"] is None
+                 or r["eventId"] > creation_event["eventId"]),
+                None)
+            events_in_instance = [
+                eid for eid in writes + reads
+                if (creation_event["eventId"] is None or eid >= creation_event["eventId"])
+                and (following is None or eid <= following["eventId"])
+            ]
+            instances.append({
+                "instanceId": f"instance-{index_}",
+                "createEventId": creation_event.get("eventId"),
+                "releaseEventId": following.get("eventId") if following else None,
+                "accessEventIds": events_in_instance,
+                "status": "partial" if following is None else "observed",
+            })
+    else:
+        instances.append({
+            "instanceId": "instance-1",
+            "createEventId": None,
+            "releaseEventId": None,
+            "accessEventIds": writes + reads,
+            "status": "partial",
+        })
+
+    interval_status = (
+        "order_conflict" if order_conflict else
+        "observed" if creation["status"] == "observed"
+        and destruction["status"] == "observed" else
+        "partial" if creation["status"] == "observed"
+        or destruction["status"] == "observed" else "unknown"
+    )
+    lifetime_status = (
+        "order_conflict" if order_conflict else
+        "multiple" if len(creates) > 1 or len(releases) > 1 else
+        interval_status
+    )
+
     return {
+        # R2 fields: unchanged names and values.
         "firstWriteEventId": writes[0] if writes else None,
         "lastWriteEventId": writes[-1] if writes else None,
         "lastReadEventId": reads[-1] if reads else None,
         "writeCount": len(writes),
         "readCount": len(reads),
-        "creationEventId": None,
-        "destructionEventId": None,
+        "creationEventId": create["eventId"] if create else None,
+        "destructionEventId": release["eventId"] if release else None,
         "status": "partial",
         "reason": "creation/destruction events are not exposed by GetUsage",
+        # R3.3: explicit endpoints and interval states.
+        "endpoints": {
+            "creation": creation,
+            "firstAccess": first_endpoint,
+            "lastAccess": last_endpoint,
+            "release": destruction,
+        },
+        "interval": {
+            "status": interval_status,
+            "startEventId": creation["eventId"],
+            "endEventId": destruction["eventId"],
+            "reason": None if interval_status == "observed" else
+                      "lifetime interval is not fully observed",
+        },
+        "instances": instances,
+        "lifetimeStatus": lifetime_status,
+        "supportLevel": "observed" if lifetime_status == "observed"
+                        else "inferred" if lifetime_status == "partial" else "unknown",
     }
 
 

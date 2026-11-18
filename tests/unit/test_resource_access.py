@@ -240,5 +240,76 @@ class TestCausalBoundary(unittest.TestCase):
         self.assertEqual(graph["edges"], [])
 
 
+class TestLifetimeBoundary(unittest.TestCase):
+    """R3.3: missing lifecycle endpoints stay explicit, never inferred."""
+
+    def test_no_lifecycle_events_keeps_r2_shape(self):
+        lifetime = build_lifetime(index(rows((10, "Clear"), (20, "PS_Resource"))))
+        self.assertEqual(lifetime["status"], "partial")
+        self.assertIsNone(lifetime["creationEventId"])
+        self.assertIsNone(lifetime["destructionEventId"])
+        self.assertEqual(lifetime["endpoints"]["creation"]["status"], "unknown")
+        self.assertEqual(lifetime["endpoints"]["creation"]["reason"],
+                         "creation_event_not_observed")
+        self.assertEqual(lifetime["endpoints"]["release"]["status"], "unknown")
+        self.assertEqual(lifetime["interval"]["status"], "unknown")
+        self.assertEqual(lifetime["lifetimeStatus"], "unknown")
+
+    def test_creation_observed_release_missing(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource")))
+        lifetime = build_lifetime(accesses, [{"eventId": 5, "kind": "create"}])
+        self.assertEqual(lifetime["endpoints"]["creation"]["status"], "observed")
+        self.assertEqual(lifetime["creationEventId"], 5)
+        self.assertEqual(lifetime["endpoints"]["release"]["status"], "unknown")
+        self.assertEqual(lifetime["interval"]["status"], "partial")
+        self.assertEqual(lifetime["lifetimeStatus"], "partial")
+
+    def test_release_observed_creation_missing(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource")))
+        lifetime = build_lifetime(accesses, [{"eventId": 30, "kind": "release"}])
+        self.assertEqual(lifetime["endpoints"]["creation"]["status"], "unknown")
+        self.assertEqual(lifetime["endpoints"]["release"]["status"], "observed")
+        self.assertEqual(lifetime["destructionEventId"], 30)
+        self.assertEqual(lifetime["interval"]["status"], "partial")
+
+    def test_both_endpoints_observed(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource")))
+        lifetime = build_lifetime(accesses, [
+            {"eventId": 5, "kind": "create", "evidence": [{"id": "c1"}]},
+            {"eventId": 30, "kind": "release", "evidence": [{"id": "r1"}]},
+        ])
+        self.assertEqual(lifetime["interval"]["status"], "observed")
+        self.assertEqual(lifetime["lifetimeStatus"], "observed")
+        self.assertEqual(lifetime["endpoints"]["creation"]["evidenceRefs"], [{"id": "c1"}])
+        self.assertEqual(lifetime["endpoints"]["release"]["evidenceRefs"], [{"id": "r1"}])
+
+    def test_multiple_creates_are_separate_instances(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource"),
+                              (40, "ColorTarget"), (50, "CS_Resource")))
+        lifetime = build_lifetime(accesses, [
+            {"eventId": 5, "kind": "create"},
+            {"eventId": 30, "kind": "release"},
+            {"eventId": 35, "kind": "create"},
+            {"eventId": 60, "kind": "release"},
+        ])
+        self.assertEqual(lifetime["lifetimeStatus"], "multiple")
+        self.assertEqual(len(lifetime["instances"]), 2)
+        self.assertEqual(lifetime["instances"][0]["accessEventIds"], [10, 20])
+        self.assertEqual(lifetime["instances"][1]["accessEventIds"], [40, 50])
+
+    def test_order_conflict_is_not_silently_resolved(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource")))
+        lifetime = build_lifetime(accesses, [{"eventId": 99, "kind": "create"}])
+        self.assertEqual(lifetime["lifetimeStatus"], "order_conflict")
+        self.assertEqual(lifetime["interval"]["status"], "order_conflict")
+        self.assertEqual(lifetime["endpoints"]["creation"]["status"], "observed")
+
+    def test_empty_access_window_is_unknown_not_complete(self):
+        lifetime = build_lifetime([])
+        self.assertEqual(lifetime["lifetimeStatus"], "unknown")
+        self.assertEqual(lifetime["endpoints"]["firstAccess"]["status"], "unknown")
+        self.assertEqual(lifetime["instances"][0]["accessEventIds"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
