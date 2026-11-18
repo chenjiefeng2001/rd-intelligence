@@ -1,0 +1,206 @@
+{
+  "schema": "rdebug-diagnostic-report/1",
+  "reproducibility": {
+    "capture": "N3-02.rdc",
+    "captureSha256": null,
+    "analysisRevision": null
+  },
+  "sections": {
+    "executive_summary": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "findingCount": 0,
+        "anomalyCount": 0,
+        "diagnosisCount": 0,
+        "recommendationCount": 1,
+        "highestSourceLevel": "S0",
+        "overallStatus": "no_defect_reported"
+      }
+    },
+    "analysis_scope": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "capture": "N3-02.rdc",
+        "tooling": "rdebug diagnostics rdebug-diagnostic-report/1",
+        "sourceAttribution": [
+          {
+            "mappingId": "source-map-97d170e1550e",
+            "eventRefs": [],
+            "highestVerifiedLevel": "S0",
+            "mappingStatus": "not_established",
+            "apiCall": {},
+            "engineCallsite": {},
+            "sourceLocation": {},
+            "binaryIdentity": {},
+            "symbolIdentity": {},
+            "sourceRevision": {},
+            "pathMapping": {},
+            "candidates": [],
+            "evidenceRefs": [],
+            "limitations": []
+          }
+        ],
+        "highestLevel": "S0"
+      }
+    },
+    "workload_overview": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "resource": null,
+        "summary": null,
+        "accessCount": 0
+      }
+    },
+    "evidence_coverage": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "analysisStatus": null,
+        "unresolved": [],
+        "limitations": [
+          {
+            "category": "copy_sampling_dependency",
+            "status": "not_established",
+            "reason": "no CopyDst writer with PS_Resource readers on this resource"
+          },
+          {
+            "category": "findings",
+            "status": "not_established",
+            "reason": "no rule was triggered by the supplied evidence"
+          }
+        ]
+      }
+    },
+    "findings": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "findings": [],
+        "limitations": [
+          {
+            "category": "copy_sampling_dependency",
+            "status": "not_established",
+            "reason": "no CopyDst writer with PS_Resource readers on this resource"
+          },
+          {
+            "category": "findings",
+            "status": "not_established",
+            "reason": "no rule was triggered by the supplied evidence"
+          }
+        ],
+        "findingCount": 0,
+        "anomalyCount": 0,
+        "status": "not_established"
+      }
+    },
+    "diagnosis": {
+      "status": "insufficient_evidence",
+      "reason": "no anomaly triggered a diagnosis",
+      "content": {
+        "diagnoses": [],
+        "diagnosisCount": 0,
+        "observationOnly": false,
+        "status": "not_established"
+      }
+    },
+    "impact_analysis": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "affectedResources": [],
+        "affectedEvents": [],
+        "claim": "event-order scope; no content-flow conclusion"
+      }
+    },
+    "recommendations": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "recommendations": [
+          {
+            "recommendationId": "recommendation-b7e805a984a0",
+            "findingRefs": [],
+            "diagnosisRefs": [],
+            "actionType": "no_change",
+            "status": "actionable",
+            "priority": "P3",
+            "rationale": "No finding was produced from the supplied evidence.",
+            "evidenceRefs": [],
+            "sourceLocations": [],
+            "proposedChange": {},
+            "expectedOutcome": {
+              "state": "no_defect_reported"
+            },
+            "risk": {},
+            "preconditions": [],
+            "verificationSteps": [
+              "re-run the analysis if new evidence is supplied"
+            ],
+            "rollbackStrategy": {}
+          }
+        ],
+        "recommendationCount": 1,
+        "evidenceGate": "no_diagnosis",
+        "sourceLevel": "S0"
+      }
+    },
+    "change_proposals": {
+      "status": "insufficient_evidence",
+      "reason": "no actionable change was proposed",
+      "content": {
+        "changePlans": [],
+        "changePlanCount": 0,
+        "status": "not_applicable"
+      }
+    },
+    "verification_plan": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "plans": [
+          {
+            "recommendationRef": "recommendation-b7e805a984a0",
+            "changePlanRef": null,
+            "steps": [
+              "keep the original analysis output for comparison"
+            ],
+            "derivedFrom": []
+          }
+        ],
+        "planCount": 1
+      }
+    },
+    "limitations": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "items": [
+          {
+            "category": "copy_sampling_dependency",
+            "status": "not_established",
+            "reason": "no CopyDst writer with PS_Resource readers on this resource"
+          },
+          {
+            "category": "findings",
+            "status": "not_established",
+            "reason": "no rule was triggered by the supplied evidence"
+          }
+        ]
+      }
+    },
+    "evidence_appendix": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "evidenceRefs": [],
+        "mappingIds": [
+          "source-map-97d170e1550e"
+        ],
+        "analysisStatus": null
+      }
+    }
+  }
+}
