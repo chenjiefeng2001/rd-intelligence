@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **60 are not classified** and are deliberately not
+and are constrained by it; **61 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -112,6 +112,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`r3-r4-closure-2026-11-18.md`](validation/r3-r4-closure-2026-11-18.md) | not classified |
 | [`r5-closure-2026-11-18.md`](validation/r5-closure-2026-11-18.md) | not classified |
 | [`real-workload-baseline-2026-11-18.md`](validation/real-workload-baseline-2026-11-18.md) | not classified |
+| [`remote-ci-prerequisites-2026-11-18.md`](validation/remote-ci-prerequisites-2026-11-18.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -130,10 +131,10 @@ Machine-readable companions, listed for completeness:
 
 | | Count |
 | --- | --- |
-| Documents indexed | 77 |
+| Documents indexed | 78 |
 | Machine-classified | 16 |
-| Not classified | 60 |
-| Of which validation evidence | 14 markdown + 10 json |
+| Not classified | 61 |
+| Of which validation evidence | 15 markdown + 10 json |
 
 ## Known limits of this index
 
