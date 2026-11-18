@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **82 are not classified** and are deliberately not
+and are constrained by it; **85 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -122,6 +122,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`cross-workload-consistency-c5-2026-11-19.md`](validation/cross-workload-consistency-c5-2026-11-19.md) | not classified |
 | [`capability-c1-c6-closure-2026-11-19.md`](validation/capability-c1-c6-closure-2026-11-19.md) | not classified |
 | [`diagnostic-model-d1-d2-2026-11-19.md`](validation/diagnostic-model-d1-d2-2026-11-19.md) | not classified |
+| [`diagnosis-attribution-d3-d4-2026-11-19.md`](validation/diagnosis-attribution-d3-d4-2026-11-19.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -147,15 +148,17 @@ Machine-readable companions, listed for completeness:
 * [`c5-cross-workload-check-2026-11-19.json`](validation/c5-cross-workload-check-2026-11-19.json) — C5 cross-workload dependency and lifecycle consistency summary
 * [`d2-finding-preview-positive-2026-11-19.json`](validation/d2-finding-preview-positive-2026-11-19.json) — D2 report skeleton with the real Copy -> Sampling observation finding
 * [`d2-finding-preview-negative-2026-11-19.json`](validation/d2-finding-preview-negative-2026-11-19.json) — D2 report skeleton with no finding on the zero-edge sample
+* [`d34-preview-positive-2026-11-19.json`](validation/d34-preview-positive-2026-11-19.json) — D3/D4 full preview: observation-only finding, zero diagnosis, S0 attribution
+* [`d34-preview-negative-2026-11-19.json`](validation/d34-preview-negative-2026-11-19.json) — D3/D4 full preview on the zero-edge sample
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 99 |
+| Documents indexed | 102 |
 | Machine-classified | 16 |
-| Not classified | 82 |
-| Of which validation evidence | 24 markdown + 22 json |
+| Not classified | 85 |
+| Of which validation evidence | 25 markdown + 24 json |
 
 ## Known limits of this index
 
