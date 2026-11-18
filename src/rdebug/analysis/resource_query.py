@@ -6,6 +6,7 @@ subset is never presented as a complete analysis. The MCP protocol and the
 CI report schema are deliberately untouched.
 """
 
+from .resource_access import iter_writer_reader_edges, summarize_relations
 from .resource_explain import explain_relation, relation_id
 
 
@@ -99,6 +100,39 @@ def query_explanation(result, relation_id_value=None,
                 "reason": "relation_not_found", "explanation": None}
     return {"matched": 1, "status": edge.get("status"),
             "explanation": explain_relation(edge)}
+
+
+def query_relations_stream(accesses, stats=None, max_edges=None, resource=None,
+                           from_event_min=None, from_event_max=None,
+                           to_event_min=None, to_event_max=None):
+    """Stream filtered relations without materializing the full graph.
+
+    Filters are pushed into the generator; no full relation object, no
+    explanation and no JSON serialization of unrelated edges is performed.
+    Unlike the exact-match R5.3 ``query_relations``, the streamed form takes
+    explicit inclusive ranges so a range query never needs the full graph.
+    ``stats`` receives ``emitted``/``omitted`` exactly as in the generator,
+    so truncation remains explicit.
+    """
+    return iter_writer_reader_edges(
+        accesses, stats=stats, max_edges=max_edges, lightweight=True,
+        resource_ids=(resource,) if resource is not None else None,
+        from_event_min=from_event_min, from_event_max=from_event_max,
+        to_event_min=to_event_min, to_event_max=to_event_max)
+
+
+def summarize_query_relations(accesses, resource=None):
+    """Summary form for callers that only need counts, not relation objects."""
+    summary = summarize_relations(accesses)
+    if resource is not None:
+        return {
+            "relationCount": summary["perResource"].get(resource, 0),
+            "perResource": {resource: summary["perResource"].get(resource, 0)},
+            "status": summary["status"],
+            "note": summary["note"] + "; filtered by resource",
+            "partialBySelection": resource not in summary["perResource"],
+        }
+    return dict(summary, partialBySelection=False)
 
 
 def query_by_status(result, analysis_status=None, evidence_status=None):

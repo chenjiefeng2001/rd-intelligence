@@ -2,6 +2,7 @@
 
 import unittest
 
+from rdebug.analysis.resource_access import build_access_index
 from rdebug.analysis.resource_explain import relation_id
 from rdebug.analysis.resource_flow import trace_resource
 from rdebug.analysis.resource_query import (
@@ -10,6 +11,8 @@ from rdebug.analysis.resource_query import (
     query_explanation,
     query_lifetime,
     query_relations,
+    query_relations_stream,
+    summarize_query_relations,
 )
 
 RID = "ResourceId::91"
@@ -98,6 +101,55 @@ class TestQueryDoesNotRewriteStatus(unittest.TestCase):
         self.assertEqual(out["matched"], 0)
         self.assertTrue(out["partialBySelection"])
         self.assertEqual(out["analysisStatus"], r["analysisStatus"])
+
+
+class TestPushedDownQuery(unittest.TestCase):
+    """R6.4: filtering must not materialize the whole graph, nor lose edges."""
+
+    def test_stream_matches_filtered_full_edges(self):
+        r = result()
+        accesses = build_access_index(ROWS, {}, RID, "cap.rdc")
+        first = r["causal"]["edges"][0]
+        full = query_relations(r, from_event_id=first["fromEventId"])
+        streamed = list(query_relations_stream(
+            accesses, from_event_min=first["fromEventId"],
+            from_event_max=first["fromEventId"]))
+        self.assertEqual(
+            [(e["fromEventId"], e["toEventId"]) for e in streamed],
+            [(e["fromEventId"], e["toEventId"]) for e in full["relations"]])
+        for item in streamed:
+            self.assertNotIn("evidence", item)
+            self.assertEqual(item["supportLevel"], "inferred_from_order")
+
+    def test_stream_truncation_stays_explicit(self):
+        accesses = build_access_index(ROWS, {}, RID, "cap.rdc")
+        stats = {}
+        edges = list(query_relations_stream(accesses, stats=stats, max_edges=1))
+        self.assertEqual(len(edges), 1)
+        self.assertEqual(stats["emitted"], 1)
+        self.assertGreater(stats["omitted"], 0)
+
+    def test_summary_counts_match_materialized_edges(self):
+        r = result()
+        summary = summarize_query_relations(
+            build_access_index(ROWS, {}, RID, "cap.rdc"))
+        self.assertEqual(summary["relationCount"],
+                         len(r["causal"]["edges"]))
+        self.assertEqual(summary["status"], "inferred")
+
+    def test_summary_selection_marks_partial(self):
+        accesses = build_access_index(ROWS, {}, RID, "cap.rdc")
+        selected = summarize_query_relations(accesses, resource=RID)
+        missing = summarize_query_relations(accesses, resource="ResourceId::999")
+        self.assertFalse(selected["partialBySelection"])
+        self.assertTrue(missing["partialBySelection"])
+        self.assertEqual(missing["relationCount"], 0)
+
+    def test_event_range_filter_is_applied_before_generation(self):
+        accesses = build_access_index(ROWS, {}, RID, "cap.rdc")
+        streamed = list(query_relations_stream(accesses, to_event_max=30))
+        self.assertTrue(streamed)
+        self.assertTrue(all(e["toEventId"] <= 30 for e in streamed))
 
 
 if __name__ == "__main__":

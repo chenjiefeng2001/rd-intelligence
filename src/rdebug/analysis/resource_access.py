@@ -262,7 +262,9 @@ def group_accesses_by_resource(accesses):
 
 
 def iter_writer_reader_edges(accesses, stats=None, max_edges=None,
-                             lightweight=False):
+                             lightweight=False, resource_ids=None,
+                             from_event_min=None, from_event_max=None,
+                             to_event_min=None, to_event_max=None):
     """Yield writer-to-reader edges without materializing the whole graph.
 
     Writers are sorted once and located by bisect per reader, so unrelated
@@ -273,7 +275,10 @@ def iter_writer_reader_edges(accesses, stats=None, max_edges=None,
     """
     emitted = 0
     omitted = 0
+    wanted = set(resource_ids) if resource_ids is not None else None
     for resource, entries in sorted(group_accesses_by_resource(accesses).items()):
+        if wanted is not None and resource not in wanted:
+            continue
         writers = [a for a in entries
                    if a["legacyKind"] == "write" and a["eventId"] is not None]
         readers = [a for a in entries
@@ -286,8 +291,19 @@ def iter_writer_reader_edges(accesses, stats=None, max_edges=None,
             [dict(ev) for ev in a.get("evidence", ())] for a in writers]
         seen = set()
         for reader in sorted(readers, key=lambda a: a["eventId"]):
+            if to_event_min is not None and reader["eventId"] < to_event_min:
+                continue
+            if to_event_max is not None and reader["eventId"] > to_event_max:
+                continue
             cutoff = bisect.bisect_left(writer_events, reader["eventId"])
-            for i in range(cutoff):
+            if from_event_max is not None:
+                cutoff = min(cutoff, bisect.bisect_right(writer_events,
+                                                         from_event_max))
+            if from_event_min is not None:
+                start = bisect.bisect_left(writer_events, from_event_min)
+            else:
+                start = 0
+            for i in range(start, cutoff):
                 writer = writers[i]
                 key = (resource, writer["eventId"], reader["eventId"],
                        "writer_to_reader")
@@ -334,6 +350,32 @@ def iter_writer_reader_edges(accesses, stats=None, max_edges=None,
     if stats is not None:
         stats["emitted"] = emitted
         stats["omitted"] = omitted
+
+
+def summarize_relations(accesses):
+    """Count relations by bisect without constructing any relation object.
+
+    For summary-only requests this avoids both object construction and JSON
+    serialization of the full graph, which R6.3 identified as the dominant
+    cost at large edge counts.
+    """
+    total = 0
+    per_resource = {}
+    for resource, entries in sorted(group_accesses_by_resource(accesses).items()):
+        events = sorted(a["eventId"] for a in entries
+                        if a["legacyKind"] == "write" and a["eventId"] is not None)
+        count = 0
+        for reader in entries:
+            if reader["legacyKind"] == "read" and reader["eventId"] is not None:
+                count += bisect.bisect_left(events, reader["eventId"])
+        per_resource[resource] = count
+        total += count
+    return {
+        "relationCount": total,
+        "perResource": per_resource,
+        "status": "inferred",
+        "note": "counts only; no relation objects or evidence were materialized",
+    }
 
 
 def build_causal_graph(accesses, versions, resource_id, capture, max_edges=None):

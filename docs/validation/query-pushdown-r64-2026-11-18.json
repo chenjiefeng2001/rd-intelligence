@@ -1,0 +1,36 @@
+{
+  "kind": "query-pushdown-benchmark",
+  "note": "Pure logic over synthetic rows; tracemalloc off; not a gate.",
+  "sizes": [
+    {
+      "size": 8,
+      "repeats": 10,
+      "toEventMax": 50,
+      "fullPathMsP50": 0.5685499927494675,
+      "pushedDownMsP50": 0.037850004446227103,
+      "fullMatchedEdgeCount": 5,
+      "streamedEdgeCount": 5,
+      "sameRelationSet": true
+    },
+    {
+      "size": 64,
+      "repeats": 10,
+      "toEventMax": 330,
+      "fullPathMsP50": 17.740449991833884,
+      "pushedDownMsP50": 0.3262999962316826,
+      "fullMatchedEdgeCount": 144,
+      "streamedEdgeCount": 144,
+      "sameRelationSet": true
+    },
+    {
+      "size": 512,
+      "repeats": 10,
+      "toEventMax": 2570,
+      "fullPathMsP50": 660.069650002697,
+      "pushedDownMsP50": 12.493399997765664,
+      "fullMatchedEdgeCount": 8320,
+      "streamedEdgeCount": 8320,
+      "sameRelationSet": true
+    }
+  ]
+}
