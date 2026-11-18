@@ -1,0 +1,95 @@
+{
+  "schema": "rdebug-diagnostic-report/1",
+  "reproducibility": {
+    "capture": null,
+    "captureSha256": null,
+    "analysisRevision": null
+  },
+  "sections": {
+    "executive_summary": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "analysis_scope": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "workload_overview": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "resource": null,
+        "summary": null
+      }
+    },
+    "evidence_coverage": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "analysisStatus": null,
+        "unresolved": []
+      }
+    },
+    "findings": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "findings": [],
+        "findingCount": 0,
+        "anomalyCount": 0
+      }
+    },
+    "diagnosis": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "impact_analysis": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "recommendations": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "change_proposals": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "verification_plan": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "limitations": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "items": [
+          {
+            "category": "copy_sampling_dependency",
+            "status": "not_established",
+            "reason": "no CopyDst writer with PS_Resource readers on this resource"
+          },
+          {
+            "category": "findings",
+            "status": "not_established",
+            "reason": "no rule was triggered by the supplied evidence"
+          }
+        ]
+      }
+    },
+    "evidence_appendix": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "evidenceRefs": []
+      }
+    }
+  }
+}

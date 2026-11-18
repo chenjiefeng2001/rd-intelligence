@@ -1,0 +1,248 @@
+{
+  "schema": "rdebug-diagnostic-report/1",
+  "reproducibility": {
+    "capture": null,
+    "captureSha256": null,
+    "analysisRevision": null
+  },
+  "sections": {
+    "executive_summary": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "analysis_scope": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "workload_overview": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "resource": {
+          "id": "ResourceId::47",
+          "name": ""
+        },
+        "summary": {
+          "usageCount": 257,
+          "writerCount": 1,
+          "readerCount": 256,
+          "otherCount": 0,
+          "firstWriterEventId": 2,
+          "lastWriterEventId": 2,
+          "lastReaderEventId": 266,
+          "unknownCount": 0,
+          "versionCount": 1
+        }
+      }
+    },
+    "evidence_coverage": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "analysisStatus": "partial",
+        "unresolved": [
+          {
+            "field": "subresource",
+            "reason": "ReplayController.GetUsage does not expose mip/layer/slice",
+            "status": "unknown",
+            "evidence": [
+              {
+                "capture": "D:\\renderdoc_no_mcp\\rdebug-validation\\captures\\a-d3d11-fixture.rdc",
+                "resourceId": "ResourceId::47",
+                "operation": "unresolved:subresource",
+                "source": "rdebug.analysis.resource_access",
+                "id": "148612e21950",
+                "status": "unknown"
+              }
+            ]
+          },
+          {
+            "field": "region",
+            "reason": "ReplayController.GetUsage does not expose a written region",
+            "status": "unknown",
+            "evidence": [
+              {
+                "capture": "D:\\renderdoc_no_mcp\\rdebug-validation\\captures\\a-d3d11-fixture.rdc",
+                "resourceId": "ResourceId::47",
+                "operation": "unresolved:region",
+                "source": "rdebug.analysis.resource_access",
+                "id": "35b13b6705fa",
+                "status": "unknown"
+              }
+            ]
+          },
+          {
+            "field": "coverage",
+            "reason": "ReplayController.GetUsage does not expose full vs partial coverage",
+            "status": "unknown",
+            "evidence": [
+              {
+                "capture": "D:\\renderdoc_no_mcp\\rdebug-validation\\captures\\a-d3d11-fixture.rdc",
+                "resourceId": "ResourceId::47",
+                "operation": "unresolved:coverage",
+                "source": "rdebug.analysis.resource_access",
+                "id": "d2a84234d0e0",
+                "status": "unknown"
+              }
+            ]
+          },
+          {
+            "field": "alias",
+            "reason": "equal resource ids do not prove physical memory aliasing",
+            "status": "unknown",
+            "evidence": [
+              {
+                "capture": "D:\\renderdoc_no_mcp\\rdebug-validation\\captures\\a-d3d11-fixture.rdc",
+                "resourceId": "ResourceId::47",
+                "operation": "unresolved:alias",
+                "source": "rdebug.analysis.resource_access",
+                "id": "1367346e01a7",
+                "status": "unknown"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "findings": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "findings": [
+          {
+            "findingId": "finding-589cd7790d0d",
+            "category": "copy_sampling_dependency",
+            "kind": "observation",
+            "title": "Copy sampling dependency",
+            "status": "inferred",
+            "severity": "info",
+            "priority": "P3",
+            "summary": "A CopyDst write precedes PS_Resource reads on one resource; the relationship is inferred from event order only.",
+            "affectedResources": [
+              "ResourceId::47"
+            ],
+            "affectedEvents": [
+              2,
+              11,
+              12,
+              13
+            ],
+            "evidenceRefs": [
+              {
+                "id": "cf65b46ebe5e"
+              },
+              {
+                "id": "467baed67a2d"
+              },
+              {
+                "id": "c800938c1ade"
+              },
+              {
+                "id": "62cf549b3c26"
+              }
+            ],
+            "causalRelations": [],
+            "impact": {
+              "scope": "resource_access_only",
+              "claim": "event-order evidence; no content-flow conclusion"
+            },
+            "allowedConclusions": [
+              "inferred_copy_to_sampling_dependency"
+            ],
+            "disallowedConclusions": [
+              "confirmed_content_propagation",
+              "shader_read_correctness",
+              "application_source_location"
+            ],
+            "alternativeExplanations": [
+              "unrelated_access",
+              "stale_descriptor_view"
+            ],
+            "limitations": [
+              "content_propagation_not_observed",
+              "application_source_not_attributed"
+            ],
+            "recommendedActions": []
+          }
+        ],
+        "findingCount": 1,
+        "anomalyCount": 0
+      }
+    },
+    "diagnosis": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "impact_analysis": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "recommendations": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "change_proposals": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "verification_plan": {
+      "status": "insufficient_evidence",
+      "reason": "no evidence has been supplied for this section yet",
+      "content": {}
+    },
+    "limitations": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "items": [
+          {
+            "category": "subresource",
+            "status": "unknown",
+            "reason": "ReplayController.GetUsage does not expose mip/layer/slice"
+          },
+          {
+            "category": "region",
+            "status": "unknown",
+            "reason": "ReplayController.GetUsage does not expose a written region"
+          },
+          {
+            "category": "coverage",
+            "status": "unknown",
+            "reason": "ReplayController.GetUsage does not expose full vs partial coverage"
+          },
+          {
+            "category": "alias",
+            "status": "unknown",
+            "reason": "equal resource ids do not prove physical memory aliasing"
+          }
+        ]
+      }
+    },
+    "evidence_appendix": {
+      "status": "present",
+      "reason": null,
+      "content": {
+        "evidenceRefs": [
+          {
+            "id": "cf65b46ebe5e"
+          },
+          {
+            "id": "467baed67a2d"
+          },
+          {
+            "id": "c800938c1ade"
+          },
+          {
+            "id": "62cf549b3c26"
+          }
+        ]
+      }
+    }
+  }
+}
