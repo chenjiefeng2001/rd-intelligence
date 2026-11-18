@@ -131,6 +131,22 @@ v2 evidence fields are `status` (`observed`/`inferred`/`unknown`), `queryId`,
 the stable identity of the reference fields, and cross-revision references
 must use `qualifiedId`. **[CODE]**
 
+**R5 scaling, explanation and query**: the analyzer groups accesses by
+resource, sorts writers once and bisects for candidates, and deduplicates
+`(resource, writer, reader, type)` tuples. `iter_writer_reader_edges(...,
+lightweight=True)` provides a streamable iterator; `build_causal_graph(...,
+max_edges=N)` reports `truncated` / `omittedEdgeCount` and makes
+`analysisStatus` `partial` -- no silent truncation presented as complete.
+Relation explanations are built on demand by
+`rdebug.analysis.resource_explain` (no per-edge hash up front):
+`relationId`, `rule`, `limitations`, `canConcludeContentFlow`; only
+`supportLevel == direct` can assert a content-flow conclusion.
+`rdebug.analysis.resource_query` adds pure read-only filters
+(`query_accesses` / `query_relations` / `query_lifetime` /
+`query_explanation` / `query_by_status`) that preserve original statuses
+and mark `partialBySelection`. No new CLI command, MCP protocol or CI report
+schema change. **[CODE]**
+
 **R3 evidence boundary**: the relation model keeps three kinds of information
 apart — `observed` (directly supported by an event or metadata), `inferred`
 (derived from observable event relations) and `unknown` (not determinable from
