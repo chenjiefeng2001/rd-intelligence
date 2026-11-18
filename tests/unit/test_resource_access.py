@@ -9,6 +9,10 @@ than being inferred from an empty observation.
 import unittest
 
 from rdebug.analysis.resource_access import (
+    ACCESS_ROLES,
+    CAUSAL_TYPES,
+    INFORMATION_STATUSES,
+    SUPPORT_LEVELS,
     analysis_status,
     build_access_index,
     build_causal_graph,
@@ -16,6 +20,7 @@ from rdebug.analysis.resource_access import (
     build_versions,
     classify_access,
     legacy_kind,
+    relation,
 )
 
 CAPTURE = "cap.rdc"
@@ -148,6 +153,42 @@ class TestNegativeControls(unittest.TestCase):
         self.assertEqual(lifetime["status"], "partial")
         self.assertEqual(lifetime["writeCount"], 1)
         self.assertEqual(lifetime["readCount"], 1)
+
+
+class TestRelationModel(unittest.TestCase):
+    """R3.1: finite vocabularies and a typed relation builder."""
+
+    def test_enumerations_are_finite_and_non_probabilistic(self):
+        self.assertEqual(INFORMATION_STATUSES,
+                         ("observed", "inferred", "unknown"))
+        self.assertEqual(SUPPORT_LEVELS,
+                         ("direct", "inferred_from_order", "unknown"))
+        self.assertIn("writer_to_reader", CAUSAL_TYPES)
+        self.assertEqual(set(ACCESS_ROLES), {"read", "write", "readwrite", "other"})
+
+    def test_relation_carries_its_evidence_boundary(self):
+        r = relation("writer_to_reader", 10, 20, [{"id": "abc"}],
+                     "inferred_from_order", "event order only",
+                     "observed")
+        self.assertEqual(r["evidenceRefs"], [{"id": "abc"}])
+        self.assertEqual(r["supportLevel"], "inferred_from_order")
+        self.assertEqual(r["observationStatus"], "observed")
+        self.assertEqual(r["status"], "inferred")
+        self.assertEqual(r["reason"], "event order only")
+
+    def test_direct_relation_is_observed_and_unknown_is_not_a_verdict(self):
+        direct = relation("writer_to_reader", 1, 2, [], "direct", "explicit", "observed")
+        unknown = relation("writer_to_reader", 1, 2, [], "unknown", "no data", "unknown")
+        self.assertEqual(direct["status"], "observed")
+        self.assertEqual(unknown["status"], "unknown")
+
+    def test_invalid_vocabulary_is_rejected(self):
+        with self.assertRaises(ValueError):
+            relation("writer_to_reader", 1, 2, [], "high_confidence", "x", "observed")
+        with self.assertRaises(ValueError):
+            relation("content_propagation", 1, 2, [], "direct", "x", "observed")
+        with self.assertRaises(ValueError):
+            relation("writer_to_reader", 1, 2, [], "direct", "x", "probably")
 
 
 if __name__ == "__main__":

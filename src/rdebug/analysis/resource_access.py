@@ -39,6 +39,51 @@ _UNKNOWN_REASONS = {
     "alias": "equal resource ids do not prove physical memory aliasing",
 }
 
+# R3.1: the explicit vocabulary of the resource-access relation model.
+# These are finite, non-probabilistic enumerations. ``support_level`` in
+# particular is never a confidence score: there is no statistical definition
+# behind it, so only the three discrete levels below are admitted.
+INFORMATION_STATUSES = ("observed", "inferred", "unknown")
+SUPPORT_LEVELS = ("direct", "inferred_from_order", "unknown")
+CAUSAL_TYPES = ("writer_to_reader", "overwrite", "resource_identity")
+ACCESS_ROLES = ("read", "write", "readwrite", "other")
+
+
+def check_information_status(value):
+    if value not in INFORMATION_STATUSES:
+        raise ValueError("invalid information status: " + str(value))
+    return value
+
+
+def relation(causal_type, from_event_id, to_event_id, evidence_refs,
+             support_level, reason, observation_status):
+    """Build one typed causal relation with its evidence boundary attached.
+
+    ``observation_status`` describes what was actually observed (the two
+    events and their order); ``support_level`` describes how far the relation
+    goes beyond that observation. A relation built from GetUsage alone can
+    never be ``direct`` -- that would claim content propagation the adapter
+    does not expose.
+    """
+    if causal_type not in CAUSAL_TYPES:
+        raise ValueError("invalid causal type: " + str(causal_type))
+    if support_level not in SUPPORT_LEVELS:
+        raise ValueError("invalid support level: " + str(support_level))
+    check_information_status(observation_status)
+    return {
+        "causalType": causal_type,
+        "fromEventId": from_event_id,
+        "toEventId": to_event_id,
+        "kind": causal_type,
+        "evidenceRefs": list(evidence_refs or []),
+        "supportLevel": support_level,
+        "reason": reason,
+        "observationStatus": observation_status,
+        "status": "observed" if support_level == "direct" else (
+            "inferred" if support_level == "inferred_from_order" else "unknown"
+        ),
+    }
+
 
 def classify(usage):
     """Return ``(access_type, legacy_kind)`` for a usage name.
