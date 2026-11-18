@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **53 are not classified** and are deliberately not
+and are constrained by it; **54 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -118,15 +118,16 @@ Machine-readable companions, listed for completeness:
 * [`benchmark-archive-2026-10-16-w00001.json`](validation/benchmark-archive-2026-10-16-w00001.json)
 * [`benchmark-archive-2026-10-16-w00512.json`](validation/benchmark-archive-2026-10-16-w00512.json)
 * [`benchmark-archive-manifest.json`](validation/benchmark-archive-manifest.json) — the gate 4 control input (see `scripts/benchmark_archive_gate.py`); machine-read, so unlike the other unclassified companions a change to it is a change to what a release gate verifies
+* [`resource-access-bench-2026-11-18.json`](validation/resource-access-bench-2026-11-18.json) — R4.3 measurement only; produced by `scripts/bench_resource_access.py` over synthetic rows, not a gate input
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 70 |
+| Documents indexed | 71 |
 | Machine-classified | 16 |
-| Not classified | 53 |
-| Of which validation evidence | 11 markdown + 6 json |
+| Not classified | 54 |
+| Of which validation evidence | 11 markdown + 7 json |
 
 ## Known limits of this index
 

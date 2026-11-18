@@ -1,0 +1,45 @@
+{
+  "kind": "resource-access-analysis-benchmark",
+  "note": "Pure analysis over synthetic rows; no replay, not a gate.",
+  "sizes": [
+    {
+      "size": 8,
+      "repeats": 30,
+      "indexMsP50": 0.49640000361250713,
+      "indexMsP95": 0.7475999955204315,
+      "analysisMsP50": 0.5267000015010126,
+      "analysisMsP95": 0.8713999995961785,
+      "analysisMsMedian": 0.5311000022629742,
+      "peakTracedBytes": 43476,
+      "edgeCount": 12,
+      "versionCount": 4,
+      "lifetimeStatus": "unknown"
+    },
+    {
+      "size": 64,
+      "repeats": 30,
+      "indexMsP50": 4.122400001506321,
+      "indexMsP95": 4.840900000999682,
+      "analysisMsP50": 9.298700002545957,
+      "analysisMsP95": 10.96250000409782,
+      "analysisMsMedian": 9.372749998874497,
+      "peakTracedBytes": 826358,
+      "edgeCount": 544,
+      "versionCount": 32,
+      "lifetimeStatus": "unknown"
+    },
+    {
+      "size": 512,
+      "repeats": 30,
+      "indexMsP50": 38.27650000312133,
+      "indexMsP95": 50.26150000048801,
+      "analysisMsP50": 655.0171999988379,
+      "analysisMsP95": 864.3536000017775,
+      "analysisMsMedian": 661.0524999996414,
+      "peakTracedBytes": 43108694,
+      "edgeCount": 33024,
+      "versionCount": 256,
+      "lifetimeStatus": "unknown"
+    }
+  ]
+}
