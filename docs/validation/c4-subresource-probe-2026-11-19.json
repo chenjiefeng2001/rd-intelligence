@@ -1,0 +1,109 @@
+{
+  "kind": "subresource-probe",
+  "capture": "D:\\renderdoc_no_mcp\\rdebug-validation\\captures\\a-d3d11-fixture.rdc",
+  "resourceId": "ResourceId::47",
+  "descriptorAccess": {
+    "11": [
+      {
+        "resource": "ResourceId::47",
+        "view": "ResourceId::48",
+        "descriptorStore": "ResourceId::1000000000000000183",
+        "descriptorIndex": 0,
+        "arrayElement": 0,
+        "byteOffset": 0,
+        "byteSize": 0,
+        "firstMip": 0,
+        "numMips": 1,
+        "firstSlice": 0,
+        "numSlices": 1,
+        "stage": 4,
+        "descriptorType": 4,
+        "status": "observed",
+        "reason": null
+      }
+    ],
+    "12": [
+      {
+        "resource": "ResourceId::47",
+        "view": "ResourceId::48",
+        "descriptorStore": "ResourceId::1000000000000000183",
+        "descriptorIndex": 0,
+        "arrayElement": 0,
+        "byteOffset": 0,
+        "byteSize": 0,
+        "firstMip": 0,
+        "numMips": 1,
+        "firstSlice": 0,
+        "numSlices": 1,
+        "stage": 4,
+        "descriptorType": 4,
+        "status": "observed",
+        "reason": null
+      }
+    ]
+  },
+  "resolved": [
+    {
+      "eventId": 11,
+      "resourceId": "ResourceId::47",
+      "usage": "probe",
+      "status": "observed",
+      "subresources": [
+        {
+          "resource": "ResourceId::47",
+          "view": "ResourceId::48",
+          "descriptorStore": "ResourceId::1000000000000000183",
+          "descriptorIndex": 0,
+          "arrayElement": 0,
+          "byteOffset": 0,
+          "byteSize": 0,
+          "firstMip": 0,
+          "numMips": 1,
+          "firstSlice": 0,
+          "numSlices": 1,
+          "stage": 4,
+          "descriptorType": 4,
+          "status": "observed",
+          "reason": null
+        }
+      ],
+      "subresourceStatus": "observed",
+      "subresourceReason": null
+    },
+    {
+      "eventId": 12,
+      "resourceId": "ResourceId::47",
+      "usage": "probe",
+      "status": "observed",
+      "subresources": [
+        {
+          "resource": "ResourceId::47",
+          "view": "ResourceId::48",
+          "descriptorStore": "ResourceId::1000000000000000183",
+          "descriptorIndex": 0,
+          "arrayElement": 0,
+          "byteOffset": 0,
+          "byteSize": 0,
+          "firstMip": 0,
+          "numMips": 1,
+          "firstSlice": 0,
+          "numSlices": 1,
+          "stage": 4,
+          "descriptorType": 4,
+          "status": "observed",
+          "reason": null
+        }
+      ],
+      "subresourceStatus": "observed",
+      "subresourceReason": null
+    }
+  ],
+  "coverage": {
+    "accessEventCount": 2,
+    "analyzedEventCount": 2,
+    "unobservedEventCount": 0,
+    "missingInputEventCount": 0,
+    "status": "complete",
+    "reason": null
+  }
+}
