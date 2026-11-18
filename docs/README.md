@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **61 are not classified** and are deliberately not
+and are constrained by it; **63 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -113,6 +113,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`r5-closure-2026-11-18.md`](validation/r5-closure-2026-11-18.md) | not classified |
 | [`real-workload-baseline-2026-11-18.md`](validation/real-workload-baseline-2026-11-18.md) | not classified |
 | [`remote-ci-prerequisites-2026-11-18.md`](validation/remote-ci-prerequisites-2026-11-18.md) | not classified |
+| [`resource-access-profile-r63-2026-11-18.md`](validation/resource-access-profile-r63-2026-11-18.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -126,15 +127,16 @@ Machine-readable companions, listed for completeness:
 * [`resource-access-bench-r51-2026-11-18.json`](validation/resource-access-bench-r51-2026-11-18.json) — R5.1 measurement: materialized vs streamed batches, same edge count and checksum
 * [`real-workload-05a1-2026-11-18.json`](validation/real-workload-05a1-2026-11-18.json) — R6.1 real N3-05A1 per-resource access/edge/perf data
 * [`real-workload-05a2-2026-11-18.json`](validation/real-workload-05a2-2026-11-18.json) — R6.1 real N3-05A2 per-resource access/edge/perf data
+* [`resource-access-profile-r63-2026-11-18.json`](validation/resource-access-profile-r63-2026-11-18.json) — R6.3 per-stage p50 without tracemalloc instrumentation
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 78 |
+| Documents indexed | 80 |
 | Machine-classified | 16 |
-| Not classified | 61 |
-| Of which validation evidence | 15 markdown + 10 json |
+| Not classified | 63 |
+| Of which validation evidence | 16 markdown + 11 json |
 
 ## Known limits of this index
 

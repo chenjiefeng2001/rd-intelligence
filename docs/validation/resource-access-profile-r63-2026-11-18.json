@@ -1,0 +1,60 @@
+{
+  "kind": "resource-access-stage-profile",
+  "note": "Pure logic over synthetic rows; not a gate.",
+  "sizes": [
+    {
+      "size": 8,
+      "repeats": 15,
+      "stagesMsP50": {
+        "indexMs": 0.05119999696034938,
+        "groupingMs": 0.0013999961083754897,
+        "writerIndexMs": 0.0022000021999701858,
+        "candidateSearchMs": 0.0018999999156221747,
+        "edgeGenerationMs": 0.015400000847876072,
+        "materializationMs": 0.049000009312294424,
+        "explanationMs": 0.04739999712910503,
+        "serializationMs": 0.1979000080609694,
+        "queryFilterMs": 0.006000002031214535
+      },
+      "candidateCount": 12,
+      "lightEdgeCount": 12,
+      "materializedEdgeCount": 12
+    },
+    {
+      "size": 64,
+      "repeats": 15,
+      "stagesMsP50": {
+        "indexMs": 0.4106000124011189,
+        "groupingMs": 0.006300004315562546,
+        "writerIndexMs": 0.008799994247965515,
+        "candidateSearchMs": 0.011800002539530396,
+        "edgeGenerationMs": 0.39900001138448715,
+        "materializationMs": 0.8193999965442345,
+        "explanationMs": 0.3222999948775396,
+        "serializationMs": 6.325700000161305,
+        "queryFilterMs": 0.1880999916465953
+      },
+      "candidateCount": 544,
+      "lightEdgeCount": 544,
+      "materializedEdgeCount": 544
+    },
+    {
+      "size": 512,
+      "repeats": 15,
+      "stagesMsP50": {
+        "indexMs": 3.9711000135866925,
+        "groupingMs": 0.04460000491235405,
+        "writerIndexMs": 0.05259999306872487,
+        "candidateSearchMs": 0.08110000635497272,
+        "edgeGenerationMs": 39.018099996610545,
+        "materializationMs": 68.16059999982826,
+        "explanationMs": 0.44380000326782465,
+        "serializationMs": 519.2589000071166,
+        "queryFilterMs": 22.189000010257587
+      },
+      "candidateCount": 33024,
+      "lightEdgeCount": 33024,
+      "materializedEdgeCount": 33024
+    }
+  ]
+}
