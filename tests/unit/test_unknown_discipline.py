@@ -23,6 +23,8 @@ import unittest
 from rdebug.analysis import pixel_diff
 from rdebug.analysis.pixel_diff import compare_scalar, diff_pixel_flows
 from rdebug.analysis.pixel_trace import build_graph
+from rdebug.errors import QueryError
+from rdebug.evidence import make, record, require_observed
 
 
 def _mod(eid, prim, passed, value):
@@ -187,6 +189,34 @@ class TestNoRssFallbackInTheMemoryGate(unittest.TestCase):
         w.private_bytes = boom
         w.rss_bytes = lambda: 123456  # must be ignored
         self.assertIsNone(w.mem_current())
+
+
+class TestEvidenceStatusIsNotAVerdict(unittest.TestCase):
+    """The v2 evidence status namespace must not become a content verdict.
+
+    `observed|inferred|unknown` describes evidence. `same|different|unknown`
+    describes a comparison. The first version of the F12 defect was a failed
+    lookup being read as an empty observation, which then compared equal.
+    The guard below is what stops a caller from drawing a conclusion at all
+    when the supporting evidence is unknown.
+    """
+
+    def test_unknown_evidence_cannot_enter_a_conclusion(self):
+        unknown = record(event_id=1)
+        self.assertEqual(unknown["status"], "unknown")
+        with self.assertRaises(QueryError) as caught:
+            require_observed([make(event_id=2), unknown])
+        self.assertEqual(caught.exception.kind, "unknown_evidence")
+
+    def test_legacy_evidence_without_status_is_still_observed(self):
+        # Eleven production call sites and the workload harness rely on this.
+        self.assertTrue(require_observed([make(event_id=3)]))
+
+    def test_an_inference_without_observation_stays_unknown(self):
+        ev = record(inference={"guess": True}, event_id=4)
+        self.assertEqual(ev["status"], "unknown")
+        with self.assertRaises(QueryError):
+            require_observed([ev])
 
 
 if __name__ == "__main__":
