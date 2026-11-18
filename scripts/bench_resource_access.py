@@ -16,6 +16,7 @@ from rdebug.analysis.resource_access import (
     build_causal_graph,
     build_lifetime,
     build_versions,
+    iter_writer_reader_edges,
 )
 
 USAGES = ("Clear", "ColorTarget", "PS_Resource", "CopyDst", "CopySrc",
@@ -53,6 +54,29 @@ def run_once(count):
     }
 
 
+def run_stream_once(count, batch_size):
+    """Process edges in batches without materializing the whole graph."""
+    rows = make_rows(count)
+    actions = {row["eventId"]: {"name": ""} for row in rows}
+    start = time.perf_counter()
+    accesses = build_access_index(rows, actions, "ResourceId::91", "bench.rdc")
+    batch = []
+    edge_count = 0
+    checksum = 0
+    for edge in iter_writer_reader_edges(accesses, lightweight=True):
+        batch.append(edge)
+        if len(batch) >= batch_size:
+            for item in batch:
+                checksum += item["fromEventId"] + item["toEventId"]
+            edge_count += len(batch)
+            batch = []
+    for item in batch:
+        checksum += item["fromEventId"] + item["toEventId"]
+    edge_count += len(batch)
+    return {"streamMs": (time.perf_counter() - start) * 1000.0,
+            "edgeCount": edge_count, "checksum": checksum}
+
+
 def percentile(values, fraction):
     ordered = sorted(values)
     if not ordered:
@@ -66,8 +90,16 @@ def measure(count, repeats):
     tracemalloc.start()
     for _ in range(repeats):
         samples.append(run_once(count))
-    _, peak = tracemalloc.get_traced_memory()
+    _, full_peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
+
+    stream_samples = []
+    tracemalloc.start()
+    for _ in range(repeats):
+        stream_samples.append(run_stream_once(count, batch_size=256))
+    _, stream_peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
     return {
         "size": count,
         "repeats": repeats,
@@ -76,8 +108,14 @@ def measure(count, repeats):
         "analysisMsP50": percentile([s["analysisMs"] for s in samples], 0.5),
         "analysisMsP95": percentile([s["analysisMs"] for s in samples], 0.95),
         "analysisMsMedian": statistics.median([s["analysisMs"] for s in samples]),
-        "peakTracedBytes": peak,
+        "peakTracedBytes": full_peak,
+        "streamMsP50": percentile([s["streamMs"] for s in stream_samples], 0.5),
+        "streamMsP95": percentile([s["streamMs"] for s in stream_samples], 0.95),
+        "streamPeakBytes": stream_peak,
+        "streamBatchSize": 256,
         "edgeCount": samples[-1]["edgeCount"],
+        "streamEdgeCount": stream_samples[-1]["edgeCount"],
+        "streamChecksum": stream_samples[-1]["checksum"],
         "versionCount": samples[-1]["versionCount"],
         "lifetimeStatus": samples[-1]["lifetimeStatus"],
     }

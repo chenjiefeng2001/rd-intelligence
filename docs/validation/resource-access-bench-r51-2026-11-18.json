@@ -1,0 +1,63 @@
+{
+  "kind": "resource-access-analysis-benchmark",
+  "note": "Pure analysis over synthetic rows; no replay, not a gate.",
+  "sizes": [
+    {
+      "size": 8,
+      "repeats": 30,
+      "indexMsP50": 0.43649999133776873,
+      "indexMsP95": 0.6955999997444451,
+      "analysisMsP50": 0.6006000039633363,
+      "analysisMsP95": 0.764199998229742,
+      "analysisMsMedian": 0.6032500023138709,
+      "peakTracedBytes": 36564,
+      "streamMsP50": 0.6402999861165881,
+      "streamMsP95": 0.7652999920537695,
+      "streamPeakBytes": 18706,
+      "streamBatchSize": 256,
+      "edgeCount": 12,
+      "streamEdgeCount": 12,
+      "streamChecksum": 1020,
+      "versionCount": 4,
+      "lifetimeStatus": "unknown"
+    },
+    {
+      "size": 64,
+      "repeats": 30,
+      "indexMsP50": 2.929299997049384,
+      "indexMsP95": 3.970399993704632,
+      "analysisMsP50": 10.731400005170144,
+      "analysisMsP95": 15.773000006447546,
+      "analysisMsMedian": 11.176500003784895,
+      "peakTracedBytes": 593660,
+      "streamMsP50": 12.930000011692755,
+      "streamMsP95": 16.054699997766875,
+      "streamPeakBytes": 292936,
+      "streamBatchSize": 256,
+      "edgeCount": 544,
+      "streamEdgeCount": 544,
+      "streamChecksum": 353120,
+      "versionCount": 32,
+      "lifetimeStatus": "unknown"
+    },
+    {
+      "size": 512,
+      "repeats": 30,
+      "indexMsP50": 24.82290001353249,
+      "indexMsP95": 30.385900012333877,
+      "analysisMsP50": 667.0409999933327,
+      "analysisMsP95": 792.9923999909079,
+      "analysisMsMedian": 668.0961499951081,
+      "peakTracedBytes": 29557620,
+      "streamMsP50": 654.1985999938333,
+      "streamMsP95": 738.4696999943117,
+      "streamPeakBytes": 5543596,
+      "streamBatchSize": 256,
+      "edgeCount": 33024,
+      "streamEdgeCount": 33024,
+      "streamChecksum": 169409280,
+      "versionCount": 256,
+      "lifetimeStatus": "unknown"
+    }
+  ]
+}

@@ -19,6 +19,8 @@ from rdebug.analysis.resource_access import (
     build_lifetime,
     build_versions,
     classify_access,
+    group_accesses_by_resource,
+    iter_writer_reader_edges,
     legacy_kind,
     relation,
 )
@@ -309,6 +311,82 @@ class TestLifetimeBoundary(unittest.TestCase):
         self.assertEqual(lifetime["lifetimeStatus"], "unknown")
         self.assertEqual(lifetime["endpoints"]["firstAccess"]["status"], "unknown")
         self.assertEqual(lifetime["instances"][0]["accessEventIds"], [])
+
+
+class TestScaledGraphIsSemanticallyEquivalent(unittest.TestCase):
+    """R5.1: optimization must not drop or invent a single relation."""
+
+    @staticmethod
+    def _reference_pairs(accesses):
+        writers = [a["eventId"] for a in accesses if a["legacyKind"] == "write"
+                   and a["eventId"] is not None]
+        readers = [a["eventId"] for a in accesses if a["legacyKind"] == "read"
+                   and a["eventId"] is not None]
+        return {(w, r) for w in writers for r in readers if w < r}
+
+    def test_edges_match_the_original_enumeration(self):
+        source = rows((10, "Clear"), (20, "PS_Resource"), (30, "ColorTarget"),
+                      (40, "CS_Resource"), (50, "CopyDst"), (60, "PS_Resource"))
+        accesses = index(source)
+        graph = build_causal_graph(accesses, [], RID, CAPTURE)
+        actual = {(e["fromEventId"], e["toEventId"]) for e in graph["edges"]}
+        self.assertEqual(actual, self._reference_pairs(accesses))
+        self.assertEqual(graph["truncated"], False)
+        self.assertEqual(graph["omittedEdgeCount"], 0)
+
+    def test_duplicate_rows_do_not_duplicate_edges(self):
+        source = rows((10, "Clear"), (10, "Clear"), (20, "PS_Resource"),
+                      (20, "PS_Resource"))
+        graph = build_causal_graph(index(source), [], RID, CAPTURE)
+        self.assertEqual(len(graph["edges"]), 1)
+
+    def test_edges_never_cross_a_resource_boundary(self):
+        first = index(rows((10, "Clear"), (20, "PS_Resource")))
+        second = build_access_index(
+            rows((30, "Clear"), (40, "PS_Resource")), {}, "ResourceId::7", "other.rdc")
+        groups = group_accesses_by_resource(first + second)
+        self.assertEqual(set(groups), {"ResourceId::91", "ResourceId::7"})
+        graph = build_causal_graph(first + second, [], RID, CAPTURE)
+        for edge in graph["edges"]:
+            self.assertEqual(edge["resourceId"], edge["evidence"][0]["resourceId"])
+
+    def test_lazy_iterator_matches_materialized_graph(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource"),
+                              (30, "ColorTarget"), (40, "CS_Resource")))
+        lazy = [(e["fromEventId"], e["toEventId"])
+                for e in iter_writer_reader_edges(accesses)]
+        eager = [(e["fromEventId"], e["toEventId"])
+                 for e in build_causal_graph(accesses, [], RID, CAPTURE)["edges"]]
+        self.assertEqual(lazy, eager)
+
+    def test_lightweight_stream_covers_exactly_the_same_relations(self):
+        accesses = index(rows((10, "Clear"), (20, "ColorTarget"),
+                              (30, "PS_Resource"), (40, "CS_Resource")))
+        full = build_causal_graph(accesses, [], RID, CAPTURE)["edges"]
+        light = list(iter_writer_reader_edges(accesses, lightweight=True))
+        self.assertEqual(len(light), len(full))
+        self.assertEqual(
+            [(e["fromEventId"], e["toEventId"]) for e in light],
+            [(e["fromEventId"], e["toEventId"]) for e in full])
+        for item in light:
+            self.assertNotIn("evidence", item)
+            self.assertEqual(item["supportLevel"], "inferred_from_order")
+
+    def test_truncation_is_reported_not_silent(self):
+        accesses = index(rows((10, "Clear"), (20, "ColorTarget"),
+                              (30, "PS_Resource"), (40, "CS_Resource")))
+        full = build_causal_graph(accesses, [], RID, CAPTURE)
+        limited = build_causal_graph(accesses, [], RID, CAPTURE, max_edges=2)
+        self.assertEqual(len(full["edges"]), 4)
+        self.assertEqual(len(limited["edges"]), 2)
+        self.assertTrue(limited["truncated"])
+        self.assertEqual(limited["omittedEdgeCount"], 2)
+        self.assertEqual(limited["edgeLimit"], 2)
+        self.assertEqual(limited["status"], "partial")
+        self.assertEqual(analysis_status(accesses, limited), "partial")
+        # Relation ids belong to the R5.2 explanation layer, not the edge.
+        for edge in full["edges"]:
+            self.assertNotIn("relationId", edge)
 
 
 if __name__ == "__main__":
