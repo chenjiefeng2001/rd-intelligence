@@ -102,6 +102,8 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 `trace_resource` 的输出为 additive 扩展（`schemaVersion: trace_resource/2`）：在既有键不变的前提下增加 `accesses`（按 event 排序的访问索引）、`causal`（writer→reader 关系、覆盖关系、版本、显式 unresolved）、`lifetime`、`analysisStatus`，并在 `summary` 中增加 `unknownCount` / `versionCount`。`ReplayController.GetUsage` 不暴露 subresource、region 与覆盖范围，因此这些字段保持 `null` 或 `unknown`，并在 `causal.unresolved` 中给出原因；writer→reader 关系按事件顺序推导，标记为 `inferred`，不等于已证明的覆盖关系。`analysisStatus` 为 `partial`/`unknown` 时不得被读作完整结论。证据记录的可选 v2 字段为 `status`（`observed`/`inferred`/`unknown`）、`queryId`、`revision`、`qualifiedId`、`sourceRef`、`observation`、`inference`；`id` 仍是引用字段的稳定身份，跨 revision 引用应使用 `qualifiedId`。**[CODE]**
 
+**R3 证据边界说明**：关系模型把三类信息严格分开——`observed`（原始事件或元数据直接支持）、`inferred`（由可观测事件关系推导）、`unknown`（当前证据无法确定）。每条因果边携带 `causalType`、`evidenceRefs`（两端证据）、`supportLevel`（有限枚举 `direct` / `inferred_from_order` / `unknown`，**不是概率置信度**）、`reason` 与 `observationStatus`。仅有事件顺序时，`supportLevel` 最高只能是 `inferred_from_order`，边状态为 `inferred`；`direct` 保留给明确观测到内容传播的场合，本分析器不会从 `GetUsage` 行产出它。生命周期用显式状态表达：`endpoints.creation` / `endpoints.firstAccess` / `endpoints.lastAccess` / `endpoints.release` 各自给出 `status`、`observationStatus` 与 `reason`；`interval.status` 可为 `observed` / `partial` / `unknown` / `order_conflict`；`lifetimeStatus` 另可为 `multiple`，表示多次创建/释放（资源 ID 复用时拆为多个 `instances`，不按 ID 合并）。缺失的创建或释放事件不会被推断，也不会用访问事件的最早/最晚时间冒充完整生命周期。**[CODE]**
+
 > **[P9a] 形状不一致（结构性观察，非缺陷）**
 > `/api/trace` 把 `contextEventId` 放在 `summary` 内；`/api/resource` 放在**顶层**。
 > 客户端若统一从 `summary` 读取，Resource 侧会**静默得到 `undefined`**。

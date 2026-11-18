@@ -131,6 +131,24 @@ v2 evidence fields are `status` (`observed`/`inferred`/`unknown`), `queryId`,
 the stable identity of the reference fields, and cross-revision references
 must use `qualifiedId`. **[CODE]**
 
+**R3 evidence boundary**: the relation model keeps three kinds of information
+apart — `observed` (directly supported by an event or metadata), `inferred`
+(derived from observable event relations) and `unknown` (not determinable from
+current evidence). Every causal edge carries `causalType`, `evidenceRefs` for
+both endpoints, `supportLevel` (a finite enumeration `direct` /
+`inferred_from_order` / `unknown`, **not** a probability), `reason` and
+`observationStatus`. With event order alone, the strongest support is
+`inferred_from_order` and the edge status is `inferred`; `direct` is reserved
+for explicitly observed content propagation and is never emitted from
+GetUsage rows. Lifetime uses explicit states: `endpoints.creation`,
+`endpoints.firstAccess`, `endpoints.lastAccess` and `endpoints.release` each
+carry `status`, `observationStatus` and `reason`; `interval.status` may be
+`observed` / `partial` / `unknown` / `order_conflict`; `lifetimeStatus` may
+additionally be `multiple`, splitting repeated create/release pairs into
+separate `instances` rather than merging them by resource id. Missing
+creation or release events are never inferred, and the earliest/latest access
+is never presented as a complete lifetime. **[CODE]**
+
 > **[P9a] Shape inconsistency (structural observation, not a defect)**
 > `/api/trace` places `contextEventId` inside `summary`; `/api/resource` places
 > it at the **top level**. A client that reads it uniformly from `summary` gets

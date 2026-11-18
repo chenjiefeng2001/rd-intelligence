@@ -169,5 +169,34 @@ class TestTraceResourceV2IsAdditive(unittest.TestCase):
         self.assertIn(40, [a["eventId"] for a in shown["accesses"]])
 
 
+class TestR3EndToEndOutput(unittest.TestCase):
+    """The R3 relation model must survive the public trace_resource path."""
+
+    def test_causal_edges_and_lifetime_endpoints_are_exposed(self):
+        rows = [
+            {"eventId": 10, "usage": "Clear", "usageRaw": 1},
+            {"eventId": 20, "usage": "PS_Resource", "usageRaw": 2},
+        ]
+        result = trace_resource(FakeSession(rows), ResourceRef(id="ResourceId::91"))
+        edge = result["causal"]["edges"][0]
+        self.assertEqual(edge["causalType"], "writer_to_reader")
+        self.assertEqual(edge["supportLevel"], "inferred_from_order")
+        self.assertEqual(len(edge["evidenceRefs"]), 2)
+        self.assertEqual(edge["status"], "inferred")
+
+        lifetime = result["lifetime"]
+        self.assertEqual(lifetime["endpoints"]["creation"]["status"], "unknown")
+        self.assertEqual(lifetime["endpoints"]["release"]["status"], "unknown")
+        self.assertEqual(lifetime["interval"]["status"], "unknown")
+        self.assertEqual(lifetime["lifetimeStatus"], "unknown")
+
+    def test_legacy_summary_and_context_are_unchanged(self):
+        result = trace_resource(FakeSession(ROWS), ResourceRef(id="ResourceId::91"))
+        self.assertEqual(result["contextEventId"], 30)
+        self.assertEqual(result["summary"]["writerCount"], 2)
+        self.assertNotIn("firstReaderEventId", result["summary"])
+        self.assertEqual(len(result["evidence"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
