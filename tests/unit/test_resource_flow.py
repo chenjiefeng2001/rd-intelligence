@@ -115,5 +115,59 @@ class TestTraceResource(unittest.TestCase):
         self.assertIs(ResourceRef.parse(ResourceRef(id="x")).id, "x")
 
 
+class TestTraceResourceV2IsAdditive(unittest.TestCase):
+    """The v2 fields are extra; no legacy key changes its name or value."""
+
+    def test_legacy_shape_is_byte_identical_to_v1(self):
+        result = trace_resource(FakeSession(ROWS), ResourceRef(id="ResourceId::91"))
+        self.assertEqual(
+            result["resource"], {"id": "ResourceId::91", "name": ""})
+        self.assertEqual(result["contextEventId"], 30)
+        self.assertEqual([w["eventId"] for w in result["writers"]], [10, 30])
+        self.assertEqual([r["eventId"] for r in result["readers"]], [20])
+        self.assertEqual(result["other"], [])
+        self.assertEqual(
+            result["summary"],
+            {
+                "usageCount": 3,
+                "writerCount": 2,
+                "readerCount": 1,
+                "otherCount": 0,
+                "firstWriterEventId": 10,
+                "lastWriterEventId": 30,
+                "lastReaderEventId": 20,
+                "unknownCount": 0,
+                "versionCount": 2,
+            },
+        )
+        self.assertEqual(len(result["evidence"]), 1)
+        self.assertEqual(result["evidence"][0]["operation"], "trace_resource")
+
+    def test_v2_fields_are_present_and_honest(self):
+        result = trace_resource(FakeSession(ROWS), ResourceRef(id="ResourceId::91"))
+        self.assertEqual(result["schemaVersion"], "trace_resource/2")
+        self.assertEqual(result["analysisStatus"], "partial")
+        self.assertEqual([a["eventId"] for a in result["accesses"]], [10, 20, 30])
+        # Writer at event 30 follows the only reader (20), so only event 10
+        # can be its cause. Event order is observed; coverage is not.
+        self.assertEqual(len(result["causal"]["edges"]), 1)
+        self.assertEqual(result["causal"]["edges"][0]["fromEventId"], 10)
+        self.assertEqual(result["causal"]["edges"][0]["status"], "inferred")
+        self.assertTrue(any(u["field"] == "coverage"
+                            for u in result["causal"]["unresolved"]))
+        self.assertIsNone(result["lifetime"]["creationEventId"])
+
+    def test_include_other_still_controls_both_lists(self):
+        rows = ROWS + [{"eventId": 40, "usage": "Barrier", "usageRaw": 38}]
+        hidden = trace_resource(FakeSession(rows), "ResourceId::91")
+        shown = trace_resource(FakeSession(rows), "ResourceId::91",
+                               include_other=True)
+        self.assertEqual(hidden["other"], [])
+        self.assertEqual(hidden["summary"]["otherCount"], 1)
+        self.assertEqual([o["eventId"] for o in shown["other"]], [40])
+        self.assertNotIn(40, [a["eventId"] for a in hidden["accesses"]])
+        self.assertIn(40, [a["eventId"] for a in shown["accesses"]])
+
+
 if __name__ == "__main__":
     unittest.main()

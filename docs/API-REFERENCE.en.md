@@ -117,6 +117,20 @@ byte-identical bodies — the event id is ignored rather than rejected.
 **[CODE]** Top-level response keys: `contextEventId`, `resource`, `readers`,
 `writers`, `other`, `evidence`, `summary`. **[P9a]**
 
+`trace_resource` uses an additive extension (`schemaVersion: trace_resource/2`):
+with all existing keys unchanged, it adds `accesses` (an event-ordered access
+index), `causal` (writer-to-reader edges, overwrites, versions and explicit
+`unresolved`), `lifetime`, and `analysisStatus`; `summary` gains `unknownCount`
+and `versionCount`. `ReplayController.GetUsage` does not expose subresource,
+region or coverage, so these stay `null`/`unknown` with reasons in
+`causal.unresolved`; writer-to-reader edges are derived from event order, are
+marked `inferred`, and do not prove exclusive coverage. A `partial` or
+`unknown` `analysisStatus` must not be read as a complete conclusion. Optional
+v2 evidence fields are `status` (`observed`/`inferred`/`unknown`), `queryId`,
+`revision`, `qualifiedId`, `sourceRef`, `observation`, `inference`; `id` stays
+the stable identity of the reference fields, and cross-revision references
+must use `qualifiedId`. **[CODE]**
+
 > **[P9a] Shape inconsistency (structural observation, not a defect)**
 > `/api/trace` places `contextEventId` inside `summary`; `/api/resource` places
 > it at the **top level**. A client that reads it uniformly from `summary` gets

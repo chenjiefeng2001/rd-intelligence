@@ -100,6 +100,8 @@ Rule 2.1 禁止 Stable Core 依赖 transport；**Rule 2.2 禁止 `openai` / `ant
 
 **[CODE]** 响应顶层键：`contextEventId`、`resource`、`readers`、`writers`、`other`、`evidence`、`summary`。**[P9a]**
 
+`trace_resource` 的输出为 additive 扩展（`schemaVersion: trace_resource/2`）：在既有键不变的前提下增加 `accesses`（按 event 排序的访问索引）、`causal`（writer→reader 关系、覆盖关系、版本、显式 unresolved）、`lifetime`、`analysisStatus`，并在 `summary` 中增加 `unknownCount` / `versionCount`。`ReplayController.GetUsage` 不暴露 subresource、region 与覆盖范围，因此这些字段保持 `null` 或 `unknown`，并在 `causal.unresolved` 中给出原因；writer→reader 关系按事件顺序推导，标记为 `inferred`，不等于已证明的覆盖关系。`analysisStatus` 为 `partial`/`unknown` 时不得被读作完整结论。证据记录的可选 v2 字段为 `status`（`observed`/`inferred`/`unknown`）、`queryId`、`revision`、`qualifiedId`、`sourceRef`、`observation`、`inference`；`id` 仍是引用字段的稳定身份，跨 revision 引用应使用 `qualifiedId`。**[CODE]**
+
 > **[P9a] 形状不一致（结构性观察，非缺陷）**
 > `/api/trace` 把 `contextEventId` 放在 `summary` 内；`/api/resource` 放在**顶层**。
 > 客户端若统一从 `summary` 读取，Resource 侧会**静默得到 `undefined`**。

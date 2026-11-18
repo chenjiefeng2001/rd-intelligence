@@ -2,28 +2,15 @@ from ..errors import QueryError
 from ..evidence import make as make_evidence
 from ..model import ResourceRef
 from ..query.events import build_action_index, flatten_actions
-
-WRITE_USAGES = {
-    "StreamOut",
-    "ColorTarget",
-    "DepthStencilTarget",
-    "Clear",
-    "Discard",
-    "GenMips",
-    "Resolve",
-    "ResolveDst",
-    "CopyDst",
-    "CPUWrite",
-}
-
-READ_USAGES = {
-    "VertexBuffer",
-    "IndexBuffer",
-    "InputTarget",
-    "Indirect",
-    "CopySrc",
-    "ResolveSrc",
-}
+from .resource_access import (
+    READ_USAGES,
+    WRITE_USAGES,
+    analysis_status,
+    build_access_index,
+    build_causal_graph,
+    build_lifetime,
+    build_versions,
+)
 
 
 def classify_usage(name):
@@ -93,6 +80,17 @@ def trace_resource(session, resource, context_eid=None, include_other=False):
     def last(entries):
         return entries[-1]["eventId"] if entries else None
 
+    # R2.1: additive analysis over the same rows. The legacy keys above are
+    # untouched; callers that only read writers/readers/summary see no change.
+    accesses_all = build_access_index(rows, actions_index, ref.id, session.path)
+    versions = build_versions(accesses_all, ref.id, session.path)
+    causal = build_causal_graph(accesses_all, versions, ref.id, session.path)
+    lifetime = build_lifetime(accesses_all)
+    accesses = accesses_all if include_other else [
+        a for a in accesses_all if a["legacyKind"] != "other"
+    ]
+    status = analysis_status(accesses_all, causal)
+
     return {
         "resource": {"id": ref.id, "name": ref.name},
         "contextEventId": int(context_eid),
@@ -107,6 +105,13 @@ def trace_resource(session, resource, context_eid=None, include_other=False):
             "firstWriterEventId": writers[0]["eventId"] if writers else None,
             "lastWriterEventId": last(writers),
             "lastReaderEventId": last(readers),
+            "unknownCount": sum(1 for a in accesses_all if a["status"] == "unknown"),
+            "versionCount": len(versions),
         },
         "evidence": [query_evidence],
+        "schemaVersion": "trace_resource/2",
+        "analysisStatus": status,
+        "accesses": accesses,
+        "causal": causal,
+        "lifetime": lifetime,
     }
