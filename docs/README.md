@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **57 are not classified** and are deliberately not
+and are constrained by it; **60 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -111,6 +111,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`benchmark-archive-2026-10-16.md`](validation/benchmark-archive-2026-10-16.md) | not classified |
 | [`r3-r4-closure-2026-11-18.md`](validation/r3-r4-closure-2026-11-18.md) | not classified |
 | [`r5-closure-2026-11-18.md`](validation/r5-closure-2026-11-18.md) | not classified |
+| [`real-workload-baseline-2026-11-18.md`](validation/real-workload-baseline-2026-11-18.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -122,15 +123,17 @@ Machine-readable companions, listed for completeness:
 * [`benchmark-archive-manifest.json`](validation/benchmark-archive-manifest.json) — the gate 4 control input (see `scripts/benchmark_archive_gate.py`); machine-read, so unlike the other unclassified companions a change to it is a change to what a release gate verifies
 * [`resource-access-bench-2026-11-18.json`](validation/resource-access-bench-2026-11-18.json) — R4.3 measurement only; produced by `scripts/bench_resource_access.py` over synthetic rows, not a gate input
 * [`resource-access-bench-r51-2026-11-18.json`](validation/resource-access-bench-r51-2026-11-18.json) — R5.1 measurement: materialized vs streamed batches, same edge count and checksum
+* [`real-workload-05a1-2026-11-18.json`](validation/real-workload-05a1-2026-11-18.json) — R6.1 real N3-05A1 per-resource access/edge/perf data
+* [`real-workload-05a2-2026-11-18.json`](validation/real-workload-05a2-2026-11-18.json) — R6.1 real N3-05A2 per-resource access/edge/perf data
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 74 |
+| Documents indexed | 77 |
 | Machine-classified | 16 |
-| Not classified | 57 |
-| Of which validation evidence | 13 markdown + 8 json |
+| Not classified | 60 |
+| Of which validation evidence | 14 markdown + 10 json |
 
 ## Known limits of this index
 
