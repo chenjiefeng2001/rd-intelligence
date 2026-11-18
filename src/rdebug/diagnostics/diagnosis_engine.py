@@ -28,6 +28,14 @@ ALTERNATIVE_RULES = {
         ("partial_update", "A partial write may legitimately cover a smaller range",
          "compare byte ranges and mip/layer coverage"),
     ),
+    "sampled_content_mismatch": (
+        ("wrong_resource_binding", "A different resource may be bound at the shader slot",
+         "compare descriptor resource ids at the sampling event"),
+        ("wrong_upload_source", "The copy source may carry unintended content",
+         "inspect the source resource contents before the copy"),
+        ("replay_nondeterminism", "The two captures may differ outside the suspected change",
+         "re-run the baseline capture twice and compare the oracle"),
+    ),
 }
 
 HYPOTHESIS_RULES = {
@@ -41,7 +49,20 @@ HYPOTHESIS_RULES = {
         ("observed_range_mismatch",),
         ("subresource_unknown",),
     ),
+    "sampled_content_mismatch": (
+        "The uploaded resource content may not be the content the shader samples.",
+        ("independent_output_difference",),
+        ("no_passed_shader_output",),
+    ),
 }
+
+
+def _can_establish(source_analysis, evidence_refs):
+    """Establishment needs an independent oracle and a verified source level."""
+    data = source_analysis or {}
+    level = data.get("sourceLevel", "S0")
+    return bool(data.get("establishedByOracle")) and level in ("S3", "S4") \
+        and bool(evidence_refs)
 
 
 def build_diagnosis(finding, source_analysis=None):
@@ -77,10 +98,14 @@ def build_diagnosis(finding, source_analysis=None):
                        missing=["evidence_to_distinguish_" + key],
                        discriminating_checks=[check]))
 
+    established = _can_establish(source_analysis, evidence_refs)
     result = conclusion(
+        "established" if established else
         "provisional" if evidence_refs else "not_established",
         [primary["hypothesisId"]],
         [f["factId"] for f in facts],
+        "an independent oracle and verified source mapping establish the "
+        "diagnosis" if established else
         "anomaly finding is supported by event-order evidence; alternatives "
         "remain until the discriminating checks are performed",
         alternatives=[h["hypothesisId"] for h in alternatives],

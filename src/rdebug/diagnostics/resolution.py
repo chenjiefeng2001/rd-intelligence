@@ -8,14 +8,21 @@ RESOLUTION_STATUSES = ("open", "in_progress", "resolved", "not_reproduced",
                        "unresolved", "verification_inconclusive")
 
 
-def evaluate_resolution(before, after, verification_evidence=None):
-    """Link a before/after pair by finding identity, not by text similarity."""
-    before_findings = {
-        f["findingId"]: f
-        for f in before["sections"]["findings"]["content"].get("findings", ())}
-    after_findings = {
-        f["findingId"]: f
-        for f in after["sections"]["findings"]["content"].get("findings", ())}
+def evaluate_resolution(before, after, verification_evidence=None, kinds=None):
+    """Link a before/after pair by finding identity, not by text similarity.
+
+    ``kinds`` narrows the comparison to specific finding kinds (e.g. only the
+    anomaly that a change was meant to fix); normal observations are not
+    remediation targets and must not block a resolution decision.
+    """
+    def selected(report):
+        items = report["sections"]["findings"]["content"].get("findings", ())
+        if kinds is not None:
+            items = [f for f in items if f.get("kind") in kinds]
+        return {f["findingId"]: f for f in items}
+
+    before_findings = selected(before)
+    after_findings = selected(after)
     results = []
     for finding_id, original in before_findings.items():
         if finding_id in after_findings:

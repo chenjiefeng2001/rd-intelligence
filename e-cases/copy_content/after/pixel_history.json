@@ -1,0 +1,160 @@
+{
+  "resource": "ResourceId::35",
+  "contextEventId": 12,
+  "x": 320,
+  "y": 240,
+  "mip": 0,
+  "slice": 0,
+  "sample": 0,
+  "evidence": [
+    {
+      "capture": "e-cases\\copy_content\\after\\defect_frame11.rdc",
+      "eventId": 12,
+      "resourceId": "ResourceId::35",
+      "subresource": {
+        "mip": 0,
+        "slice": 0,
+        "sample": 0
+      },
+      "location": {
+        "x": 320,
+        "y": 240
+      },
+      "operation": "pixel_history",
+      "source": "ReplayController.PixelHistory",
+      "id": "15e585a45edd"
+    }
+  ],
+  "modifications": [
+    {
+      "eventId": 1,
+      "primitiveID": 0,
+      "fragIndex": 0,
+      "passed": true,
+      "unboundPS": false,
+      "directShaderWrite": false,
+      "preMod": {
+        "float": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "uint": [
+          0,
+          0,
+          0,
+          1065353216
+        ],
+        "depth": -1.0,
+        "stencil": -1
+      },
+      "shaderOut": {
+        "float": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "uint": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "depth": -1.0,
+        "stencil": -1
+      },
+      "postMod": {
+        "float": [
+          0.23529411852359772,
+          0.10196078568696976,
+          0.019607843831181526,
+          1.0
+        ],
+        "uint": [
+          1047589105,
+          1037095121,
+          1017159841,
+          1065353216
+        ],
+        "depth": -1.0,
+        "stencil": -1
+      },
+      "backfaceCulled": false,
+      "depthClipped": false,
+      "depthBoundsFailed": false,
+      "viewClipped": false,
+      "scissorClipped": false,
+      "sampleMasked": false,
+      "shaderDiscarded": false,
+      "depthTestFailed": false,
+      "stencilTestFailed": false
+    },
+    {
+      "eventId": 11,
+      "primitiveID": 0,
+      "fragIndex": 0,
+      "passed": true,
+      "unboundPS": false,
+      "directShaderWrite": false,
+      "preMod": {
+        "float": [
+          0.23529411852359772,
+          0.10196078568696976,
+          0.019607843831181526,
+          1.0
+        ],
+        "uint": [
+          1047589105,
+          1037095121,
+          1017159841,
+          1065353216
+        ],
+        "depth": -1.0,
+        "stencil": -1
+      },
+      "shaderOut": {
+        "float": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "uint": [
+          0,
+          0,
+          0,
+          1065353216
+        ],
+        "depth": -1.0,
+        "stencil": -1
+      },
+      "postMod": {
+        "float": [
+          0.0,
+          0.0,
+          0.0,
+          1.0
+        ],
+        "uint": [
+          0,
+          0,
+          0,
+          1065353216
+        ],
+        "depth": -1.0,
+        "stencil": -1
+      },
+      "backfaceCulled": false,
+      "depthClipped": false,
+      "depthBoundsFailed": false,
+      "viewClipped": false,
+      "scissorClipped": false,
+      "sampleMasked": false,
+      "shaderDiscarded": false,
+      "depthTestFailed": false,
+      "stencilTestFailed": false
+    }
+  ]
+}

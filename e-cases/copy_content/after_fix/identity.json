@@ -1,0 +1,27 @@
+{
+  "kind": "e-case-binary-identity",
+  "executable": {
+    "path": "e-cases\\copy_content\\triangle_fixed.exe",
+    "sha256": "9e37d2be236049a8d84cef05f50617487c00030e0e565d659e25b1177ecfac21"
+  },
+  "pdb": {
+    "path": "e-cases\\copy_content\\triangle_fixed.pdb",
+    "sha256": "d3ae65a25e39bf8ed025102a0de70ab4281f5fbcad6ed86df9154d4ae8bd3c78",
+    "guid": "3E240F3A-45D8-4DBB-8784-200CE3E2007A",
+    "age": 3
+  },
+  "codeview": {
+    "guid": "3E240F3A-45D8-4DBB-8784-200CE3E2007A",
+    "age": 3,
+    "pdbPath": "D:\\renderdoc_no_mcp\\rd-intelligence\\e-cases\\copy_content\\triangle_fixed.pdb"
+  },
+  "pdbMatchesExecutable": true,
+  "source": {
+    "path": "e-cases\\copy_content\\triangle_app_fixed.cpp",
+    "sha256": "0f79996a5d38820b0814adf8d6e567d4854328f72e06b79af204e8f6ac903640"
+  },
+  "capture": {
+    "path": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+    "sha256": "ee062c02a98fd036c2e4663e1ce1961354f05c3f3764068b9d7214f92f67c790"
+  }
+}

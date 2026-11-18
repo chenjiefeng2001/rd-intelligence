@@ -1,0 +1,19 @@
+{
+  "comparisons": [
+    {
+      "findingRef": "finding-5df58e3fdb07",
+      "status": "resolved",
+      "reason": "finding absent after change and targeted verification passed",
+      "originalStatus": "inferred",
+      "actionType": "code_change"
+    }
+  ],
+  "resolvedCount": 1,
+  "status": "resolved",
+  "oracleStatus": "same",
+  "maxDifference": 0.0,
+  "eventId": 11,
+  "targetFindings": [
+    "finding-5df58e3fdb07"
+  ]
+}

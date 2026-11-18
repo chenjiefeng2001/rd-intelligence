@@ -9,11 +9,18 @@ from .report_model import REPORT_SCHEMA, empty_report, set_section, validate_rep
 from .verification_planner import build_verification_plans
 
 
-def assemble_report(analysis, metadata=None, capture=None):
+def assemble_report(analysis, metadata=None, capture=None, content_comparison=None):
     """Build the full twelve-section report; JSON is the only source of truth."""
-    findings = build_findings(analysis)
-    diagnoses = build_diagnoses(findings)
+    findings = build_findings(analysis, content_comparison=content_comparison)
     mappings = [resolve_attribution(analysis, metadata)]
+    established_by_oracle = bool(
+        content_comparison and content_comparison.get("status") == "different"
+        and metadata and (metadata.get("binary_identity") or {}).get("verified")
+        and (metadata.get("source_revision") or {}).get("verified"))
+    diagnoses = build_diagnoses(findings, {
+        "establishedByOracle": established_by_oracle,
+        "sourceLevel": mappings[0]["highestVerifiedLevel"],
+    })
     recommendations = build_recommendations(findings, diagnoses, mappings, capture)
     changes = build_change_plans(recommendations, mappings)
     verification = build_verification_plans(recommendations, changes, findings)
@@ -53,7 +60,8 @@ def assemble_report(analysis, metadata=None, capture=None):
     set_section(report, "diagnosis",
                 "present" if diagnoses["diagnoses"] else "insufficient_evidence",
                 None if diagnoses["diagnoses"] else
-                "no anomaly triggered a diagnosis", diagnoses)
+                "no anomaly triggered a diagnosis",
+                {"chains": diagnoses["diagnoses"], "count": diagnoses["diagnosisCount"]})
     set_section(report, "impact_analysis", "present", None, {
         "affectedResources": sorted({rid for f in findings["findings"]
                                      for rid in f.get("affectedResources", ())}),

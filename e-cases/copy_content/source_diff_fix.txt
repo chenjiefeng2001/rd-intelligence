@@ -1,0 +1,21 @@
+diff --git a/triangle_app_defect.cpp b/triangle_app_fixed.cpp
+index 93ebdb7..81657bd 100644
+--- a/triangle_app_defect.cpp
++++ b/triangle_app_fixed.cpp
+@@ -127,12 +127,10 @@ int main(int argc, char** argv) {
+ 
+     std::vector<uint8_t> texels(64 * 64 * 4);
+     for (int i = 0; i < 64 * 64; ++i) {
+-        // ENGINEERED DEFECT: the upload source is left zeroed instead of
+-        // carrying the intended texture color. The CopyResource still runs,
+-        // so the access graph looks normal while the sampled content is wrong.
+-        texels[i * 4 + 0] = 0;
+-        texels[i * 4 + 1] = 0;
+-        texels[i * 4 + 2] = 0;
++        // FIX: restore the intended texture color in the upload source.
++        texels[i * 4 + 0] = 255;
++        texels[i * 4 + 1] = 200;
++        texels[i * 4 + 2] = 160;
+         texels[i * 4 + 3] = 255;
+     }
+     D3D11_SUBRESOURCE_DATA texInit = {texels.data(), 64 * 4, 0};

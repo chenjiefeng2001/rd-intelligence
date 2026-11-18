@@ -1,0 +1,27 @@
+{
+  "kind": "e-case-binary-identity",
+  "executable": {
+    "path": "e-cases\\copy_content\\triangle_defect.exe",
+    "sha256": "6c9aeca159e7c7094bb073bd30991ed255e40cbe83959c6a8d586d8a1c83b750"
+  },
+  "pdb": {
+    "path": "e-cases\\copy_content\\triangle_defect.pdb",
+    "sha256": "cb5290e4cefd90a5fd305eec36dde62c11d14e5c410703a4179771e0bfec3718",
+    "guid": "A143CE45-1EFC-475E-B226-649BAF87155A",
+    "age": 3
+  },
+  "codeview": {
+    "guid": "A143CE45-1EFC-475E-B226-649BAF87155A",
+    "age": 3,
+    "pdbPath": "D:\\renderdoc_no_mcp\\rd-intelligence\\e-cases\\copy_content\\triangle_defect.pdb"
+  },
+  "pdbMatchesExecutable": true,
+  "source": {
+    "path": "e-cases\\copy_content\\triangle_app_defect.cpp",
+    "sha256": "b70e4ab83be68fd61ba31eae18c2b236dc3f6a7e9ddfe05a6ef8d5ac3988170e"
+  },
+  "capture": {
+    "path": "e-cases\\copy_content\\after\\defect_frame11.rdc",
+    "sha256": "d9902fbcdc5a50805a107b120e183d94e54112f7d4bf1e153f69715c23a728c2"
+  }
+}

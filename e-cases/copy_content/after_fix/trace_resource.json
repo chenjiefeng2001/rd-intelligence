@@ -1,0 +1,306 @@
+{
+  "resource": {
+    "id": "ResourceId::47",
+    "name": ""
+  },
+  "contextEventId": 11,
+  "writers": [
+    {
+      "eventId": 2,
+      "usage": "CopyDst",
+      "kind": "write",
+      "actionName": "",
+      "evidence": [
+        {
+          "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+          "eventId": 2,
+          "resourceId": "ResourceId::47",
+          "operation": "usage:CopyDst",
+          "source": "ReplayController.GetUsage",
+          "id": "457dd37070e5"
+        }
+      ]
+    }
+  ],
+  "readers": [
+    {
+      "eventId": 11,
+      "usage": "PS_Resource",
+      "kind": "read",
+      "actionName": "",
+      "evidence": [
+        {
+          "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+          "eventId": 11,
+          "resourceId": "ResourceId::47",
+          "operation": "usage:PS_Resource",
+          "source": "ReplayController.GetUsage",
+          "id": "ae71bb62c778"
+        }
+      ]
+    }
+  ],
+  "other": [],
+  "summary": {
+    "usageCount": 2,
+    "writerCount": 1,
+    "readerCount": 1,
+    "otherCount": 0,
+    "firstWriterEventId": 2,
+    "lastWriterEventId": 2,
+    "lastReaderEventId": 11,
+    "unknownCount": 0,
+    "versionCount": 1
+  },
+  "evidence": [
+    {
+      "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+      "eventId": 11,
+      "resourceId": "ResourceId::47",
+      "operation": "trace_resource",
+      "source": "rdebug.analysis.resource_flow",
+      "id": "9e71a3b72f49",
+      "data": {
+        "usageCount": 2
+      }
+    }
+  ],
+  "schemaVersion": "trace_resource/2",
+  "analysisStatus": "partial",
+  "accesses": [
+    {
+      "eventId": 2,
+      "position": 0,
+      "resourceId": "ResourceId::47",
+      "usage": "CopyDst",
+      "usageRaw": 43,
+      "accessType": "copy",
+      "legacyKind": "write",
+      "actionName": "",
+      "subresource": null,
+      "region": null,
+      "coverage": "unknown",
+      "status": "observed",
+      "reason": null,
+      "evidence": [
+        {
+          "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+          "eventId": 2,
+          "resourceId": "ResourceId::47",
+          "operation": "access:CopyDst",
+          "source": "ReplayController.GetUsage",
+          "id": "6d3293a5cdb3",
+          "status": "observed"
+        }
+      ]
+    },
+    {
+      "eventId": 11,
+      "position": 1,
+      "resourceId": "ResourceId::47",
+      "usage": "PS_Resource",
+      "usageRaw": 17,
+      "accessType": "read",
+      "legacyKind": "read",
+      "actionName": "",
+      "subresource": null,
+      "region": null,
+      "coverage": "unknown",
+      "status": "observed",
+      "reason": null,
+      "evidence": [
+        {
+          "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+          "eventId": 11,
+          "resourceId": "ResourceId::47",
+          "operation": "access:PS_Resource",
+          "source": "ReplayController.GetUsage",
+          "id": "9478e783dc1c",
+          "status": "observed"
+        }
+      ]
+    }
+  ],
+  "causal": {
+    "edges": [
+      {
+        "causalType": "writer_to_reader",
+        "fromEventId": 2,
+        "toEventId": 11,
+        "kind": "writer_to_reader",
+        "evidenceRefs": [
+          {
+            "id": "6d3293a5cdb3"
+          },
+          {
+            "id": "9478e783dc1c"
+          }
+        ],
+        "supportLevel": "inferred_from_order",
+        "reason": "event order is observed; GetUsage exposes no content propagation",
+        "observationStatus": "observed",
+        "status": "inferred",
+        "accessType": "read",
+        "evidence": [
+          {
+            "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+            "eventId": 2,
+            "resourceId": "ResourceId::47",
+            "operation": "access:CopyDst",
+            "source": "ReplayController.GetUsage",
+            "id": "6d3293a5cdb3",
+            "status": "observed"
+          }
+        ],
+        "resourceId": "ResourceId::47"
+      }
+    ],
+    "overwrites": [],
+    "versions": [
+      {
+        "version": 1,
+        "eventId": 2,
+        "accessType": "copy",
+        "coverage": "unknown",
+        "status": "inferred",
+        "evidence": [
+          {
+            "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+            "eventId": 2,
+            "resourceId": "ResourceId::47",
+            "operation": "access:CopyDst",
+            "source": "ReplayController.GetUsage",
+            "id": "6d3293a5cdb3",
+            "status": "observed"
+          }
+        ]
+      }
+    ],
+    "unresolved": [
+      {
+        "field": "subresource",
+        "reason": "ReplayController.GetUsage does not expose mip/layer/slice",
+        "status": "unknown",
+        "evidence": [
+          {
+            "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+            "resourceId": "ResourceId::47",
+            "operation": "unresolved:subresource",
+            "source": "rdebug.analysis.resource_access",
+            "id": "99e21a61ba8b",
+            "status": "unknown"
+          }
+        ]
+      },
+      {
+        "field": "region",
+        "reason": "ReplayController.GetUsage does not expose a written region",
+        "status": "unknown",
+        "evidence": [
+          {
+            "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+            "resourceId": "ResourceId::47",
+            "operation": "unresolved:region",
+            "source": "rdebug.analysis.resource_access",
+            "id": "9dd75ddb0125",
+            "status": "unknown"
+          }
+        ]
+      },
+      {
+        "field": "coverage",
+        "reason": "ReplayController.GetUsage does not expose full vs partial coverage",
+        "status": "unknown",
+        "evidence": [
+          {
+            "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+            "resourceId": "ResourceId::47",
+            "operation": "unresolved:coverage",
+            "source": "rdebug.analysis.resource_access",
+            "id": "4b26f868a844",
+            "status": "unknown"
+          }
+        ]
+      },
+      {
+        "field": "alias",
+        "reason": "equal resource ids do not prove physical memory aliasing",
+        "status": "unknown",
+        "evidence": [
+          {
+            "capture": "e-cases\\copy_content\\after_fix\\fixed_frame11.rdc",
+            "resourceId": "ResourceId::47",
+            "operation": "unresolved:alias",
+            "source": "rdebug.analysis.resource_access",
+            "id": "858d803027db",
+            "status": "unknown"
+          }
+        ]
+      }
+    ],
+    "relationCount": 1,
+    "truncated": false,
+    "omittedEdgeCount": 0,
+    "edgeLimit": null,
+    "status": "inferred"
+  },
+  "lifetime": {
+    "firstWriteEventId": 2,
+    "lastWriteEventId": 2,
+    "lastReadEventId": 11,
+    "writeCount": 1,
+    "readCount": 1,
+    "creationEventId": null,
+    "destructionEventId": null,
+    "status": "partial",
+    "reason": "creation/destruction events are not exposed by GetUsage",
+    "endpoints": {
+      "creation": {
+        "status": "unknown",
+        "eventId": null,
+        "observationStatus": "unknown",
+        "reason": "creation_event_not_observed"
+      },
+      "firstAccess": {
+        "status": "observed",
+        "eventId": 2,
+        "observationStatus": "observed",
+        "reason": null,
+        "evidenceRefs": []
+      },
+      "lastAccess": {
+        "status": "observed",
+        "eventId": 11,
+        "observationStatus": "observed",
+        "reason": null,
+        "evidenceRefs": []
+      },
+      "release": {
+        "status": "unknown",
+        "eventId": null,
+        "observationStatus": "unknown",
+        "reason": "release_event_not_observed"
+      }
+    },
+    "interval": {
+      "status": "unknown",
+      "startEventId": null,
+      "endEventId": null,
+      "reason": "lifetime interval is not fully observed"
+    },
+    "instances": [
+      {
+        "instanceId": "instance-1",
+        "createEventId": null,
+        "releaseEventId": null,
+        "accessEventIds": [
+          2,
+          11
+        ],
+        "status": "partial"
+      }
+    ],
+    "lifetimeStatus": "unknown",
+    "supportLevel": "unknown"
+  }
+}

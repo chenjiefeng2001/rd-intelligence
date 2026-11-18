@@ -53,6 +53,18 @@ RULES = {
         "severity": "high",
         "priority": "P1",
     },
+    "sampled_content_mismatch": {
+        "trigger": "independent pixel-history oracle reports different shader output",
+        "required_evidence": ("baseline_pixel_history", "candidate_pixel_history"),
+        "exclusions": ("no_passed_shader_output", "difference_within_tolerance"),
+        "alternatives": ("different_resource_binding", "wrong_subresource",
+                         "capture_or_replay_nondeterminism"),
+        "allowed": ("observed_output_difference",),
+        "disallowed": ("confirmed_application_root_cause", "content_flow_proven"),
+        "kind": "anomaly",
+        "severity": "critical",
+        "priority": "P0",
+    },
 }
 
 
@@ -103,7 +115,7 @@ def _make(category, resource, events, evidence_refs, affected_events, summary,
     }
 
 
-def build_findings(analysis, subresource_comparisons=None):
+def build_findings(analysis, subresource_comparisons=None, content_comparison=None):
     """Build findings from a trace_resource result (additive, read-only)."""
     findings = []
     limitations = []
@@ -144,6 +156,23 @@ def build_findings(analysis, subresource_comparisons=None):
             "A lifecycle event conflicts with the observed access window.",
             ["physical_alias_not_proven"],
         ))
+
+    if content_comparison and content_comparison.get("status") == "different":
+        refs = content_comparison.get("evidenceRefs", [])
+        findings.append(_make(
+            "sampled_content_mismatch", resource,
+            [content_comparison.get("eventId") or 0], refs,
+            [content_comparison.get("eventId") or 0],
+            "An independent pixel-history oracle reports that final shader "
+            "output differs from the baseline beyond tolerance.",
+            ["root_cause_not_established", "content_flow_not_observed"],
+        ))
+    elif content_comparison and content_comparison.get("status") == "unknown":
+        limitations.append({
+            "category": "sampled_content_mismatch",
+            "status": "unknown",
+            "reason": content_comparison.get("reason", "oracle unavailable"),
+        })
 
     for comparison in subresource_comparisons or ():
         if (comparison.get("status") == "observed"

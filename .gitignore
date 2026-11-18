@@ -28,3 +28,12 @@ ci_pipeline_report.json
 .g3probe.json
 .gate-logs/
 .gate4_verdict.json
+
+# E-case build outputs: rebuildable from the checked-in sources via
+# e-cases/copy_content/build_case.bat; identities are archived as JSON.
+e-cases/**/*.exe
+e-cases/**/*.pdb
+e-cases/**/*.ilk
+e-cases/**/*.obj
+e-cases/**/*_run.log
+e-cases/**/*.err

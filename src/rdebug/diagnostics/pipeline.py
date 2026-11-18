@@ -9,9 +9,10 @@ from .report_assembler import assemble_report
 from .report_validator import validate_report_quality
 
 
-def run_diagnostic_pipeline(analysis, metadata=None, capture=None):
+def run_diagnostic_pipeline(analysis, metadata=None, capture=None,
+                            content_comparison=None):
     """Return the authoritative JSON report and its Markdown rendering."""
-    report = assemble_report(analysis, metadata, capture)
+    report = assemble_report(analysis, metadata, capture, content_comparison)
     markdown = render_markdown(report)
     quality = validate_report_quality(report, markdown)
     return {"report": report, "markdown": markdown, "quality": quality}

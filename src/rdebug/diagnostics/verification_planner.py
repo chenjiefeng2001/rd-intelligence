@@ -13,6 +13,11 @@ CATEGORY_CHECKS = {
         "re-run the resource access index and dependency builder",
         "assert the dependency set stays observation-only unless new evidence appears",
     ),
+    "sampled_content_mismatch": (
+        "replay the after-fix capture and compare shader output with the baseline oracle",
+        "assert the independent content comparison status is 'same' at the target event",
+        "assert no new anomaly finding appears in the after-fix report",
+    ),
 }
 
 
