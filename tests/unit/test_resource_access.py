@@ -191,5 +191,54 @@ class TestRelationModel(unittest.TestCase):
             relation("writer_to_reader", 1, 2, [], "direct", "x", "probably")
 
 
+class TestCausalBoundary(unittest.TestCase):
+    """R3.2: event order alone must never become an observed data dependency."""
+
+    def test_order_only_edges_are_not_observed_or_direct(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource")))
+        graph = build_causal_graph(accesses, build_versions(accesses, RID, CAPTURE),
+                                   RID, CAPTURE)
+        self.assertTrue(graph["edges"])
+        for edge in graph["edges"]:
+            self.assertEqual(edge["status"], "inferred")
+            self.assertEqual(edge["supportLevel"], "inferred_from_order")
+            self.assertNotEqual(edge["supportLevel"], "direct")
+            self.assertEqual(edge["causalType"], "writer_to_reader")
+            self.assertIn("reason", edge)
+            self.assertEqual(edge["observationStatus"], "observed")
+
+    def test_edges_carry_evidence_refs_for_both_endpoints(self):
+        accesses = index(rows((10, "Clear"), (20, "PS_Resource")))
+        edge = build_causal_graph(accesses, [], RID, CAPTURE)["edges"][0]
+        self.assertEqual(len(edge["evidenceRefs"]), 2)
+        self.assertEqual(len(edge["evidence"]), 1)  # R2 field unchanged
+        for ref in edge["evidenceRefs"]:
+            self.assertIn("id", ref)
+
+    def test_overwrite_is_explicitly_unknown(self):
+        accesses = index(rows((10, "Clear"), (20, "ColorTarget")))
+        overwrite = build_causal_graph(accesses, [], RID, CAPTURE)["overwrites"][0]
+        self.assertEqual(overwrite["supportLevel"], "unknown")
+        self.assertEqual(overwrite["status"], "unknown")
+        self.assertIn("coverage", overwrite["reason"])
+
+    def test_row_order_does_not_change_an_inferred_edge(self):
+        # Row arrival order is not an event-order fact. build_access_index
+        # sorts by eventId, so shuffled input must produce the same edge,
+        # still inferred -- never a deterministic content claim.
+        forward = index(rows((20, "PS_Resource"), (10, "Clear")))
+        reverse = index(rows((10, "Clear"), (20, "PS_Resource")))
+        a = build_causal_graph(forward, [], RID, CAPTURE)["edges"]
+        b = build_causal_graph(reverse, [], RID, CAPTURE)["edges"]
+        self.assertEqual(a, b)
+        self.assertEqual(a[0]["status"], "inferred")
+        self.assertEqual(a[0]["supportLevel"], "inferred_from_order")
+
+    def test_malformed_writer_produces_no_edge(self):
+        accesses = index([{"eventId": 10}, {"eventId": 20, "usage": "PS_Resource"}])
+        graph = build_causal_graph(accesses, [], RID, CAPTURE)
+        self.assertEqual(graph["edges"], [])
+
+
 if __name__ == "__main__":
     unittest.main()

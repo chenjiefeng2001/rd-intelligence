@@ -232,8 +232,22 @@ def build_versions(accesses, resource_id, capture):
     return versions
 
 
+def _evidence_refs(*entries):
+    refs = []
+    for entry in entries:
+        for ev in entry.get("evidence", ()):
+            refs.append({"id": ev["id"]})
+    return refs
+
+
 def build_causal_graph(accesses, versions, resource_id, capture):
-    """Relate writers to readers by event order, never by guessed coverage."""
+    """Relate writers to readers by event order, never by guessed coverage.
+
+    Every edge now carries its own evidence boundary. Event ids and their
+    order are observed; content propagation is not. Therefore the strongest
+    support level this analyzer can emit from GetUsage rows is
+    ``inferred_from_order`` -- never ``direct``.
+    """
     writers = [a for a in accesses if a["legacyKind"] == "write"]
     readers = [a for a in accesses if a["legacyKind"] == "read"]
     edges = []
@@ -243,28 +257,35 @@ def build_causal_graph(accesses, versions, resource_id, capture):
         for writer in writers:
             if writer["eventId"] is None or writer["eventId"] >= reader["eventId"]:
                 continue
-            edges.append(
-                {
-                    "fromEventId": writer["eventId"],
-                    "toEventId": reader["eventId"],
-                    "kind": "writer_to_reader",
-                    "accessType": reader["accessType"],
-                    "status": "inferred",
-                    "evidence": [dict(ref) for ref in writer["evidence"]],
-                }
+            edge = relation(
+                "writer_to_reader",
+                writer["eventId"],
+                reader["eventId"],
+                _evidence_refs(writer, reader),
+                "inferred_from_order",
+                "event order is observed; GetUsage exposes no content propagation",
+                "observed",
             )
+            # R2 fields are kept verbatim for existing consumers.
+            edge["accessType"] = reader["accessType"]
+            edge["evidence"] = [dict(ref) for ref in writer["evidence"]]
+            edges.append(edge)
     overwrites = []
     for previous, following in zip(writers, writers[1:]):
         if previous["eventId"] is None or following["eventId"] is None:
             continue
-        overwrites.append(
-            {
-                "supersededEventId": previous["eventId"],
-                "followingEventId": following["eventId"],
-                "status": "unknown",
-                "reason": _UNKNOWN_REASONS["coverage"],
-            }
+        overwrite = relation(
+            "overwrite",
+            previous["eventId"],
+            following["eventId"],
+            _evidence_refs(previous, following),
+            "unknown",
+            _UNKNOWN_REASONS["coverage"],
+            "unknown",
         )
+        overwrite["supersededEventId"] = previous["eventId"]
+        overwrite["followingEventId"] = following["eventId"]
+        overwrites.append(overwrite)
     unresolved = [_unresolved(key, None, resource_id, capture)
                   for key in ("subresource", "region", "coverage", "alias")]
     return {
