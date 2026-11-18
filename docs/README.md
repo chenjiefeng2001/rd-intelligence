@@ -11,7 +11,7 @@ document_living_note: >-
 Every document in this directory, one row each, grouped by topic.
 
 **17 are machine-classified** under `DOCUMENT-CLASSIFICATION-CONTRACT.md`
-and are constrained by it; **76 are not classified** and are deliberately not
+and are constrained by it; **78 are not classified** and are deliberately not
 machine-read. The Role column copies the value from each document's own front
 matter; where it reads *not classified* the index is asserting nothing. Grouping
 by topic is human judgement, **not schema**, and carries no authority — inventing
@@ -119,6 +119,7 @@ Correctness of this file, including the values in the Role column, is enforced b
 | [`capability-coverage-c1-c2-2026-11-19.md`](validation/capability-coverage-c1-c2-2026-11-19.md) | not classified |
 | [`dependency-semantics-c3-2026-11-19.md`](validation/dependency-semantics-c3-2026-11-19.md) | not classified |
 | [`subresource-capability-c4-2026-11-19.md`](validation/subresource-capability-c4-2026-11-19.md) | not classified |
+| [`cross-workload-consistency-c5-2026-11-19.md`](validation/cross-workload-consistency-c5-2026-11-19.md) | not classified |
 
 Machine-readable companions, listed for completeness:
 
@@ -141,15 +142,16 @@ Machine-readable companions, listed for completeness:
 * [`positive-copy-sample-b-d3d11-2026-11-19.json`](validation/positive-copy-sample-b-d3d11-2026-11-19.json) — C2 positive CopyDst -> PS_Resource relation set (b)
 * [`c3-real-dependency-index-2026-11-19.json`](validation/c3-real-dependency-index-2026-11-19.json) — C3 typed dependency index over the real Copy -> Sampling sample
 * [`c4-subresource-probe-2026-11-19.json`](validation/c4-subresource-probe-2026-11-19.json) — C4 real descriptor-level mip/layer/byte probe on the D3D11 fixture
+* [`c5-cross-workload-check-2026-11-19.json`](validation/c5-cross-workload-check-2026-11-19.json) — C5 cross-workload dependency and lifecycle consistency summary
 
 ## Coverage
 
 | | Count |
 | --- | --- |
-| Documents indexed | 93 |
+| Documents indexed | 95 |
 | Machine-classified | 16 |
-| Not classified | 76 |
-| Of which validation evidence | 21 markdown + 19 json |
+| Not classified | 78 |
+| Of which validation evidence | 22 markdown + 20 json |
 
 ## Known limits of this index
 

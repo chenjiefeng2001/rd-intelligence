@@ -1,0 +1,90 @@
+{
+  "kind": "c5-cross-workload-check",
+  "workloads": {
+    "a-d3d11-fixture": {
+      "resourceCount": 12,
+      "accessCount": 779,
+      "writerCount": 258,
+      "readerCount": 513,
+      "edgeCount": 256,
+      "lifecycleStatuses": [
+        "unknown"
+      ],
+      "analysisStatuses": [
+        "partial"
+      ]
+    },
+    "b-d3d11-fixture": {
+      "resourceCount": 12,
+      "accessCount": 395,
+      "writerCount": 130,
+      "readerCount": 257,
+      "edgeCount": 128,
+      "lifecycleStatuses": [
+        "unknown"
+      ],
+      "analysisStatuses": [
+        "partial"
+      ]
+    },
+    "N3-02": {
+      "resourceCount": 13,
+      "accessCount": 16,
+      "writerCount": 2,
+      "readerCount": 1,
+      "edgeCount": 0,
+      "lifecycleStatuses": [
+        "unknown"
+      ],
+      "analysisStatuses": [
+        "partial"
+      ]
+    },
+    "N3-05A1": {
+      "resourceCount": 60,
+      "accessCount": 47,
+      "writerCount": 12,
+      "readerCount": 5,
+      "edgeCount": 0,
+      "lifecycleStatuses": [
+        "unknown"
+      ],
+      "analysisStatuses": [
+        "partial",
+        "unknown"
+      ]
+    },
+    "N3-05A2": {
+      "resourceCount": 36,
+      "accessCount": 372,
+      "writerCount": 100,
+      "readerCount": 245,
+      "edgeCount": 0,
+      "lifecycleStatuses": [
+        "unknown"
+      ],
+      "analysisStatuses": [
+        "partial",
+        "unknown"
+      ]
+    },
+    "a-d3d11-positive": {
+      "dependencyCount": 256,
+      "raw": 256,
+      "viaCopy": 256,
+      "truncated": false,
+      "support": [
+        "inferred_from_order"
+      ]
+    },
+    "b-d3d11-positive": {
+      "dependencyCount": 128,
+      "raw": 128,
+      "viaCopy": 128,
+      "truncated": false,
+      "support": [
+        "inferred_from_order"
+      ]
+    }
+  }
+}
