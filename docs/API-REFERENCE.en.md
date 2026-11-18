@@ -147,6 +147,18 @@ Relation explanations are built on demand by
 and mark `partialBySelection`. No new CLI command, MCP protocol or CI report
 schema change. **[CODE]**
 
+**C3/C4 resource semantics**: `rdebug.analysis.resource_dependency` derives
+`raw` / `war` / `waw` dependencies from event order on the same resource, with
+Copy/Resolve recorded via the `via` field. All dependencies stay
+`inferred_from_order` with two GetUsage evidence refs; `subresource` and
+`alias` remain explicitly unknown. `rdebug.adapter.descriptors` reads bound
+view ranges (`firstMip/numMips/firstSlice/numSlices/byteOffset/byteSize`)
+and the real resource reference via `GetDescriptorAccess` + `GetDescriptors`;
+`rdebug.analysis.subresource` attaches them, classifies coverage into
+mutually exclusive analyzed/unobserved/missingInput buckets and compares
+ranges. Reads without descriptor evidence stay unknown, and matching
+subresources do not prove content propagation. **[CODE]**
+
 **R3 evidence boundary**: the relation model keeps three kinds of information
 apart — `observed` (directly supported by an event or metadata), `inferred`
 (derived from observable event relations) and `unknown` (not determinable from
